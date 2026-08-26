@@ -1,0 +1,79 @@
+# ==============================================================================
+# Docker Compose Configuration for Khatinoo (فروشگاه و کارگاه خطی‌نو)
+# سازگار با سرورهای اشتراکی و سرویس‌های همجوار مانند Nextcloud
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. سرویس دیتابیس PostgreSQL 16
+  # ----------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: khatinoo_db
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-khatinoo_db}
+      POSTGRES_USER: ${POSTGRES_USER:-khatinoo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_khatinoo_db_password_2026}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: Asia/Tehran
+    volumes:
+      # نام Volume پایدار جهت نگهداری همیشگی دیتای دیتابیس (هرگز در rebuild پاک نمی‌شود)
+      - khatinoo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-khatinoo_user} -d ${POSTGRES_DB:-khatinoo_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - khatinoo_network
+
+  # ----------------------------------------------------------------------------
+  # 2. سرویس اصلی برنامه خطی‌نو (Express + React Vite App)
+  # ----------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: khatinoo_app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      # اتصال امن درون شبکه داکر به سرویس db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-khatinoo_user}:${POSTGRES_PASSWORD:-secure_khatinoo_db_password_2026}@db:5432/${POSTGRES_DB:-khatinoo_db}
+    ports:
+      # فقط روی localhost لوپ‌بک سرور expose می‌شود تا با Nextcloud یا پورت‌های خارجی تداخل نکند.
+      # Nginx هاست درخواست‌های دامنه khatynoo.ir را به این پورت فوروارد می‌کند.
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # پایداری تصاویر و فایل‌های آپلود شده در فروشگاه مستقل از کانتینر
+      - khatinoo_uploads:/app/uploads
+    networks:
+      - khatinoo_network
+
+# ------------------------------------------------------------------------------
+# والیوم‌های داده‌های دائمی (Named Volumes)
+# هشدار: هرگز دستور docker compose down -v اجرا نکنید تا داده‌ها حفظ بمانند.
+# ------------------------------------------------------------------------------
+volumes:
+  khatinoo_pgdata:
+    name: khatinoo_pgdata
+  khatinoo_uploads:
+    name: khatinoo_uploads
+
+# ------------------------------------------------------------------------------
+# شبکه ایزوله اختصاصی خطی‌نو (مستقل از شبکه داکر Nextcloud)
+# ------------------------------------------------------------------------------
+networks:
+  khatinoo_network:
+    name: khatinoo_network
+    driver: bridge

@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-primary: 'Estedad', 'Vazirmatn', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Estedad', 'Vazirmatn', system-ui, sans-serif;
+  
+  /* Brand Tokens */
+  --brand-gold: #C9A227;
+  --brand-gold-hover: #B38E1E;
+  --brand-gold-light: #DFB738;
+  --brand-gold-glow: rgba(201, 162, 39, 0.25);
+  
+  /* Radii Scale (4px base) */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+}
+
+@layer base {
+  *, *::before, *::after {
+    font-family: var(--font-primary);
+    font-feature-settings: "ss01" on, "cv01" on;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: var(--font-heading);
+    letter-spacing: -0.015em;
+  }
+
+  body {
+    transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-x: hidden;
+  }
+
+  body.dark {
+    background-color: #090A0C;
+    color: #E2E4E9;
+  }
+
+  body.light {
+    background-color: #F8F9FC;
+    color: #0F172A;
+  }
+}
+
+/* Premium Typography Utility Classes */
+.font-display {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* Gold Gradient Accents */
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #E2BD3B 0%, #C9A227 50%, #9E7B12 100%);
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, #F3D56D 0%, #C9A227 70%, #A68316 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.border-gold-glow {
+  border-color: rgba(201, 162, 39, 0.35);
+  box-shadow: 0 0 15px rgba(201, 162, 39, 0.15);
+}
+
+/* Custom Scrollbars for Dark Interface */
+.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #0C0D10;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #25262B;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3B3C43;
+}
+
+/* Custom Scrollbars for Light Interface */
+.light ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.light ::-webkit-scrollbar-track {
+  background: #F1F4F9;
+}
+.light ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+.light ::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Thermal Printer & Receipt Styles */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  
+  .no-print, header, aside, nav, footer, button {
+    display: none !important;
+  }
+
+  #printable-receipt {
+    display: block !important;
+    width: 100% !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+}

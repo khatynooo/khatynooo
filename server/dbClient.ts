@@ -1,7 +1,9 @@
+import 'dotenv/config';
 import { Pool, PoolClient } from 'pg';
 import { newDb, IMemoryDb, DataType } from 'pg-mem';
 import fs from 'fs';
 import path from 'path';
+import { splitSqlStatements } from './sqlSplitter';
 import bcrypt from 'bcryptjs';
 
 // ==============================================================================
@@ -14,21 +16,22 @@ let isRealPostgres = false;
 let isInitialized = false;
 let initPromise: Promise<boolean> | null = null;
 
-const connectionString = process.env.DATABASE_URL;
-
 /**
  * راه‌اندازی و اتصال به پایگاه داده
  */
 export async function testDbConnection(): Promise<boolean> {
-  if (connectionString) {
+  const connectionString = process.env.DATABASE_URL;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (connectionString && connectionString.trim().length > 0) {
     let testPool: any = null;
     try {
-      console.log('🔄 [PostgreSQL] در حال اتصال به سرور PostgreSQL:', connectionString.replace(/:[^:@]+@/, ':****@'));
+      console.log('🔄 [PostgreSQL] در حال برقراری اتصال به سرور PostgreSQL:', connectionString.replace(/:[^:@]+@/, ':****@'));
       testPool = new Pool({
-        connectionString,
+        connectionString: connectionString.trim(),
         max: 20,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 1500,
+        connectionTimeoutMillis: 4000,
       });
 
       testPool.on('error', (err: any) => {
@@ -44,20 +47,31 @@ export async function testDbConnection(): Promise<boolean> {
       console.log('✅ [PostgreSQL] اتصال به دیتابیس واقعی PostgreSQL با موفقیت برقرار شد:', res.rows[0].current_time);
       return true;
     } catch (err: any) {
-      console.warn('⚠️ [PostgreSQL] اتصال به DATABASE_URL برقرار نشد یا منقضی شد:', err.message);
+      console.error('❌ [PostgreSQL Error] خطا در اتصال به سرور دیتابیس PostgreSQL:', err.message);
       if (testPool) {
         try {
           await testPool.end();
         } catch (_) {}
       }
+      if (isProduction) {
+        console.error('🛑 [FATAL] اجرای سرور در حالت Production به دلیل عدم دسترسی به دیتابیس PostgreSQL متوقف می‌شود.');
+        console.error('💡 راهنما: لطفاً وضعیت سرویس PostgreSQL و درستی اطلاعات کاربری در DATABASE_URL را بررسی فرمایید.');
+        process.exit(1);
+      }
     }
   } else {
-    console.warn('⚠️ [PostgreSQL] متغیر محیطی DATABASE_URL تنظیم نشده است.');
+    if (isProduction) {
+      console.error('❌ [FATAL DATABASE ERROR] متغیر محیطی DATABASE_URL تنظیم نشده است؛ سرور در حالت Production بدون اتصال به PostgreSQL واقعی اجرا نمی‌شود!');
+      console.error('💡 راهنما: لطفاً فایل .env را در مسیر پروژه بررسی کرده و مقدار DATABASE_URL=postgresql://user:pass@localhost:5432/dbname را تنظیم نمایید.');
+      process.exit(1);
+    }
+    console.warn('⚠️ [PostgreSQL Development Warning] متغیر محیطی DATABASE_URL تنظیم نشده است.');
   }
 
-  // اگر دیتابیس واقعی فعال نبود، موتور Postgres سازگار (pg-mem) برای اجرای تمام کوئری‌های واقعی SQL راه‌اندازی می‌شود
+  // اگر دیتابیس واقعی فعال نبود، فقط در محیط توسعه (Development) موتور موقت pg-mem راه‌اندازی می‌شود
   try {
-    console.log('🚀 [PostgreSQL Engine] در حال راه‌اندازی موتور کامل SQL سازگار با PostgreSQL...');
+    console.warn('⚠️⚠️⚠️ [DEV NOTICE] در حال راه‌اندازی دیتابیس موقت و درون‌حافظه‌ای (pg-mem). توجه: اطلاعات با ریستارت سرور ماندگار نخواهند بود! ⚠️⚠️⚠️');
+    console.log('🚀 [PostgreSQL Engine (DEV)] در حال راه‌اندازی موتور آزمایشی SQL سازگار با PostgreSQL...');
     memDb = newDb({
       autoCreateForeignKeyIndices: true,
     });
@@ -72,10 +86,10 @@ export async function testDbConnection(): Promise<boolean> {
     const pgAdapter = memDb.adapters.createPg();
     pool = new pgAdapter.Pool();
     isRealPostgres = false;
-    console.log('✅ [PostgreSQL Engine] موتور پردازش کوئری‌های SQL با موفقیت فعال شد.');
+    console.log('✅ [PostgreSQL Engine (DEV)] موتور موقت درون‌حافظه‌ای با موفقیت فعال شد.');
     return true;
   } catch (err: any) {
-    console.error('❌ [PostgreSQL Engine Error] خطای غیرمنتظره در راه‌اندازی دیتابیس:', err);
+    console.error('❌ [PostgreSQL Engine Error] خطای غیرمنتظره در راه‌اندازی دیتابیس آزمایشی:', err);
     return false;
   }
 }
@@ -208,30 +222,41 @@ export async function initializeSchema(): Promise<void> {
         const filePath = path.join(migrationsDir, file);
         const rawSql = fs.readFileSync(filePath, 'utf8');
 
-        const cleanedSql = rawSql
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/--.*$/gm, '');
-
-        const statements = cleanedSql
-          .split(';')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
+        const statements = splitSqlStatements(rawSql);
+        let fileFailed = false;
 
         for (const sql of statements) {
           if (sql.toUpperCase().includes('CREATE EXTENSION')) continue;
           try {
             await rawQuery(sql);
           } catch (stmtErr: any) {
-            if (!stmtErr.message?.includes('already exists')) {
-              console.warn(`⚠️ [Migration Statement in ${file}]:`, stmtErr.message);
+            const msg = stmtErr.message || '';
+            const isIgnorable =
+              msg.includes('already exists') ||
+              msg.includes('duplicate key') ||
+              msg.includes('multiple primary keys') ||
+              msg.includes('already a partition') ||
+              (msg.includes('column') && msg.includes('does not exist') && sql.toUpperCase().includes('DROP'));
+
+            if (isIgnorable) {
+              console.warn(`ℹ️ [Migration Notice in ${file}]:`, msg);
+            } else {
+              console.error(`❌ [Migration Error in ${file}]:`, msg);
+              fileFailed = true;
+              break;
             }
           }
         }
 
-        try {
-          await rawQuery('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-        } catch (e) {
-          // ignore
+        if (!fileFailed) {
+          try {
+            await rawQuery('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+            console.log(`✅ [Migration] مایگریشن ${file} با موفقیت اعمال و ثبت شد.`);
+          } catch (e) {
+            // ignore
+          }
+        } else {
+          console.error(`🛑 [Migration Aborted] فایل ${file} به دلیل خطا اعمال نشد و در schema_migrations ثبت نگردید.`);
         }
       }
     } else {
@@ -239,14 +264,7 @@ export async function initializeSchema(): Promise<void> {
       const schemaPath = path.join(process.cwd(), 'schema.sql');
       if (fs.existsSync(schemaPath)) {
         const rawSql = fs.readFileSync(schemaPath, 'utf8');
-        const cleanedSql = rawSql
-          .replace(/\/\*[\s\S]*?\*\//g, '')
-          .replace(/--.*$/gm, '');
-
-        const statements = cleanedSql
-          .split(';')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
+        const statements = splitSqlStatements(rawSql);
 
         for (const sql of statements) {
           if (sql.toUpperCase().includes('CREATE EXTENSION')) continue;

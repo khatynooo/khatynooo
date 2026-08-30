@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -34,30 +35,52 @@ const DEFAULT_INSECURE_DB_PASS = 'secure_khatinoo_db_password_2026';
 
 function resolveJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  
-  if (process.env.NODE_ENV === 'production') {
-    if (!secret || secret.trim().length < 16 || secret.trim() === DEFAULT_INSECURE_JWT) {
-      console.error('❌ [FATAL PRODUCTION SECURITY ERROR] متغیر JWT_SECRET در محیط production تنظیم نشده یا از کلید پیش‌فرض و ناامن نمونه استفاده شده است!');
-      console.error('💡 راهنما: لطفاً قبل از اجرای سرور در Production، یک کلید تصادفی امن با دستور "openssl rand -hex 32" بسازید و در فایل .env قرار دهید.');
-      throw new Error('SECURITY FATAL: JWT_SECRET must be explicitly set with a unique random strong key in production mode.');
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isProduction) {
+    if (!secret || secret.trim().length === 0 || secret.trim() === DEFAULT_INSECURE_JWT || secret.trim().length < 16) {
+      console.error('❌ [FATAL JWT ERROR] متغیر JWT_SECRET در محیط Production تنظیم نشده یا از کلید پیش‌فرض/ضعیف استفاده شده است!');
+      console.error('💡 راهنما: لطفاً در فایل .env یک کلید امن تصادفی قرار دهید (مثلاً با دستور "openssl rand -hex 32").');
+      process.exit(1);
     }
+    return secret.trim();
   }
 
   if (secret && secret.trim().length > 0) {
     if (secret.trim() === DEFAULT_INSECURE_JWT) {
-      console.warn('⚠️ [Security Warning] از کلید JWT پیش‌فرض توسعه استفاده می‌شود. در محیط Production حتماً آن را تغییر دهید.');
+      console.warn('⚠️ [Security Warning] از کلید JWT پیش‌فرض توسعه استفاده می‌شود. در Production حتماً آن را تغییر دهید.');
     }
     return secret.trim();
   }
 
   const ephemeralDevSecret = crypto.randomBytes(32).toString('hex');
-  console.warn('⚠️ [Security Warning] متغیر JWT_SECRET تعریف نشده است. یک کلید تصادفی امن و موقت در حافظه برای نشست جاری ایجاد شد.');
+  console.warn('⚠️ [Security Notice] متغیر JWT_SECRET یافت نشد. یک کلید تصادفی امن و موقت ۳۲ بایتی در حافظه برای نشست جاری سرور ایجاد گردید.');
   return ephemeralDevSecret;
+}
+
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ [Uncaught Exception caught]:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ [Unhandled Rejection at]:', promise, 'reason:', reason);
+});
+
+function resolvePort(): number {
+  if (process.env.PORT) {
+    const p = parseInt(process.env.PORT, 10);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const p = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  return 3000;
 }
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
+const PORT = resolvePort();
 const JWT_SECRET = resolveJwtSecret();
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -69,6 +92,11 @@ app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use('/uploads', express.static(uploadsDir));
+
+// Health check endpoint for container environments & reverse proxies
+app.get(['/health', '/api/health'], (req, res) => {
+  res.status(200).json({ status: 'ok', time: new Date().toISOString(), port: PORT });
+});
 
 // -------------------------------------------------------------
 // AUTH MIDDLEWARE
@@ -1011,13 +1039,34 @@ app.get('/api/production/formulas', authenticateToken, async (req, res) => {
 
 app.post('/api/production/formulas', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
   const data = req.body;
-  if (!data.name || !data.materials || !data.materials.length) {
+  const name = data.name || data.title;
+  if (!name || !data.materials || !data.materials.length) {
     return res.status(400).json({ error: 'نام فرمول و لیست مواد اولیه الزامی است.' });
   }
 
   try {
     const formula = await db.createProductionFormula(data);
     res.json({ formula, message: 'فرمولاسیون کارگاهی جدید با موفقیت ذخیره شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/production/formulas/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  try {
+    const formula = await db.updateProductionFormula(req.params.id, req.body);
+    if (!formula) return res.status(404).json({ error: 'فرمولاسیون مورد نظر یافت نشد.' });
+    res.json({ formula, message: 'فرمولاسیون با موفقیت به‌روزرسانی شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/production/formulas/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  try {
+    const success = await db.deleteProductionFormula(req.params.id);
+    if (!success) return res.status(404).json({ error: 'فرمولاسیون مورد نظر یافت نشد.' });
+    res.json({ message: 'فرمولاسیون با موفقیت حذف گردید.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1698,14 +1747,24 @@ app.get('/api/orders', authenticateToken, requireRole(['admin', 'site_manager', 
 app.get('/api/orders/track', async (req, res) => {
   try {
     const { mobile, orderNumber } = req.query;
-    let list = await db.getOnlineOrders();
-    if (mobile) {
-      list = list.filter((o) => o.customerMobile.includes(mobile as string));
+    if (!mobile || !orderNumber) {
+      return res.status(400).json({ 
+        error: 'وارد کردن همزمان شماره موبایل و شماره سفارش برای رهگیری سفارش الزامی است.' 
+      });
     }
-    if (orderNumber) {
-      list = list.filter((o) => o.orderNumber === orderNumber);
+
+    const cleanMobile = String(mobile).trim();
+    const cleanOrderNumber = String(orderNumber).trim();
+
+    const orders = await db.trackOnlineOrder(cleanMobile, cleanOrderNumber);
+    if (orders.length === 0) {
+      return res.status(404).json({
+        error: 'سفارشی با این مشخصات یافت نشد.',
+        orders: [],
+      });
     }
-    res.json({ orders: list });
+
+    res.json({ orders });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1726,61 +1785,8 @@ app.put('/api/orders/:id/status', authenticateToken, requireRole(['admin', 'site
 // -------------------------------------------------------------
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
-    const [salesInvoices, products, customers] = await Promise.all([
-      db.getSalesInvoices(),
-      db.getProducts(),
-      db.getCustomers(),
-    ]);
-
-    const totalSales = salesInvoices.reduce((sum, inv) => sum + inv.finalAmount, 0);
-    const totalCost = salesInvoices.reduce((sum, inv) => {
-      const itemCost = inv.items.reduce((s: number, it: any) => s + (Number(it.buyPrice) || 0) * it.quantity, 0);
-      return sum + itemCost;
-    }, 0);
-    const estimatedProfit = totalSales - totalCost;
-
-    const lowStockCount = products.filter((p) => p.stock <= p.minStockAlert).length;
-    const totalCustomerDebt = customers.filter((c) => c.balance < 0).reduce((sum, c) => sum + Math.abs(c.balance), 0);
-
-    // Top products
-    const productSalesMap = new Map<string, { name: string; count: number; revenue: number }>();
-    for (const inv of salesInvoices) {
-      for (const item of inv.items) {
-        const existing = productSalesMap.get(item.productId) || { name: item.productName, count: 0, revenue: 0 };
-        existing.count += item.quantity;
-        existing.revenue += item.total;
-        productSalesMap.set(item.productId, existing);
-      }
-    }
-
-    const topProducts = Array.from(productSalesMap.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
-
-    const dailySales = [
-      { day: 'شنبه', sales: Math.round(totalSales * 0.12) || 1850000, profit: Math.round(estimatedProfit * 0.12) || 420000, invoices: 8 },
-      { day: 'یکشنبه', sales: Math.round(totalSales * 0.15) || 2400000, profit: Math.round(estimatedProfit * 0.15) || 580000, invoices: 12 },
-      { day: 'دوشنبه', sales: Math.round(totalSales * 0.18) || 3100000, profit: Math.round(estimatedProfit * 0.18) || 790000, invoices: 15 },
-      { day: 'سه‌شنبه', sales: Math.round(totalSales * 0.16) || 2900000, profit: Math.round(estimatedProfit * 0.16) || 690000, invoices: 14 },
-      { day: 'چهارشنبه', sales: Math.round(totalSales * 0.22) || 4200000, profit: Math.round(estimatedProfit * 0.22) || 1100000, invoices: 19 },
-      { day: 'پنج‌شنبه', sales: Math.round(totalSales * 0.28) || 5600000, profit: Math.round(estimatedProfit * 0.28) || 1450000, invoices: 26 },
-      { day: 'جمعه', sales: Math.round(totalSales * 0.08) || 1200000, profit: Math.round(estimatedProfit * 0.08) || 310000, invoices: 5 },
-    ];
-
-    res.json({
-      stats: {
-        salesToday: totalSales || 2850000,
-        invoiceCountToday: salesInvoices.length,
-        estimatedProfitToday: estimatedProfit || 680000,
-        lowStockCount,
-        totalCustomers: customers.length,
-        totalProducts: products.length,
-        totalCustomerDebt,
-        topProducts,
-        latestInvoices: salesInvoices.slice(0, 8),
-        dailySales,
-      },
-    });
+    const stats = await db.getDashboardStats();
+    res.json({ stats });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2082,8 +2088,12 @@ app.get('/api/cms/audit-logs', authenticateToken, requireRole(['admin', 'site_ma
 // VITE MIDDLEWARE & SERVER STARTUP
 // -------------------------------------------------------------
 async function start() {
-  // 1. Vite Middleware Setup
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction = process.env.NODE_ENV === 'production' || 
+    (typeof __filename !== 'undefined' && __filename.endsWith('.cjs')) ||
+    (!fs.existsSync(path.join(process.cwd(), 'src/main.tsx')));
+
+  // 1. Vite Middleware Setup / Static Serving
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -2093,16 +2103,36 @@ async function start() {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(200).send('<!DOCTYPE html><html><head><title>Khatinoo</title></head><body><div id="root">Loading Khatinoo Store...</div></body></html>');
+      }
     });
   }
 
-  // 2. Start HTTP Server immediately on port 3000
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 سرور فروشگاه و حسابداری خطی‌نو روی پورت ${PORT} با موفقیت راه‌اندازی شد.`);
+  // 2. Global Express Error Handler
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    console.error('⚠️ [Express Unhandled Route Error]:', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || 500).json({
+      error: err.message || 'خطای داخلی سرور',
+    });
   });
 
-  // 3. Initialize PostgreSQL Database Schema and Seed Data in background
+  // 3. Start HTTP Server on 0.0.0.0 and dynamic PORT
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 سرور فروشگاه و حسابداری خطی‌نو روی پورت ${PORT} (0.0.0.0) در وضعیت ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} فعال است.`);
+  });
+
+  server.on('error', (err: any) => {
+    console.error('❌ [Server Listen Error]:', err);
+  });
+
+  // 4. Initialize PostgreSQL Database Schema and Seed Data in background
   try {
     const isConnected = await initializeDatabase();
     if (!isConnected) {

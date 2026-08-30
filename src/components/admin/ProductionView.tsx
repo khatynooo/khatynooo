@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Factory, Plus, Play, CheckCircle2, AlertTriangle, Layers, ArrowRight, Package, Sparkles, X, Warehouse as WarehouseIcon } from 'lucide-react';
+import { Factory, Plus, Play, CheckCircle2, AlertTriangle, Layers, ArrowRight, Package, Sparkles, X, Warehouse as WarehouseIcon, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits } from '../../lib/utils';
 import { ProductionFormula, ProductionOrder, Product, Warehouse } from '../../types';
@@ -130,6 +130,17 @@ export const ProductionView: React.FC = () => {
     }
   };
 
+  const handleDeleteFormula = async (formulaId: string, formulaTitle?: string) => {
+    if (!window.confirm(`آیا از حذف فرمول «${formulaTitle || 'تولید'}» اطمینان دارید؟`)) return;
+    try {
+      await api.deleteProductionFormula(formulaId);
+      showToast('فرمولاسیون با موفقیت حذف گردید.', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف فرمول', 'error');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Banner */}
@@ -165,19 +176,28 @@ export const ProductionView: React.FC = () => {
             <div key={f.id} className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-bold text-slate-900 text-sm">{f.title}</h4>
+                  <h4 className="font-bold text-slate-900 text-sm">{f.title || (f as any).name}</h4>
                   <div className="text-xs text-indigo-600 font-medium mt-0.5">
-                    خروجی: {f.outputProductName} (۱ {f.outputUnit || 'جلد'})
+                    خروجی: {f.outputProductName || 'کالای خروجی'} (۱ {f.outputUnit || 'جلد'})
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleOpenRun(f)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>اجرای خط تولید</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDeleteFormula(f.id, f.title || (f as any).name)}
+                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                    title="حذف این فرمول"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleOpenRun(f)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>اجرای خط تولید</span>
+                  </button>
+                </div>
               </div>
 
               {/* Materials BOM */}

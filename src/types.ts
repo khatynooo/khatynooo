@@ -368,6 +368,22 @@ export interface CustomBadge {
   isEnabled: boolean;
 }
 
+export type HeaderElementType = 'logo' | 'search' | 'theme_toggle' | 'auth' | 'calculator' | 'cart' | 'custom_button';
+
+export interface HeaderElement {
+  id: string;
+  type: HeaderElementType;
+  title: string;
+  enabled: boolean;
+  order: number;
+  icon?: string;
+  customText?: string;
+  customLink?: string;
+  buttonStyle?: 'gold' | 'subtle' | 'outline' | 'ghost' | 'primary';
+  showOnMobile?: boolean;
+  alignment?: 'start' | 'center' | 'end';
+}
+
 export interface WebsiteSettings {
   siteTitle: string;
   siteSubtitle: string;
@@ -393,12 +409,18 @@ export interface WebsiteSettings {
   defaultPriceTier: PriceTier;
   minOrderAmount: number;
   logoUrl?: string;
+  logoHeight?: number; // Height in pixels (e.g., 32 to 160px)
+  logoWidth?: number; // Width in pixels (optional or proportional)
+  logoFit?: 'contain' | 'cover' | 'fill' | 'none';
+  logoBorderRadius?: 'rounded-none' | 'rounded-lg' | 'rounded-xl' | 'rounded-2xl' | 'rounded-3xl' | 'rounded-full';
+  showLogoText?: boolean;
   faviconUrl?: string;
   seoMetaTitle?: string;
   seoMetaDescription?: string;
   footerText?: string;
   twoFactorRequired?: boolean;
   headerMenuItems?: HeaderMenuItem[];
+  headerElements?: HeaderElement[];
   // Visual Theme, Button & Display Customization
   buttonColorTheme?: 'gold' | 'amber' | 'emerald' | 'indigo' | 'rose' | 'slate' | 'custom';
   primaryColorHex?: string;

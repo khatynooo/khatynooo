@@ -2,8 +2,9 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { testDbConnection, query, pool } from './dbClient';
+import { splitSqlStatements } from './sqlSplitter';
 
-export async function runMigrations(): Promise<{ executed: string[]; skipped: string[] }> {
+export async function runMigrations(): Promise<{ executed: string[]; skipped: string[]; failed: string[] }> {
   console.log('🔄 [Migrations] بررسی وضعیت و اجرای مایگریشن‌های پایگاه داده...');
 
   // ۱. ساخت جدول نگهداری تاریخچه مایگریشن‌ها در صورت عدم وجود
@@ -22,6 +23,7 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
   const migrationsDir = path.join(process.cwd(), 'migrations');
   const executed: string[] = [];
   const skipped: string[] = [];
+  const failed: string[] = [];
 
   if (fs.existsSync(migrationsDir)) {
     const files = fs.readdirSync(migrationsDir)
@@ -38,31 +40,46 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
       const filePath = path.join(migrationsDir, file);
       const sqlContent = fs.readFileSync(filePath, 'utf8');
 
-      // پاک‌سازی کامنت‌ها و تفکیک کوئری‌ها
-      const cleanedSql = sqlContent
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/--.*$/gm, '');
+      // تفکیک دقیق دستورات با حفظ بلوک‌های PL/pgSQL و نقل‌قول‌های دلاری ($$)
+      const statements = splitSqlStatements(sqlContent);
 
-      const statements = cleanedSql
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      let fileFailed = false;
+      let failureReason = '';
 
       for (const statement of statements) {
         if (statement.toUpperCase().includes('CREATE EXTENSION')) continue;
         try {
           await query(statement);
         } catch (stmtErr: any) {
-          if (!stmtErr.message?.includes('already exists')) {
-            console.warn(`⚠️ [Migration Warning in ${file}]:`, stmtErr.message);
+          const msg = stmtErr.message || '';
+          const isIgnorable =
+            msg.includes('already exists') ||
+            msg.includes('duplicate key') ||
+            msg.includes('multiple primary keys') ||
+            msg.includes('already a partition') ||
+            (msg.includes('column') && msg.includes('does not exist') && statement.toUpperCase().includes('DROP'));
+
+          if (isIgnorable) {
+            console.warn(`ℹ️ [Migration Notice in ${file}]:`, msg);
+          } else {
+            console.error(`❌ [MIGRATION ERROR in ${file}]:`, msg);
+            console.error('📄 [Failed SQL Statement]:\n', statement);
+            fileFailed = true;
+            failureReason = msg;
+            break; // توقف اجرای دستورات بعدی در همین فایل
           }
         }
       }
 
-      // ثبت مایگریشن در جدول رهگیری
-      await query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-      executed.push(file);
-      console.log(`✅ [Migration] مایگریشن ${file} با موفقیت اعمال و ثبت شد.`);
+      if (!fileFailed) {
+        // فقط در صورت اجرای بدون خطای تمامی دستورات، مایگریشن ثبت می‌شود
+        await query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+        executed.push(file);
+        console.log(`✅ [Migration] مایگریشن ${file} با موفقیت کامل اعمال و ثبت شد.`);
+      } else {
+        failed.push(file);
+        console.error(`🛑 [Migration Aborted] فایل ${file} به دلیل خطا اعمال نشد و در schema_migrations ثبت نگردید: ${failureReason}`);
+      }
     }
   }
 
@@ -72,7 +89,11 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
     console.log('✨ [Migrations] پایگاه داده کاملاً بروز است (هیچ مایگریشن جدیدی یافت نشد).');
   }
 
-  return { executed, skipped };
+  if (failed.length > 0) {
+    console.error(`⚠️ [Migrations Alert] تعداد ${failed.length} مایگریشن با خطا مواجه شدند: ${failed.join(', ')}`);
+  }
+
+  return { executed, skipped, failed };
 }
 
 // اگر مستقیماً به عنوان اسکریپت CLI اجرا شد

@@ -16,20 +16,27 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
   const [isLoading, setIsLoading] = useState(false);
   const [orders, setOrders] = useState<OnlineOrder[]>([]);
   const [searched, setSearched] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleTrack = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mobile.trim() && !orderNumber.trim()) return;
+    if (!mobile.trim() || !orderNumber.trim()) {
+      setErrorMessage('لطفاً هم شماره همراه و هم شماره سفارش را جهت استعلام دقیق وارد نمایید.');
+      return;
+    }
 
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const data = await api.trackOrders({ mobile: mobile.trim(), orderNumber: orderNumber.trim() });
       setOrders(data.orders || []);
       setSearched(true);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setOrders([]);
+      setSearched(true);
+      setErrorMessage(err.message || 'سفارشی با این مشخصات در سیستم خطی‌نو یافت نشد.');
     } finally {
       setIsLoading(false);
     }
@@ -57,33 +64,52 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
             </div>
             <div>
               <h3 className="text-lg font-black text-[#F3F4F6]">سامانه رهگیری آنلاین سفارشات خطی‌نو</h3>
-              <p className="text-xs text-[#8E9299]">شماره موبایل یا شماره سفارش خود را جهت استعلام وضعیت وارد کنید.</p>
+              <p className="text-xs text-[#8E9299]">جهت حفظ امنیت اطلاعات، شماره همراه ثبت‌شده و شماره سفارش خود را وارد کنید.</p>
             </div>
           </div>
 
           <form onSubmit={handleTrack} className="space-y-3 mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-[#E0E0E0] mb-1">شماره همراه ثبت‌شده:</label>
+                <label className="block text-xs font-bold text-[#E0E0E0] mb-1">
+                  شماره همراه ثبت‌شده: <span className="text-amber-400">*</span>
+                </label>
                 <input
                   type="tel"
+                  required
                   value={mobile}
-                  onChange={(e) => setMobile(e.target.value)}
+                  onChange={(e) => {
+                    setMobile(e.target.value);
+                    setErrorMessage(null);
+                  }}
                   placeholder="09123456789"
                   className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2.5 text-xs text-[#E0E0E0] placeholder-[#8E9299] focus:border-[#C9A227] outline-none font-mono"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-[#E0E0E0] mb-1">یا شماره سفارش:</label>
+                <label className="block text-xs font-bold text-[#E0E0E0] mb-1">
+                  شماره سفارش: <span className="text-amber-400">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
+                  onChange={(e) => {
+                    setOrderNumber(e.target.value);
+                    setErrorMessage(null);
+                  }}
                   placeholder="ORD-1002"
                   className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2.5 text-xs text-[#E0E0E0] placeholder-[#8E9299] focus:border-[#C9A227] outline-none font-mono uppercase"
                 />
               </div>
             </div>
+
+            {errorMessage && (
+              <div className="p-3 bg-rose-950/40 border border-rose-800/40 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
             <button
               type="submit"

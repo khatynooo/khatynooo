@@ -74,9 +74,11 @@ if ! npm run build; then
   exit 1
 fi
 
-# ۴. ریستارت بدون قطعی با systemd
-echo "==> [۵/۶] اعمال نسخه جدید در سرویس systemd..."
-if command -v systemctl &> /dev/null; then
+# ۴. ریستارت بدون قطعی با PM2 یا systemd
+echo "==> [۵/۶] اعمال نسخه جدید در پروسه سرور..."
+if command -v pm2 &> /dev/null; then
+  pm2 reload ecosystem.config.js || pm2 restart ecosystem.config.js || true
+elif command -v systemctl &> /dev/null; then
   sudo systemctl restart khatinoo || sudo systemctl restart khatinoo.service || true
 fi
 

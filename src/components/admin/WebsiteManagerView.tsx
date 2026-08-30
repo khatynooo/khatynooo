@@ -35,10 +35,16 @@ import {
   Check,
   Tag,
   Link as LinkIcon,
+  SunMoon,
+  KeyRound,
+  User,
+  RotateCcw,
+  Sliders,
+  Settings2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
-import { OnlineOrder, Banner, PaymentGatewayConfig, ShippingMethod, WebsiteSettings, HeaderMenuItem, CustomSymbol, CustomBadge } from '../../types';
+import { OnlineOrder, Banner, PaymentGatewayConfig, ShippingMethod, WebsiteSettings, HeaderMenuItem, CustomSymbol, CustomBadge, HeaderElement, HeaderElementType } from '../../types';
 import { useToast } from '../common/Toast';
 
 export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 'gateways' | 'shipping' | 'settings' }> = ({
@@ -308,6 +314,138 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
       ...webSettings,
       headerMenuItems: items,
     });
+  };
+
+  // Header Elements Configuration
+  const [editingHeaderElementId, setEditingHeaderElementId] = useState<string | null>(null);
+  const [newHeaderElement, setNewHeaderElement] = useState<{
+    type: HeaderElementType;
+    title: string;
+    customText: string;
+    icon: string;
+    alignment: 'start' | 'center' | 'end';
+    buttonStyle: 'gold' | 'subtle' | 'outline' | 'ghost' | 'primary';
+    showOnMobile: boolean;
+    customLink: string;
+  }>({
+    type: 'custom_button',
+    title: '',
+    customText: '',
+    icon: 'Sparkles',
+    alignment: 'end',
+    buttonStyle: 'gold',
+    showOnMobile: true,
+    customLink: '#',
+  });
+
+  const defaultHeaderElements: HeaderElement[] = [
+    { id: 'logo', type: 'logo', title: 'لوگو و برند خطی‌نو', enabled: true, order: 1, alignment: 'start', showOnMobile: true },
+    { id: 'search', type: 'search', title: 'کادر جستجو', customText: 'جستجوی خودکار در میان صدها قلم کالا...', enabled: true, order: 2, alignment: 'center', showOnMobile: true },
+    { id: 'theme_toggle', type: 'theme_toggle', title: 'حالت شب و روز (تاریک / روشن)', icon: 'SunMoon', enabled: true, order: 3, alignment: 'end', showOnMobile: true, buttonStyle: 'ghost' },
+    { id: 'auth', type: 'auth', title: 'ورود / ثبت‌نام مشتری', customText: 'ورود / ثبت‌نام', icon: 'KeyRound', enabled: true, order: 4, alignment: 'end', showOnMobile: true, buttonStyle: 'subtle' },
+    { id: 'calculator', type: 'calculator', title: 'محاسبه هزینه کپی و پرینت', customText: 'محاسبه هزینه کپی و پرینت', icon: 'Printer', enabled: true, order: 5, alignment: 'end', showOnMobile: true, buttonStyle: 'subtle' },
+    { id: 'cart', type: 'cart', title: 'سبد خرید', customText: 'سبد خرید', icon: 'ShoppingBag', enabled: true, order: 6, alignment: 'end', showOnMobile: true, buttonStyle: 'gold' },
+  ];
+
+  const getActiveHeaderElements = (): HeaderElement[] => {
+    if (webSettings?.headerElements && webSettings.headerElements.length > 0) {
+      return [...webSettings.headerElements].sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    return defaultHeaderElements;
+  };
+
+  const handleMoveHeaderElement = (index: number, direction: 'up' | 'down') => {
+    if (!webSettings) return;
+    const list = getActiveHeaderElements();
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const [moved] = list.splice(index, 1);
+    list.splice(targetIndex, 0, moved);
+    const updated = list.map((item, idx) => ({ ...item, order: idx + 1 }));
+    setWebSettings({
+      ...webSettings,
+      headerElements: updated,
+    });
+  };
+
+  const handleToggleHeaderElement = (id: string) => {
+    if (!webSettings) return;
+    const list = getActiveHeaderElements();
+    const updated = list.map((item) =>
+      item.id === id ? { ...item, enabled: !item.enabled } : item
+    );
+    setWebSettings({
+      ...webSettings,
+      headerElements: updated,
+    });
+  };
+
+  const handleUpdateHeaderElement = (id: string, updates: Partial<HeaderElement>) => {
+    if (!webSettings) return;
+    const list = getActiveHeaderElements();
+    const updated = list.map((item) =>
+      item.id === id ? { ...item, ...updates } : item
+    );
+    setWebSettings({
+      ...webSettings,
+      headerElements: updated,
+    });
+  };
+
+  const handleRemoveHeaderElement = (id: string) => {
+    if (!webSettings) return;
+    const list = getActiveHeaderElements();
+    const updated = list.filter((item) => item.id !== id).map((item, idx) => ({ ...item, order: idx + 1 }));
+    setWebSettings({
+      ...webSettings,
+      headerElements: updated,
+    });
+    showToast('المان از هدر حذف شد.', 'success');
+  };
+
+  const handleResetHeaderElements = () => {
+    if (!webSettings) return;
+    setWebSettings({
+      ...webSettings,
+      headerElements: defaultHeaderElements,
+    });
+    showToast('چیدمان و المان‌های هدر به حالت اولیه بازگردانی شد.', 'success');
+  };
+
+  const handleAddHeaderElement = () => {
+    if (!newHeaderElement.title?.trim() || !webSettings) {
+      showToast('لطفاً عنوان المان را وارد نمایید.', 'error');
+      return;
+    }
+    const list = getActiveHeaderElements();
+    const newElem: HeaderElement = {
+      id: 'elem-' + Date.now(),
+      type: newHeaderElement.type || 'custom_button',
+      title: newHeaderElement.title || 'دکمه جدید',
+      customText: newHeaderElement.customText || newHeaderElement.title,
+      icon: newHeaderElement.icon || 'Sparkles',
+      alignment: newHeaderElement.alignment || 'end',
+      buttonStyle: newHeaderElement.buttonStyle || 'gold',
+      enabled: true,
+      order: list.length + 1,
+      showOnMobile: newHeaderElement.showOnMobile !== false,
+      customLink: newHeaderElement.customLink || '#',
+    };
+    setWebSettings({
+      ...webSettings,
+      headerElements: [...list, newElem],
+    });
+    setNewHeaderElement({
+      type: 'custom_button',
+      title: '',
+      customText: '',
+      icon: 'Sparkles',
+      alignment: 'end',
+      buttonStyle: 'gold',
+      showOnMobile: true,
+      customLink: '#',
+    });
+    showToast('المان جدید با موفقیت به هدر اضافه شد.', 'success');
   };
 
   // Banner Modal
@@ -925,6 +1063,365 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
           {/* SUB-TAB 1: HEADER & MENUS */}
           {settingsSubTab === 'header' && (
             <div className="space-y-6">
+              {/* Header Elements Interactive Manager */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                      <Sliders className="w-4 h-4" />
+                      <span>مدیریت کامل و چیدمان المان‌های هدر (لوگو، سبد خرید، محاسبه، ورود، جستجو، تم و دکمه‌های سفارشی)</span>
+                    </div>
+                    <p className="text-[11px] text-[#8E9299] mt-0.5">
+                      امکان جابجایی، فعال/غیرفعال کردن، ویرایش عنوان، آیکون، استایل دکمه، موقعیت (راست/وسط/چپ) و افزودن دکمه‌های دلخواه
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetHeaderElements}
+                    className="px-3 py-1.5 rounded-xl bg-[#111113] hover:bg-[#1E1E22] text-[#8E9299] hover:text-[#E0E0E0] border border-[#2D2D33] text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>بازگردانی به چیدمان پیش‌فرض</span>
+                  </button>
+                </div>
+
+                {/* Elements List */}
+                <div className="space-y-3 pt-2">
+                  {getActiveHeaderElements().map((elem, index) => {
+                    const isEditing = editingHeaderElementId === elem.id;
+                    return (
+                      <div
+                        key={elem.id}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          elem.enabled
+                            ? 'bg-[#111113] border-[#2D2D33] shadow-xs'
+                            : 'bg-[#111113]/40 border-dashed border-[#222225] opacity-60'
+                        }`}
+                      >
+                        {/* Summary Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            {/* Reorder Buttons */}
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                type="button"
+                                disabled={index === 0}
+                                onClick={() => handleMoveHeaderElement(index, 'up')}
+                                className="p-1 rounded-md text-[#8E9299] hover:text-[#C9A227] hover:bg-[#1E1E22] disabled:opacity-20 cursor-pointer transition-colors"
+                                title="انتقال به بالا"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === getActiveHeaderElements().length - 1}
+                                onClick={() => handleMoveHeaderElement(index, 'down')}
+                                className="p-1 rounded-md text-[#8E9299] hover:text-[#C9A227] hover:bg-[#1E1E22] disabled:opacity-20 cursor-pointer transition-colors"
+                                title="انتقال به پایین"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            {/* Badge & Info */}
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-[#1C1C20] border border-[#2D2D33] flex items-center justify-center text-[#C9A227] shrink-0">
+                                {elem.type === 'logo' && <BookOpen className="w-4 h-4" />}
+                                {elem.type === 'search' && <Search className="w-4 h-4" />}
+                                {elem.type === 'theme_toggle' && <SunMoon className="w-4 h-4" />}
+                                {elem.type === 'auth' && <KeyRound className="w-4 h-4" />}
+                                {elem.type === 'calculator' && <Calculator className="w-4 h-4" />}
+                                {elem.type === 'cart' && <ShoppingBag className="w-4 h-4" />}
+                                {elem.type === 'custom_button' && <Sparkles className="w-4 h-4" />}
+                              </div>
+
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-[#F3F4F6] text-xs">
+                                    {elem.title || elem.customText || elem.type}
+                                  </span>
+                                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#1C1C20] text-[#C9A227] font-mono border border-[#2D2D33]">
+                                    {elem.type === 'logo' ? 'لوگو و برند' :
+                                     elem.type === 'search' ? 'باکس جستجو' :
+                                     elem.type === 'theme_toggle' ? 'تغییر تم' :
+                                     elem.type === 'auth' ? 'ورود و حساب' :
+                                     elem.type === 'calculator' ? 'محاسبه چاپ' :
+                                     elem.type === 'cart' ? 'سبد خرید' : 'دکمه سفارشی'}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-[#8E9299] mt-0.5 flex items-center gap-3">
+                                  <span>
+                                    موقعیت: {elem.alignment === 'start' ? 'راست (ابتدای هدر)' : elem.alignment === 'center' ? 'وسط' : 'چپ (انتهای هدر)'}
+                                  </span>
+                                  <span>•</span>
+                                  <span>استایل: {elem.buttonStyle || 'پیش‌فرض'}</span>
+                                  {elem.customText && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="truncate max-w-[140px]">متن دکمه: {elem.customText}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingHeaderElementId(isEditing ? null : elem.id)}
+                              className={`px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                isEditing
+                                  ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                                  : 'bg-[#1C1C20] hover:bg-[#25252B] text-[#E0E0E0] border border-[#2D2D33]'
+                              }`}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>{isEditing ? 'بستن ویرایش' : 'ویرایش مشخصات'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleHeaderElement(elem.id)}
+                              className={`p-1 text-[#8E9299] hover:text-[#C9A227] cursor-pointer`}
+                              title="فعال/غیرفعال"
+                            >
+                              {elem.enabled ? (
+                                <ToggleRight className="w-7 h-7 text-emerald-400" />
+                              ) : (
+                                <ToggleLeft className="w-7 h-7 text-[#666]" />
+                              )}
+                            </button>
+
+                            {elem.type === 'custom_button' && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveHeaderElement(elem.id)}
+                                className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer"
+                                title="حذف دکمه"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline Edit Panel */}
+                        {isEditing && (
+                          <div className="mt-3.5 pt-3.5 border-t border-[#222225] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-[#161619]/60 p-3 rounded-xl">
+                            <div>
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">عنوان المان:</label>
+                              <input
+                                type="text"
+                                value={elem.title || ''}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { title: e.target.value })}
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">متن نمایشی روی دکمه:</label>
+                              <input
+                                type="text"
+                                value={elem.customText || ''}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { customText: e.target.value })}
+                                placeholder="اختیاری (مثلاً: سبد خرید یا ورود)"
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">موقعیت چیدمان در هدر:</label>
+                              <select
+                                value={elem.alignment || 'end'}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { alignment: e.target.value as any })}
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none"
+                              >
+                                <option value="start">راست هدر (کنار لوگو)</option>
+                                <option value="center">وسط هدر</option>
+                                <option value="end">چپ هدر (ناحیه ابزارها و دکمه‌ها)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">استایل رنگی دکمه:</label>
+                              <select
+                                value={elem.buttonStyle || 'gold'}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { buttonStyle: e.target.value as any })}
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none"
+                              >
+                                <option value="gold">طلایی خطی‌نو (Gold / Glow)</option>
+                                <option value="subtle">طوسی ملایم با حاشیه (Subtle)</option>
+                                <option value="outline">خط دور بدون پس‌زمینه (Outline)</option>
+                                <option value="ghost">ساده و کمینه (Ghost)</option>
+                                <option value="primary">آبی روشن (Primary)</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">آیکون:</label>
+                              <select
+                                value={elem.icon || 'Sparkles'}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { icon: e.target.value })}
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none"
+                              >
+                                <option value="ShoppingBag">ShoppingBag (سبد خرید)</option>
+                                <option value="Search">Search (ذره‌بین جستجو)</option>
+                                <option value="Printer">Printer (چاپ و پرینت)</option>
+                                <option value="SunMoon">SunMoon (تاریک / روشن)</option>
+                                <option value="KeyRound">KeyRound (کلید ورود)</option>
+                                <option value="User">User (کاربر / پروفایل)</option>
+                                <option value="Truck">Truck (کامیون ارسال)</option>
+                                <option value="BookOpen">BookOpen (کتاب / دفتر)</option>
+                                <option value="Sparkles">Sparkles (درخشش و تولید اختصاصی)</option>
+                                <option value="Phone">Phone (تلفن و تماس)</option>
+                                <option value="MessageCircle">MessageCircle (پیام و واتساپ)</option>
+                                <option value="Tag">Tag (برچسب و تخفیف)</option>
+                                <option value="HelpCircle">HelpCircle (راهنما و سوالات)</option>
+                              </select>
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">لینک هدایت (اختیاری یا برای دکمه سفارشی):</label>
+                              <input
+                                type="text"
+                                value={elem.customLink || ''}
+                                onChange={(e) => handleUpdateHeaderElement(elem.id, { customLink: e.target.value })}
+                                placeholder="مثلاً: /calculator یا tel:0912... یا https://..."
+                                className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[#E0E0E0] outline-none font-mono text-left"
+                              />
+                            </div>
+
+                            <div className="flex items-center pt-5">
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={elem.showOnMobile !== false}
+                                  onChange={(e) => handleUpdateHeaderElement(elem.id, { showOnMobile: e.target.checked })}
+                                  className="accent-[#C9A227] w-4 h-4 rounded"
+                                />
+                                <span className="text-[11px] text-[#E0E0E0] font-bold">نمایش در نسخه موبایل</span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add New Header Element Box */}
+                <div className="bg-[#111113] p-4 rounded-2xl border border-[#2D2D33] space-y-3 mt-4">
+                  <div className="flex items-center gap-2 text-[#E0E0E0] font-bold text-xs">
+                    <Plus className="w-4 h-4 text-[#C9A227]" />
+                    <span>افزودن دکمه یا المان جدید به هدر:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">نوع المان:</label>
+                      <select
+                        value={newHeaderElement.type}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, type: e.target.value as any })}
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      >
+                        <option value="custom_button">دکمه اختصاصی سفارشی</option>
+                        <option value="cart">دکمه سبد خرید</option>
+                        <option value="calculator">دکمه محاسبه چاپ</option>
+                        <option value="auth">دکمه ورود / ثبت‌نام</option>
+                        <option value="theme_toggle">تغییر تم (شب / روز)</option>
+                        <option value="search">باکس جستجو</option>
+                        <option value="logo">لوگو و برند</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">عنوان دکمه:</label>
+                      <input
+                        type="text"
+                        value={newHeaderElement.title}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, title: e.target.value })}
+                        placeholder="مثال: تماس فوری، پیگیری سریع، تخفیف‌ها"
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">آیکون:</label>
+                      <select
+                        value={newHeaderElement.icon || 'Sparkles'}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, icon: e.target.value })}
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      >
+                        <option value="Sparkles">Sparkles (تولیدات و ستاره)</option>
+                        <option value="ShoppingBag">ShoppingBag (سبد خرید)</option>
+                        <option value="Search">Search (جستجو)</option>
+                        <option value="Printer">Printer (محاسبه و چاپ)</option>
+                        <option value="SunMoon">SunMoon (تاریک / روشن)</option>
+                        <option value="KeyRound">KeyRound (ورود / کلید)</option>
+                        <option value="User">User (کاربر)</option>
+                        <option value="Phone">Phone (تماس تلفنی)</option>
+                        <option value="MessageCircle">MessageCircle (واتساپ و پیام)</option>
+                        <option value="Truck">Truck (ارسال باربری)</option>
+                        <option value="BookOpen">BookOpen (دفتر و کتاب)</option>
+                        <option value="Tag">Tag (برچسب ویژه)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">موقعیت:</label>
+                      <select
+                        value={newHeaderElement.alignment || 'end'}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, alignment: e.target.value as any })}
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      >
+                        <option value="end">چپ هدر (بخش ابزارها)</option>
+                        <option value="center">وسط هدر</option>
+                        <option value="start">راست هدر (کنار لوگو)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">استایل دکمه:</label>
+                      <select
+                        value={newHeaderElement.buttonStyle || 'gold'}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, buttonStyle: e.target.value as any })}
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      >
+                        <option value="gold">طلایی خطی‌نو (Gold Glow)</option>
+                        <option value="subtle">طوسی ملایم با بوردر (Subtle)</option>
+                        <option value="outline">خط دور بدون پس‌زمینه (Outline)</option>
+                        <option value="ghost">ساده و فلت (Ghost)</option>
+                        <option value="primary">آبی کلاسیک (Primary)</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] text-[#8E9299] block mb-1 font-bold">لینک یا مسیر مقصد:</label>
+                      <input
+                        type="text"
+                        value={newHeaderElement.customLink || ''}
+                        onChange={(e) => setNewHeaderElement({ ...newHeaderElement, customLink: e.target.value })}
+                        placeholder="مثال: /calculator یا tel:09121234567 یا #..."
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs font-mono text-left"
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={handleAddHeaderElement}
+                        className="w-full bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-[#C9A227]/20 text-xs"
+                      >
+                        <Plus className="w-4 h-4 text-black" />
+                        <span>افزودن دکمه به هدر</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Top Notification Bar */}
               <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-3">
                 <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
@@ -955,11 +1452,11 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 </div>
               </div>
 
-              {/* Quick Actions & Header Buttons */}
+              {/* Quick Actions & Header Search Placeholder */}
               <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-4">
                 <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
                   <Search className="w-4 h-4" />
-                  <span>دکمه‌ها و فیلدهای جستجو، پیگیری و محاسبه</span>
+                  <span>متن راهنمای جستجو و پیگیری سریع</span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -974,34 +1471,12 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   </div>
 
                   <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">عنوان دکمه سبد خرید:</label>
-                    <input
-                      type="text"
-                      value={webSettings.cartButtonText || ''}
-                      onChange={(e) => setWebSettings({ ...webSettings, cartButtonText: e.target.value })}
-                      placeholder="سبد خرید"
-                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none"
-                    />
-                  </div>
-
-                  <div>
                     <label className="font-bold text-[#8E9299] block mb-1">عنوان دکمه پیگیری سفارشات:</label>
                     <input
                       type="text"
                       value={webSettings.quickTrackingText || ''}
                       onChange={(e) => setWebSettings({ ...webSettings, quickTrackingText: e.target.value })}
                       placeholder="پیگیری سریع سفارشات"
-                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">عنوان دکمه محاسبه هزینه کپی و پرینت:</label>
-                    <input
-                      type="text"
-                      value={webSettings.calculatorButtonText || ''}
-                      onChange={(e) => setWebSettings({ ...webSettings, calculatorButtonText: e.target.value })}
-                      placeholder="محاسبه هزینه کپی و پرینت"
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none"
                     />
                   </div>
@@ -1146,12 +1621,29 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-2">
-                  {/* Store Logo */}
-                  <div className="bg-[#111113] p-4 rounded-2xl border border-[#2D2D33] flex flex-col items-center text-center space-y-3">
-                    <span className="font-bold text-[#F3F4F6] text-xs">لوگوی اصلی فروشگاه</span>
-                    <div className="w-24 h-24 rounded-2xl bg-[#161619] border border-[#2D2D33] flex items-center justify-center overflow-hidden relative shadow-inner">
+                  {/* Store Logo & Size Controls */}
+                  <div className="bg-[#111113] p-4 rounded-2xl border border-[#2D2D33] flex flex-col space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#F3F4F6] text-xs">لوگوی اصلی فروشگاه</span>
+                      <span className="text-[10px] text-[#C9A227] font-mono font-bold">
+                        {webSettings.logoHeight || 48}px
+                      </span>
+                    </div>
+
+                    <div className="w-full h-32 rounded-2xl bg-[#161619] border border-[#2D2D33] flex items-center justify-center overflow-hidden relative shadow-inner p-2">
                       {webSettings.logoUrl ? (
-                        <img src={webSettings.logoUrl} alt="لوگوی فروشگاه" className="w-full h-full object-cover" />
+                        <img
+                          src={webSettings.logoUrl}
+                          alt="لوگوی فروشگاه"
+                          style={{
+                            height: `${Math.min(Math.max(webSettings.logoHeight || 48, 24), 110)}px`,
+                            width: webSettings.logoWidth ? `${Math.min(webSettings.logoWidth, 200)}px` : 'auto',
+                            maxHeight: '100%',
+                            maxWidth: '100%',
+                            objectFit: (webSettings.logoFit as any) || 'contain',
+                          }}
+                          className={`${webSettings.logoBorderRadius || 'rounded-2xl'} shadow-xs transition-all duration-200`}
+                        />
                       ) : (
                         <div className="text-center p-2 text-[#8E9299]">
                           <BookOpen className="w-8 h-8 mx-auto text-[#C9A227] mb-1" />
@@ -1159,6 +1651,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         </div>
                       )}
                     </div>
+
                     <label className="w-full bg-[#1C1C20] hover:bg-[#25252B] text-[#C9A227] border border-[#C9A227]/30 font-bold py-2 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-[11px]">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{isUploadingLogo ? 'در حال آپلود...' : 'انتخاب و آپلود لوگو'}</span>
@@ -1170,13 +1663,98 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         onChange={(e) => handleFileUpload(e, 'logoUrl', setIsUploadingLogo)}
                       />
                     </label>
+
                     <input
                       type="text"
                       value={webSettings.logoUrl || ''}
                       onChange={(e) => setWebSettings({ ...webSettings, logoUrl: e.target.value })}
                       placeholder="یا وارد کردن لینک مستقیم URL"
-                      className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2 py-1 text-[10px] text-center font-mono outline-none"
+                      className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[10px] text-center font-mono outline-none text-[#E0E0E0]"
                     />
+
+                    {/* Logo Size Presets & Slider */}
+                    <div className="pt-2 border-t border-[#222225] space-y-3">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-[#8E9299] font-bold">اندازه و ارتفاع لوگو:</span>
+                          <span className="text-[#C9A227] font-mono font-bold">{webSettings.logoHeight || 48} پیکسل</span>
+                        </div>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[
+                            { label: 'کوچک', size: 36 },
+                            { label: 'متوسط', size: 48 },
+                            { label: 'بزرگ', size: 64 },
+                            { label: 'خیلی‌بزرگ', size: 84 },
+                            { label: 'ویژه', size: 110 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.size}
+                              type="button"
+                              onClick={() => setWebSettings({ ...webSettings, logoHeight: preset.size })}
+                              className={`py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                (webSettings.logoHeight || 48) === preset.size
+                                  ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                                  : 'bg-[#161619] text-[#8E9299] hover:text-[#E0E0E0] border border-[#2D2D33]'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input
+                          type="range"
+                          min="24"
+                          max="160"
+                          step="2"
+                          value={webSettings.logoHeight || 48}
+                          onChange={(e) => setWebSettings({ ...webSettings, logoHeight: Number(e.target.value) })}
+                          className="w-full accent-[#C9A227] cursor-pointer h-1.5 bg-[#222225] rounded-lg"
+                        />
+                      </div>
+
+                      {/* Display Mode & Border Radius */}
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                          <label className="text-[#8E9299] block mb-1 font-bold">نحوه پر کردن کادر:</label>
+                          <select
+                            value={webSettings.logoFit || 'contain'}
+                            onChange={(e) => setWebSettings({ ...webSettings, logoFit: e.target.value as any })}
+                            className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] text-[#E0E0E0] rounded-lg p-1.5 outline-none font-sans"
+                          >
+                            <option value="contain">طبیعی و متناسب (Contain)</option>
+                            <option value="cover">برش و پوشش کامل (Cover)</option>
+                            <option value="fill">کشیدگی (Fill)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[#8E9299] block mb-1 font-bold">گردی گوشه‌ها:</label>
+                          <select
+                            value={webSettings.logoBorderRadius || 'rounded-2xl'}
+                            onChange={(e) => setWebSettings({ ...webSettings, logoBorderRadius: e.target.value as any })}
+                            className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] text-[#E0E0E0] rounded-lg p-1.5 outline-none font-sans"
+                          >
+                            <option value="rounded-none">بدون گردی (مستطیل)</option>
+                            <option value="rounded-lg">گردی کم (8px)</option>
+                            <option value="rounded-xl">گردی متوسط (12px)</option>
+                            <option value="rounded-2xl">گردی مدرن (16px)</option>
+                            <option value="rounded-full">دایره کامل (Full)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Show / Hide Site Name Text */}
+                      <label className="flex items-center gap-2 cursor-pointer pt-1">
+                        <input
+                          type="checkbox"
+                          checked={webSettings.showLogoText !== false}
+                          onChange={(e) => setWebSettings({ ...webSettings, showLogoText: e.target.checked })}
+                          className="accent-[#C9A227] w-3.5 h-3.5 rounded"
+                        />
+                        <span className="text-[11px] text-[#8E9299] select-none font-medium">
+                          نمایش عنوان متنی خطی‌نو در کنار لوگو
+                        </span>
+                      </label>
+                    </div>
                   </div>
 
                   {/* Enamad Symbol */}

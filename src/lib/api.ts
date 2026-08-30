@@ -262,6 +262,19 @@ export const api = {
       body: JSON.stringify(formula),
     }).then(handleResponse),
 
+  updateProductionFormula: (id: string, formula: any) =>
+    fetch(`${API_BASE}/production/formulas/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(formula),
+    }).then(handleResponse),
+
+  deleteProductionFormula: (id: string) =>
+    fetch(`${API_BASE}/production/formulas/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
   getProductionRuns: () =>
     fetch(`${API_BASE}/production/runs`, {
       headers: getAuthHeader(),
@@ -273,6 +286,25 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
     }).then(handleResponse),
+
+  // Alias for executeProductionRun
+  runProduction: (data: { formulaId: string; quantityToProduce: number; warehouseId?: string; outputWarehouseId?: string; notes?: string }) =>
+    fetch(`${API_BASE}/production/runs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({
+        formulaId: data.formulaId,
+        producedQuantity: data.quantityToProduce,
+        warehouseId: data.warehouseId,
+        outputWarehouseId: data.outputWarehouseId,
+        notes: data.notes,
+      }),
+    }).then(handleResponse),
+
+  getProductionOrders: () =>
+    fetch(`${API_BASE}/production/runs`, {
+      headers: getAuthHeader(),
+    }).then((res) => handleResponse(res).then((data) => ({ orders: data.runs || [] }))),
 
   // Torob, Digikala & Stationery Multi-Source Market Intelligence & AI
   searchTorob: (query?: string, context?: any) => {
@@ -429,32 +461,6 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
-    }).then(handleResponse),
-
-  // Aliases & Convenience methods
-  getProductionOrders: () =>
-    fetch(`${API_BASE}/production/runs`, {
-      headers: getAuthHeader(),
-    }).then(handleResponse),
-
-  runProduction: (data: {
-    formulaId: string;
-    producedQuantity?: number;
-    quantityToProduce?: number;
-    warehouseId?: string;
-    outputWarehouseId?: string;
-    notes?: string;
-  }) =>
-    fetch(`${API_BASE}/production/runs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify({
-        formulaId: data.formulaId,
-        producedQuantity: data.producedQuantity ?? data.quantityToProduce ?? 1,
-        warehouseId: data.warehouseId,
-        outputWarehouseId: data.outputWarehouseId,
-        notes: data.notes,
-      }),
     }).then(handleResponse),
 
   getServices: () => fetch(`${API_BASE}/services/presets`).then(handleResponse),

@@ -63,10 +63,14 @@ export const Footer: React.FC<FooterProps> = ({ onOpenCalculator, onOpenTracker,
                 <img
                   src={websiteSettings.logoUrl}
                   alt={siteTitle}
-                  className="w-9 h-9 rounded-xl object-cover ring-1 ring-[#C9A227]/40"
+                  style={{
+                    height: `${Math.min(Math.max((websiteSettings.logoHeight || 48) * 0.75, 28), 54)}px`,
+                    objectFit: websiteSettings.logoFit || 'contain',
+                  }}
+                  className={`${websiteSettings.logoBorderRadius || 'rounded-xl'} object-cover ring-1 ring-[#C9A227]/40 shadow-xs`}
                 />
               ) : (
-                <div className="w-9 h-9 rounded-xl bg-[#C9A227] flex items-center justify-center text-slate-950 font-black">
+                <div className="w-9 h-9 rounded-xl bg-[#C9A227] flex items-center justify-center text-slate-950 font-black shadow-xs">
                   <BookOpen className="w-5 h-5 text-black" />
                 </div>
               )}

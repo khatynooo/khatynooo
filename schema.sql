@@ -52,8 +52,8 @@ CREATE TABLE IF NOT EXISTS products (
     name VARCHAR(255) NOT NULL,
     code VARCHAR(60) UNIQUE NOT NULL,
     barcode VARCHAR(60) UNIQUE,
-    category_id VARCHAR(64) REFERENCES categories(id),
-    sub_category_id VARCHAR(64) REFERENCES sub_categories(id),
+    category_id VARCHAR(64) REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE,
+    sub_category_id VARCHAR(64) REFERENCES sub_categories(id) ON DELETE SET NULL ON UPDATE CASCADE,
     unit VARCHAR(50) NOT NULL DEFAULT 'عدد',
     sub_unit VARCHAR(50),
     conversion_factor NUMERIC(12, 3) DEFAULT 1.0,
@@ -290,7 +290,7 @@ CREATE TABLE IF NOT EXISTS service_records (
 CREATE TABLE IF NOT EXISTS production_formulas (
     id VARCHAR(64) PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
-    output_product_id VARCHAR(64) REFERENCES products(id),
+    output_product_id VARCHAR(64) REFERENCES products(id) ON DELETE SET NULL ON UPDATE CASCADE,
     output_product_name VARCHAR(255) NOT NULL,
     output_category VARCHAR(100),
     output_unit VARCHAR(50) NOT NULL DEFAULT 'جلد',
@@ -305,9 +305,9 @@ CREATE TABLE IF NOT EXISTS production_formulas (
 CREATE TABLE IF NOT EXISTS production_runs (
     id VARCHAR(64) PRIMARY KEY,
     run_number VARCHAR(50) UNIQUE NOT NULL,
-    formula_id VARCHAR(64) REFERENCES production_formulas(id),
+    formula_id VARCHAR(64) REFERENCES production_formulas(id) ON DELETE SET NULL ON UPDATE CASCADE,
     formula_name VARCHAR(150) NOT NULL,
-    output_product_id VARCHAR(64) REFERENCES products(id),
+    output_product_id VARCHAR(64) REFERENCES products(id) ON DELETE SET NULL ON UPDATE CASCADE,
     output_product_name VARCHAR(255) NOT NULL,
     produced_quantity NUMERIC(12, 3) NOT NULL,
     output_unit VARCHAR(50) NOT NULL,
@@ -316,7 +316,7 @@ CREATE TABLE IF NOT EXISTS production_runs (
     total_cost BIGINT NOT NULL,
     unit_cost BIGINT NOT NULL,
     consumed_materials JSONB NOT NULL,
-    user_id VARCHAR(64) REFERENCES users(id),
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
     user_name VARCHAR(120),
     notes TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -349,8 +349,14 @@ CREATE TABLE IF NOT EXISTS website_settings (
     default_price_tier VARCHAR(30) DEFAULT 'shop2',
     min_order_amount BIGINT DEFAULT 100000,
     logo_url TEXT,
+    logo_height INT DEFAULT 48,
+    logo_width INT DEFAULT 48,
+    logo_fit VARCHAR(30) DEFAULT 'contain',
+    logo_border_radius VARCHAR(30) DEFAULT 'rounded-2xl',
+    show_logo_text BOOLEAN DEFAULT TRUE,
     favicon_url TEXT,
-    header_menu_items JSONB
+    header_menu_items JSONB,
+    header_elements JSONB
 );
 
 CREATE TABLE IF NOT EXISTS store_settings (
@@ -439,9 +445,9 @@ CREATE INDEX IF NOT EXISTS idx_inv_loc_product ON inventory_by_location(product_
 CREATE TABLE IF NOT EXISTS inventory_transfers (
     id VARCHAR(64) PRIMARY KEY,
     transfer_number VARCHAR(64) UNIQUE NOT NULL,
-    from_warehouse_id VARCHAR(64) NOT NULL REFERENCES warehouses(id),
-    to_warehouse_id VARCHAR(64) NOT NULL REFERENCES warehouses(id),
-    product_id VARCHAR(64) NOT NULL REFERENCES products(id),
+    from_warehouse_id VARCHAR(64) NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    to_warehouse_id VARCHAR(64) NOT NULL REFERENCES warehouses(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE,
     quantity NUMERIC(14, 3) NOT NULL CHECK (quantity > 0),
     transferred_by VARCHAR(64),
     user_name VARCHAR(128),
@@ -458,8 +464,8 @@ CREATE INDEX IF NOT EXISTS idx_inv_transfer_to ON inventory_transfers(to_warehou
 -- 18. اصلاح دستی موجودی با ثبت علت و کاربر (Inventory Adjustments)
 CREATE TABLE IF NOT EXISTS inventory_adjustments (
     id VARCHAR(64) PRIMARY KEY,
-    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    warehouse_id VARCHAR(64) REFERENCES warehouses(id),
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE,
+    warehouse_id VARCHAR(64) REFERENCES warehouses(id) ON DELETE SET NULL ON UPDATE CASCADE,
     user_id VARCHAR(64),
     user_name VARCHAR(128),
     previous_stock NUMERIC(14, 3) NOT NULL,

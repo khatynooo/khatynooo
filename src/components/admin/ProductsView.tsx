@@ -143,11 +143,17 @@ export const ProductsView: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = {
+        ...formData,
+        categoryId: formData.categoryId && formData.categoryId !== 'all' && formData.categoryId !== 'none' ? formData.categoryId : undefined,
+        subCategoryId: formData.subCategoryId && formData.subCategoryId !== 'all' ? formData.subCategoryId : undefined,
+      };
+
       if (editingProduct) {
-        await api.updateProduct(editingProduct.id, formData);
+        await api.updateProduct(editingProduct.id, payload);
         showToast('اطلاعات کالا با موفقیت به‌روزرسانی شد.', 'success');
       } else {
-        await api.createProduct(formData);
+        await api.createProduct(payload);
         showToast('کالای جدید با موفقیت به انبار افزوده شد.', 'success');
       }
       setShowModal(false);
@@ -398,10 +404,11 @@ export const ProductsView: React.FC = () => {
                 <div>
                   <label className="font-bold text-[#8E9299] block mb-1">دسته‌بندی اصلی:</label>
                   <select
-                    value={formData.categoryId}
+                    value={formData.categoryId || ''}
                     onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
                     className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2 outline-none font-bold text-[#E0E0E0]"
                   >
+                    <option value="">-- بدون دسته‌بندی / عمومی --</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}

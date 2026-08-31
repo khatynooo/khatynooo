@@ -52,12 +52,6 @@ export const api = {
       body: JSON.stringify(user),
     }).then(handleResponse),
 
-  deleteUser: (id: string) =>
-    fetch(`${API_BASE}/users/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeader(),
-    }).then(handleResponse),
-
   // Products & Categories
   getProducts: (params?: { category?: string; query?: string; inStockOnly?: boolean; featuredOnly?: boolean; specialOnly?: boolean }) => {
     const query = new URLSearchParams();
@@ -177,19 +171,6 @@ export const api = {
       body: JSON.stringify(customer),
     }).then(handleResponse),
 
-  updateCustomer: (id: string, customer: any) =>
-    fetch(`${API_BASE}/customers/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(customer),
-    }).then(handleResponse),
-
-  deleteCustomer: (id: string) =>
-    fetch(`${API_BASE}/customers/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeader(),
-    }).then(handleResponse),
-
   getCustomerLedger: (id: string) =>
     fetch(`${API_BASE}/customers/${id}/ledger`, {
       headers: getAuthHeader(),
@@ -212,19 +193,6 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(supplier),
-    }).then(handleResponse),
-
-  updateSupplier: (id: string, supplier: any) =>
-    fetch(`${API_BASE}/suppliers/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(supplier),
-    }).then(handleResponse),
-
-  deleteSupplier: (id: string) =>
-    fetch(`${API_BASE}/suppliers/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeader(),
     }).then(handleResponse),
 
   getSupplierLedger: (id: string) =>
@@ -261,26 +229,6 @@ export const api = {
 
   // Copy & Print Services
   getServicePresets: () => fetch(`${API_BASE}/services/presets`).then(handleResponse),
-
-  createServicePreset: (preset: any) =>
-    fetch(`${API_BASE}/services/presets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(preset),
-    }).then(handleResponse),
-
-  updateServicePreset: (id: string, preset: any) =>
-    fetch(`${API_BASE}/services/presets/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(preset),
-    }).then(handleResponse),
-
-  deleteServicePreset: (id: string) =>
-    fetch(`${API_BASE}/services/presets/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeader(),
-    }).then(handleResponse),
 
   calculatePrintCost: (params: any) =>
     fetch(`${API_BASE}/services/calculate`, {
@@ -517,32 +465,19 @@ export const api = {
 
   getServices: () => fetch(`${API_BASE}/services/presets`).then(handleResponse),
 
-  createService: (preset: any) =>
-    fetch(`${API_BASE}/services/presets`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(preset),
-    }).then(handleResponse),
-
-  updateService: (id: string, preset: any) =>
-    fetch(`${API_BASE}/services/presets/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-      body: JSON.stringify(preset),
-    }).then(handleResponse),
-
-  deleteService: (id: string) =>
-    fetch(`${API_BASE}/services/presets/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeader(),
-    }).then(handleResponse),
-
   getServiceOrders: () =>
     fetch(`${API_BASE}/services/records`, {
       headers: getAuthHeader(),
     }).then(handleResponse),
 
   createServiceOrder: (record: any) =>
+    fetch(`${API_BASE}/services/records`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(record),
+    }).then(handleResponse),
+
+  createService: (record: any) =>
     fetch(`${API_BASE}/services/records`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },

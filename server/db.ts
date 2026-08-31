@@ -63,9 +63,6 @@ function formatProduct(row: any): Product {
     description: row.description || '',
     image: row.image_url || '',
     gallery: Array.isArray(row.gallery) ? row.gallery : (typeof row.gallery === 'string' ? JSON.parse(row.gallery || '[]') : []),
-    extraImages: Array.isArray(row.extra_images) ? row.extra_images : (typeof row.extra_images === 'string' ? JSON.parse(row.extra_images || '[]') : []),
-    showOnWebsite: Boolean(row.show_on_website),
-    onlyAccounting: row.only_accounting !== undefined ? Boolean(row.only_accounting) : true,
     isSpecialOffer: Boolean(row.is_special_offer),
     featured: Boolean(row.is_featured),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
@@ -79,7 +76,6 @@ function formatCustomer(row: any): Customer {
     name: row.name,
     companyName: row.company_name,
     mobile: row.mobile,
-    phone: row.phone || '',
     nationalCode: row.national_code,
     address: row.address || '',
     postalCode: row.postal_code || '',
@@ -87,8 +83,6 @@ function formatCustomer(row: any): Customer {
     city: row.city || '',
     fullAddress: row.full_address || row.address || '',
     email: row.email || '',
-    creditLimit: Number(row.credit_limit || 5000000),
-    notes: row.notes || '',
     profileCompleted: Boolean(row.profile_completed),
     totalPurchaseAmount: Number(row.total_purchase_amount || 0),
     balance: Number(row.balance || 0),
@@ -324,21 +318,20 @@ export const db = {
   // ۱. کاربران و احراز هویت (Users & Auth)
   // ============================================================================
   async getUsers(): Promise<User[]> {
-    const res = await query('SELECT id, full_name, username, role, phone, avatar_url, is_active, created_at FROM users ORDER BY created_at ASC');
+    const res = await query('SELECT id, full_name, username, role, avatar_url, is_active, created_at FROM users ORDER BY created_at ASC');
     return res.rows.map((r: any) => ({
       id: r.id,
       fullName: r.full_name,
       username: r.username,
       role: r.role,
-      phone: r.phone || '',
-      avatar: r.avatar_url,
+      avatarUrl: r.avatar_url,
       isActive: r.is_active,
       createdAt: r.created_at,
     }));
   },
 
   async getUserById(id: string): Promise<User | null> {
-    const res = await query('SELECT id, full_name, username, role, phone, avatar_url, is_active, created_at FROM users WHERE id = $1', [id]);
+    const res = await query('SELECT id, full_name, username, role, avatar_url, is_active, created_at FROM users WHERE id = $1', [id]);
     if (res.rows.length === 0) return null;
     const r = res.rows[0];
     return {
@@ -346,7 +339,6 @@ export const db = {
       fullName: r.full_name,
       username: r.username,
       role: r.role,
-      phone: r.phone || '',
       avatar: r.avatar_url,
       isActive: r.is_active,
       createdAt: r.created_at,
@@ -363,7 +355,6 @@ export const db = {
         fullName: r.full_name,
         username: r.username,
         role: r.role,
-        phone: r.phone || '',
         avatar: r.avatar_url,
         isActive: r.is_active,
         createdAt: r.created_at,
@@ -372,25 +363,24 @@ export const db = {
     };
   },
 
-  async createUser(user: { fullName: string; username: string; passwordHash: string; role: string; phone?: string }): Promise<User> {
+  async createUser(user: { fullName: string; username: string; passwordHash: string; role: string }): Promise<User> {
     const id = `usr_${Date.now()}`;
     await query(
-      `INSERT INTO users (id, full_name, username, password_hash, role, phone, is_active, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, true, NOW())`,
-      [id, user.fullName, user.username, user.passwordHash, user.role, user.phone || '']
+      `INSERT INTO users (id, full_name, username, password_hash, role, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, true, NOW())`,
+      [id, user.fullName, user.username, user.passwordHash, user.role]
     );
     return {
       id,
       fullName: user.fullName,
       username: user.username,
       role: user.role as any,
-      phone: user.phone || '',
       isActive: true,
       createdAt: new Date().toISOString(),
     };
   },
 
-  async updateUser(id: string, updates: Partial<User> & { password?: string; phone?: string }): Promise<User | null> {
+  async updateUser(id: string, updates: Partial<User> & { password?: string }): Promise<User | null> {
     const existing = await this.getUserById(id);
     if (!existing) return null;
 
@@ -399,20 +389,19 @@ export const db = {
       updates.fullName ?? existing.fullName,
       updates.role ?? existing.role,
       updates.isActive ?? existing.isActive,
-      updates.phone !== undefined ? updates.phone : (existing.phone || ''),
       id,
     ];
 
-    if (updates.password && updates.password.trim().length > 0) {
-      const hash = await bcrypt.hash(updates.password.trim(), 10);
-      passClause = ', password_hash = $6';
+    if (updates.password) {
+      const hash = await bcrypt.hash(updates.password, 10);
+      passClause = ', password_hash = $5';
       params.push(hash);
     }
 
     await query(
       `UPDATE users 
-       SET full_name = $1, role = $2, is_active = $3, phone = $4, updated_at = NOW() ${passClause}
-       WHERE id = $5`,
+       SET full_name = $1, role = $2, is_active = $3, updated_at = NOW() ${passClause}
+       WHERE id = $4`,
       params
     );
 
@@ -586,11 +575,11 @@ export const db = {
         `INSERT INTO products (
           id, name, code, barcode, category_id, sub_category_id, unit, sub_unit, conversion_factor,
           buy_price, sale_price, price_shop1, price_shop2, price_shop3, wholesale_price, min_allowed_price,
-          stock, min_stock_alert, description, image_url, gallery, extra_images, show_on_website, only_accounting, is_special_offer, is_featured, created_at, updated_at
+          stock, min_stock_alert, description, image_url, gallery, is_special_offer, is_featured, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
           $10, $11, $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW(), NOW()
+          $17, $18, $19, $20, $21, $22, $23, NOW(), NOW()
         )`,
         [
           id,
@@ -614,9 +603,6 @@ export const db = {
           p.description || '',
           p.image || (p as any).imageUrl || '',
           JSON.stringify(p.gallery || []),
-          JSON.stringify(p.extraImages || (p as any).extra_images || []),
-          Boolean(p.showOnWebsite || (p as any).show_on_website),
-          p.onlyAccounting !== undefined ? Boolean(p.onlyAccounting) : (p.showOnWebsite ? false : true),
           Boolean(p.isSpecialOffer),
           Boolean(p.featured || (p as any).isFeatured),
         ]
@@ -697,14 +683,10 @@ export const db = {
           min_stock_alert = COALESCE($15, min_stock_alert),
           description = COALESCE($16, description),
           image_url = COALESCE($17, image_url),
-          gallery = CASE WHEN $18::text IS NOT NULL THEN $18::jsonb ELSE gallery END,
-          extra_images = CASE WHEN $19::text IS NOT NULL THEN $19::jsonb ELSE extra_images END,
-          show_on_website = COALESCE($20, show_on_website),
-          only_accounting = COALESCE($21, only_accounting),
-          is_special_offer = COALESCE($22, is_special_offer),
-          is_featured = COALESCE($23, is_featured),
+          is_special_offer = COALESCE($18, is_special_offer),
+          is_featured = COALESCE($19, is_featured),
           updated_at = NOW()
-         WHERE id = $24`,
+         WHERE id = $20`,
         [
           updates.name,
           updates.code,
@@ -723,10 +705,6 @@ export const db = {
           updates.minStockAlert,
           updates.description,
           updates.image || (updates as any).imageUrl,
-          updates.gallery !== undefined ? JSON.stringify(updates.gallery) : null,
-          updates.extraImages !== undefined ? JSON.stringify(updates.extraImages) : ((updates as any).extra_images !== undefined ? JSON.stringify((updates as any).extra_images) : null),
-          updates.showOnWebsite !== undefined ? Boolean(updates.showOnWebsite) : ((updates as any).show_on_website !== undefined ? Boolean((updates as any).show_on_website) : null),
-          updates.onlyAccounting !== undefined ? Boolean(updates.onlyAccounting) : ((updates as any).only_accounting !== undefined ? Boolean((updates as any).only_accounting) : null),
           updates.isSpecialOffer,
           updates.featured !== undefined ? updates.featured : (updates as any).isFeatured,
           id,
@@ -833,23 +811,15 @@ export const db = {
   async createCustomer(c: Partial<Customer>): Promise<Customer> {
     const id = c.id || `cst_${Date.now()}`;
     await query(
-      `INSERT INTO customers (id, name, company_name, mobile, phone, national_code, address, postal_code, province, city, full_address, email, credit_limit, notes, balance, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())`,
+      `INSERT INTO customers (id, name, company_name, mobile, national_code, address, balance, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
       [
         id,
         c.name || 'مشتری جدید',
         c.companyName || null,
         c.mobile || `09${Math.floor(100000000 + Math.random() * 900000000)}`,
-        c.phone || null,
         c.nationalCode || null,
         c.address || '',
-        c.postalCode || null,
-        c.province || null,
-        c.city || null,
-        c.fullAddress || c.address || '',
-        c.email || null,
-        c.creditLimit !== undefined ? Number(c.creditLimit) : 5000000,
-        c.notes || null,
         c.balance || 0,
       ]
     );
@@ -858,76 +828,39 @@ export const db = {
   },
 
   async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
-    const existing = await this.getCustomerById(id);
-    if (!existing) return null;
-
-    const name = updates.name !== undefined ? updates.name : existing.name;
-    const companyName = updates.companyName !== undefined ? updates.companyName : existing.companyName;
-    const mobile = updates.mobile !== undefined ? updates.mobile : existing.mobile;
-    const phone = updates.phone !== undefined ? updates.phone : existing.phone;
-    const nationalCode = updates.nationalCode !== undefined ? updates.nationalCode : existing.nationalCode;
-    const address = updates.address !== undefined ? updates.address : existing.address;
-    const postalCode = updates.postalCode !== undefined ? updates.postalCode : existing.postalCode;
-    const province = updates.province !== undefined ? updates.province : existing.province;
-    const city = updates.city !== undefined ? updates.city : existing.city;
-    const fullAddress = updates.fullAddress !== undefined ? updates.fullAddress : (updates.address !== undefined ? updates.address : existing.fullAddress);
-    const email = updates.email !== undefined ? updates.email : existing.email;
-    const creditLimit = updates.creditLimit !== undefined ? Number(updates.creditLimit) : (existing.creditLimit || 5000000);
-    const notes = updates.notes !== undefined ? updates.notes : existing.notes;
-    const balance = updates.balance !== undefined ? Number(updates.balance) : existing.balance;
-    const profileCompleted = updates.profileCompleted !== undefined ? updates.profileCompleted : existing.profileCompleted;
-
     await query(
       `UPDATE customers SET
-        name = $1,
-        company_name = $2,
-        mobile = $3,
-        phone = $4,
-        national_code = $5,
-        address = $6,
-        postal_code = $7,
-        province = $8,
-        city = $9,
-        full_address = $10,
-        email = $11,
-        credit_limit = $12,
-        notes = $13,
-        balance = $14,
-        profile_completed = $15,
+        name = COALESCE($1, name),
+        company_name = COALESCE($2, company_name),
+        mobile = COALESCE($3, mobile),
+        national_code = COALESCE($4, national_code),
+        address = COALESCE($5, address),
+        postal_code = COALESCE($6, postal_code),
+        province = COALESCE($7, province),
+        city = COALESCE($8, city),
+        full_address = COALESCE($9, full_address),
+        email = COALESCE($10, email),
+        balance = COALESCE($11, balance),
+        profile_completed = COALESCE($12, profile_completed),
         updated_at = NOW()
-       WHERE id = $16`,
+       WHERE id = $13`,
       [
-        name,
-        companyName,
-        mobile,
-        phone,
-        nationalCode,
-        address,
-        postalCode,
-        province,
-        city,
-        fullAddress,
-        email,
-        creditLimit,
-        notes,
-        balance,
-        profileCompleted,
+        updates.name,
+        updates.companyName,
+        updates.mobile,
+        updates.nationalCode,
+        updates.address,
+        updates.postalCode,
+        updates.province,
+        updates.city,
+        updates.fullAddress,
+        updates.email,
+        updates.balance,
+        updates.profileCompleted,
         id,
       ]
     );
     return this.getCustomerById(id);
-  },
-
-  async deleteCustomer(id: string): Promise<boolean> {
-    return await withTransaction(async (client) => {
-      // پاکسازی و ایمن‌سازی رکوردهای وابسته
-      await client.query('DELETE FROM customer_transactions WHERE customer_id = $1', [id]);
-      await client.query('UPDATE sales_invoices SET customer_id = NULL WHERE customer_id = $1', [id]);
-      await client.query('UPDATE online_orders SET customer_id = NULL WHERE customer_id = $1', [id]);
-      await client.query('UPDATE cheques SET entity_id = NULL WHERE entity_id = $1', [id]);
-      const res = await client.query('DELETE FROM customers WHERE id = $1', [id]);
-      return (res.rowCount || 0) > 0;
-    });
   },
 
   async getCustomerByMobile(mobile: string): Promise<Customer | null> {
@@ -1122,15 +1055,11 @@ export const db = {
     return res.rows.map((r: any) => ({
       id: r.id,
       name: r.name,
-      contactPerson: r.contact_person || '',
       mobile: r.mobile,
-      phone: r.phone || '',
       address: r.address || '',
-      bankAccount: r.bank_account || '',
-      shaba: r.shaba || '',
       debtToSupplier: Number(r.debt_to_supplier || 0),
       balance: -Number(r.debt_to_supplier || 0),
-      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      createdAt: r.created_at,
     }));
   },
 
@@ -1141,77 +1070,29 @@ export const db = {
     return {
       id: r.id,
       name: r.name,
-      contactPerson: r.contact_person || '',
       mobile: r.mobile,
-      phone: r.phone || '',
       address: r.address || '',
-      bankAccount: r.bank_account || '',
-      shaba: r.shaba || '',
       debtToSupplier: Number(r.debt_to_supplier || 0),
       balance: -Number(r.debt_to_supplier || 0),
-      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      createdAt: r.created_at,
     };
   },
 
   async createSupplier(s: Partial<Supplier>): Promise<Supplier> {
     const id = s.id || `sup_${Date.now()}`;
     await query(
-      `INSERT INTO suppliers (id, name, contact_person, mobile, phone, address, bank_account, shaba, debt_to_supplier, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-      [
-        id,
-        s.name || 'تامین‌کننده جدید',
-        s.contactPerson || null,
-        s.mobile || '',
-        s.phone || null,
-        s.address || '',
-        s.bankAccount || null,
-        s.shaba || null,
-        s.debtToSupplier || 0,
-      ]
+      `INSERT INTO suppliers (id, name, mobile, address, debt_to_supplier, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [id, s.name || 'تامین‌کننده جدید', s.mobile || '', s.address || '', s.debtToSupplier || 0]
     );
-    const created = await this.getSupplierById(id);
-    return created!;
-  },
-
-  async updateSupplier(id: string, updates: Partial<Supplier>): Promise<Supplier | null> {
-    const existing = await this.getSupplierById(id);
-    if (!existing) return null;
-
-    const name = updates.name !== undefined ? updates.name : existing.name;
-    const contactPerson = updates.contactPerson !== undefined ? updates.contactPerson : existing.contactPerson;
-    const mobile = updates.mobile !== undefined ? updates.mobile : existing.mobile;
-    const phone = updates.phone !== undefined ? updates.phone : existing.phone;
-    const address = updates.address !== undefined ? updates.address : existing.address;
-    const bankAccount = updates.bankAccount !== undefined ? updates.bankAccount : existing.bankAccount;
-    const shaba = updates.shaba !== undefined ? updates.shaba : existing.shaba;
-    const debtToSupplier = updates.debtToSupplier !== undefined ? Number(updates.debtToSupplier) : existing.debtToSupplier;
-
-    await query(
-      `UPDATE suppliers SET
-        name = $1,
-        contact_person = $2,
-        mobile = $3,
-        phone = $4,
-        address = $5,
-        bank_account = $6,
-        shaba = $7,
-        debt_to_supplier = $8
-       WHERE id = $9`,
-      [name, contactPerson, mobile, phone, address, bankAccount, shaba, debtToSupplier, id]
-    );
-    return this.getSupplierById(id);
-  },
-
-  async deleteSupplier(id: string): Promise<boolean> {
-    return await withTransaction(async (client) => {
-      // پاکسازی و ایمن‌سازی رکوردهای وابسته
-      await client.query('DELETE FROM supplier_transactions WHERE supplier_id = $1', [id]);
-      await client.query('UPDATE purchase_invoices SET supplier_id = NULL WHERE supplier_id = $1', [id]);
-      await client.query('UPDATE cheques SET entity_id = NULL WHERE entity_id = $1', [id]);
-      const res = await client.query('DELETE FROM suppliers WHERE id = $1', [id]);
-      return (res.rowCount || 0) > 0;
-    });
+    return {
+      id,
+      name: s.name || 'تامین‌کننده جدید',
+      mobile: s.mobile || '',
+      address: s.address || '',
+      debtToSupplier: s.debtToSupplier || 0,
+      createdAt: new Date().toISOString(),
+    };
   },
 
   async getSupplierLedger(supplierId: string): Promise<any[]> {
@@ -1569,327 +1450,74 @@ export const db = {
   // ============================================================================
   async getServicePresets(): Promise<ServicePreset[]> {
     const res = await query('SELECT * FROM service_presets ORDER BY id ASC');
-    return res.rows.map((r: any) => {
-      const priceSingle1 = Number(r.price_single1 !== undefined && r.price_single1 !== null && Number(r.price_single1) > 0 ? r.price_single1 : (r.price || 0));
-      const priceSingle2 = Number(r.price_single2 !== undefined && r.price_single2 !== null && Number(r.price_single2) > 0 ? r.price_single2 : Math.round(priceSingle1 * 0.85));
-      const priceDouble1 = Number(r.price_double1 !== undefined && r.price_double1 !== null && Number(r.price_double1) > 0 ? r.price_double1 : Math.round(priceSingle1 * 1.6));
-      const priceDouble2 = Number(r.price_double2 !== undefined && r.price_double2 !== null && Number(r.price_double2) > 0 ? r.price_double2 : Math.round(priceSingle1 * 1.35));
-
-      const isOnlyAcc = r.only_accounting !== undefined ? Boolean(r.only_accounting) : false;
-      const isShowWeb = Boolean(r.show_on_website);
-      const isShowPos = r.show_in_pos !== undefined ? Boolean(r.show_in_pos) : true;
-
-      let visibility: 'only_accounting' | 'only_website' | 'both' = 'both';
-      if (r.visibility) {
-        visibility = r.visibility;
-      } else if (isOnlyAcc && !isShowWeb) {
-        visibility = 'only_accounting';
-      } else if (isShowWeb && !isShowPos) {
-        visibility = 'only_website';
-      } else {
-        visibility = 'both';
-      }
-
-      return {
-        id: r.id,
-        name: r.name,
-        title: r.name,
-        category: r.category,
-        unit: r.unit || 'صفحه',
-        price: Number(r.price || priceSingle1),
-        priceSingle1,
-        priceSingle2,
-        basePriceSingle: priceSingle1,
-        priceDouble1,
-        priceDouble2,
-        basePriceDouble: priceDouble1,
-        bindingSpiralPrice: Number(r.binding_spiral_price || 35000),
-        bindingHardcoverPrice: Number(r.binding_hardcover_price || 85000),
-        bindingCellophanePrice: Number(r.binding_cellophane_price || 15000),
-        volumeDiscountThreshold: Number(r.volume_discount_threshold || 50),
-        volumeDiscountPercent: Number(r.volume_discount_percent !== undefined ? r.volume_discount_percent : 10),
-        visibility,
-        showInPos: isShowPos,
-        showOnWebsite: isShowWeb,
-        onlyAccounting: isOnlyAcc,
-        description: r.description || '',
-        imageUrl: r.image_url || '',
-        extraImages: Array.isArray(r.extra_images) ? r.extra_images : (typeof r.extra_images === 'string' ? JSON.parse(r.extra_images || '[]') : []),
-      };
-    });
+    return res.rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      unit: r.unit,
+      price: Number(r.price),
+      description: r.description,
+      showInPos: r.show_in_pos,
+    }));
   },
 
-  async createServicePreset(p: any): Promise<ServicePreset> {
+  async createServicePreset(p: Partial<ServicePreset>): Promise<ServicePreset> {
     const id = p.id || `srv_${Date.now()}`;
-    const name = (p.name || p.title || 'تعرفه جدید').trim();
-    const category = p.category || 'copy_print';
-    const unit = p.unit || 'صفحه';
-
-    const priceSingle1 = Number(p.priceSingle1 !== undefined ? p.priceSingle1 : (p.basePriceSingle !== undefined ? p.basePriceSingle : (p.price || 2000)));
-    const priceSingle2 = Number(p.priceSingle2 !== undefined ? p.priceSingle2 : Math.round(priceSingle1 * 0.85));
-    const priceDouble1 = Number(p.priceDouble1 !== undefined ? p.priceDouble1 : (p.basePriceDouble !== undefined ? p.basePriceDouble : Math.round(priceSingle1 * 1.6)));
-    const priceDouble2 = Number(p.priceDouble2 !== undefined ? p.priceDouble2 : Math.round(priceSingle1 * 1.35));
-    const price = Number(p.price !== undefined ? p.price : priceSingle1);
-
-    const bindingSpiralPrice = Number(p.bindingSpiralPrice !== undefined ? p.bindingSpiralPrice : 35000);
-    const bindingHardcoverPrice = Number(p.bindingHardcoverPrice !== undefined ? p.bindingHardcoverPrice : 85000);
-    const bindingCellophanePrice = Number(p.bindingCellophanePrice !== undefined ? p.bindingCellophanePrice : 15000);
-    const volumeDiscountThreshold = Number(p.volumeDiscountThreshold !== undefined ? p.volumeDiscountThreshold : 50);
-    const volumeDiscountPercent = Number(p.volumeDiscountPercent !== undefined ? p.volumeDiscountPercent : 10);
-
-    let visibility: 'only_accounting' | 'only_website' | 'both' = p.visibility || 'both';
-    let showOnWebsite = true;
-    let onlyAccounting = false;
-    let showInPos = true;
-
-    if (visibility === 'only_accounting') {
-      showOnWebsite = false;
-      onlyAccounting = true;
-      showInPos = true;
-    } else if (visibility === 'only_website') {
-      showOnWebsite = true;
-      onlyAccounting = false;
-      showInPos = false;
-    } else {
-      visibility = 'both';
-      showOnWebsite = true;
-      onlyAccounting = false;
-      showInPos = true;
-    }
-
-    const description = p.description || '';
-    const imageUrl = p.imageUrl || '';
-    const extraImages = Array.isArray(p.extraImages) ? p.extraImages : [];
-
     await query(
-      `INSERT INTO service_presets (
-        id, name, category, unit, price, price_single1, price_single2, price_double1, price_double2,
-        binding_spiral_price, binding_hardcover_price, binding_cellophane_price,
-        volume_discount_threshold, volume_discount_percent, visibility,
-        description, show_in_pos, show_on_website, only_accounting, image_url, extra_images
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
-      )`,
-      [
-        id,
-        name,
-        category,
-        unit,
-        price,
-        priceSingle1,
-        priceSingle2,
-        priceDouble1,
-        priceDouble2,
-        bindingSpiralPrice,
-        bindingHardcoverPrice,
-        bindingCellophanePrice,
-        volumeDiscountThreshold,
-        volumeDiscountPercent,
-        visibility,
-        description,
-        showInPos,
-        showOnWebsite,
-        onlyAccounting,
-        imageUrl,
-        JSON.stringify(extraImages),
-      ]
+      `INSERT INTO service_presets (id, name, category, unit, price, description, show_in_pos)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, p.name, p.category, p.unit || 'صفحه', p.price || 0, p.description || '', p.showInPos ?? true]
     );
-
     return {
       id,
-      name,
-      title: name,
-      category,
-      unit,
-      price,
-      priceSingle1,
-      priceSingle2,
-      basePriceSingle: priceSingle1,
-      priceDouble1,
-      priceDouble2,
-      basePriceDouble: priceDouble1,
-      bindingSpiralPrice,
-      bindingHardcoverPrice,
-      bindingCellophanePrice,
-      volumeDiscountThreshold,
-      volumeDiscountPercent,
-      visibility,
-      showInPos,
-      showOnWebsite,
-      onlyAccounting,
-      description,
-      imageUrl,
-      extraImages,
+      name: p.name || '',
+      category: p.category as any,
+      unit: p.unit || 'صفحه',
+      price: p.price || 0,
+      description: p.description,
+      showInPos: p.showInPos ?? true,
     };
-  },
-
-  async updateServicePreset(id: string, p: any): Promise<ServicePreset | null> {
-    const existing = await query('SELECT * FROM service_presets WHERE id = $1', [id]);
-    if (existing.rows.length === 0) return null;
-
-    const r = existing.rows[0];
-    const name = p.name !== undefined ? p.name : (p.title !== undefined ? p.title : r.name);
-    const category = p.category !== undefined ? p.category : r.category;
-    const unit = p.unit !== undefined ? p.unit : r.unit;
-    
-    const priceSingle1 = p.priceSingle1 !== undefined ? Number(p.priceSingle1) : (p.basePriceSingle !== undefined ? Number(p.basePriceSingle) : Number(r.price_single1 || r.price || 0));
-    const priceSingle2 = p.priceSingle2 !== undefined ? Number(p.priceSingle2) : Number(r.price_single2 || Math.round(priceSingle1 * 0.85));
-    const priceDouble1 = p.priceDouble1 !== undefined ? Number(p.priceDouble1) : (p.basePriceDouble !== undefined ? Number(p.basePriceDouble) : Number(r.price_double1 || Math.round(priceSingle1 * 1.6)));
-    const priceDouble2 = p.priceDouble2 !== undefined ? Number(p.priceDouble2) : Number(r.price_double2 || Math.round(priceSingle1 * 1.35));
-    const price = p.price !== undefined ? Number(p.price) : priceSingle1;
-
-    const bindingSpiralPrice = p.bindingSpiralPrice !== undefined ? Number(p.bindingSpiralPrice) : Number(r.binding_spiral_price || 35000);
-    const bindingHardcoverPrice = p.bindingHardcoverPrice !== undefined ? Number(p.bindingHardcoverPrice) : Number(r.binding_hardcover_price || 85000);
-    const bindingCellophanePrice = p.bindingCellophanePrice !== undefined ? Number(p.bindingCellophanePrice) : Number(r.binding_cellophane_price || 15000);
-    const volumeDiscountThreshold = p.volumeDiscountThreshold !== undefined ? Number(p.volumeDiscountThreshold) : Number(r.volume_discount_threshold || 50);
-    const volumeDiscountPercent = p.volumeDiscountPercent !== undefined ? Number(p.volumeDiscountPercent) : Number(r.volume_discount_percent !== undefined ? r.volume_discount_percent : 10);
-
-    let visibility: 'only_accounting' | 'only_website' | 'both' = p.visibility || r.visibility || 'both';
-    let showOnWebsite = r.show_on_website;
-    let onlyAccounting = r.only_accounting;
-    let showInPos = r.show_in_pos;
-
-    if (p.visibility !== undefined) {
-      if (p.visibility === 'only_accounting') {
-        showOnWebsite = false;
-        onlyAccounting = true;
-        showInPos = true;
-      } else if (p.visibility === 'only_website') {
-        showOnWebsite = true;
-        onlyAccounting = false;
-        showInPos = false;
-      } else {
-        visibility = 'both';
-        showOnWebsite = true;
-        onlyAccounting = false;
-        showInPos = true;
-      }
-    } else {
-      if (p.showOnWebsite !== undefined) showOnWebsite = Boolean(p.showOnWebsite);
-      if (p.onlyAccounting !== undefined) onlyAccounting = Boolean(p.onlyAccounting);
-      if (p.showInPos !== undefined) showInPos = Boolean(p.showInPos);
-    }
-
-    const description = p.description !== undefined ? p.description : r.description;
-    const imageUrl = p.imageUrl !== undefined ? p.imageUrl : r.image_url;
-    const extraImages = p.extraImages !== undefined ? p.extraImages : (Array.isArray(r.extra_images) ? r.extra_images : JSON.parse(r.extra_images || '[]'));
-
-    await query(
-      `UPDATE service_presets 
-       SET name = $1, category = $2, unit = $3, price = $4,
-           price_single1 = $5, price_single2 = $6, price_double1 = $7, price_double2 = $8,
-           binding_spiral_price = $9, binding_hardcover_price = $10, binding_cellophane_price = $11,
-           volume_discount_threshold = $12, volume_discount_percent = $13, visibility = $14,
-           description = $15, show_in_pos = $16, show_on_website = $17, only_accounting = $18,
-           image_url = $19, extra_images = $20
-       WHERE id = $21`,
-      [
-        name,
-        category,
-        unit,
-        price,
-        priceSingle1,
-        priceSingle2,
-        priceDouble1,
-        priceDouble2,
-        bindingSpiralPrice,
-        bindingHardcoverPrice,
-        bindingCellophanePrice,
-        volumeDiscountThreshold,
-        volumeDiscountPercent,
-        visibility,
-        description,
-        showInPos,
-        showOnWebsite,
-        onlyAccounting,
-        imageUrl,
-        JSON.stringify(extraImages),
-        id,
-      ]
-    );
-
-    return {
-      id,
-      name,
-      title: name,
-      category,
-      unit,
-      price,
-      priceSingle1,
-      priceSingle2,
-      basePriceSingle: priceSingle1,
-      priceDouble1,
-      priceDouble2,
-      basePriceDouble: priceDouble1,
-      bindingSpiralPrice,
-      bindingHardcoverPrice,
-      bindingCellophanePrice,
-      volumeDiscountThreshold,
-      volumeDiscountPercent,
-      visibility,
-      showInPos,
-      showOnWebsite,
-      onlyAccounting,
-      description,
-      imageUrl,
-      extraImages,
-    };
-  },
-
-  async deleteServicePreset(id: string): Promise<boolean> {
-    const res = await query('DELETE FROM service_presets WHERE id = $1', [id]);
-    return (res.rowCount || 0) > 0;
   },
 
   async getServiceRecords(): Promise<ServiceRecord[]> {
     const res = await query('SELECT * FROM service_records ORDER BY created_at DESC');
     return res.rows.map((r: any) => ({
       id: r.id,
-      customerName: r.customer_name || 'مشتری عمومی / حضوری',
-      customerMobile: r.customer_mobile || '',
-      serviceName: r.service_name || '',
-      category: r.category || 'copy_print',
-      quantity: Number(r.quantity || 1),
-      unitPrice: Number(r.unit_price || 0),
-      totalPrice: Number(r.total_price || 0),
-      description: r.description || '',
-      status: r.status || 'done',
-      date: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      customerName: r.customer_name,
+      customerMobile: r.customer_mobile,
+      serviceName: r.service_name,
+      category: r.category,
+      quantity: Number(r.quantity),
+      unitPrice: Number(r.unit_price),
+      totalPrice: Number(r.total_price),
+      description: r.description,
+      status: r.status,
+      date: r.created_at,
     }));
   },
 
   async createServiceRecord(record: any): Promise<ServiceRecord> {
     const id = `srvr_${Date.now()}`;
-    const customerName = (record.customerName || record.customer_name || 'مشتری عمومی / حضوری').trim() || 'مشتری عمومی / حضوری';
-    const customerMobile = record.customerMobile || record.customer_mobile || '';
-    const serviceName = (record.serviceName || record.service_name || 'خدمت تکثیر و چاپ').trim() || 'خدمت تکثیر و چاپ';
-    const category = record.category || 'copy_print';
-    const quantity = Number(record.quantity || 1);
-    const unitPrice = Number(record.unitPrice !== undefined ? record.unitPrice : (record.unit_price || 0));
-    const totalPrice = Number(record.totalPrice !== undefined ? record.totalPrice : (record.total_price || (unitPrice * quantity)));
-    const description = record.description || '';
-    const status = record.status || 'done';
-
     await withTransaction(async (client) => {
       await client.query(
         `INSERT INTO service_records (id, customer_name, customer_mobile, service_name, category, quantity, unit_price, total_price, description, status, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
         [
           id,
-          customerName,
-          customerMobile,
-          serviceName,
-          category,
-          quantity,
-          unitPrice,
-          totalPrice,
-          description,
-          status,
+          record.customerName,
+          record.customerMobile || '',
+          record.serviceName,
+          record.category || 'copy_print',
+          record.quantity,
+          record.unitPrice,
+          record.totalPrice,
+          record.description || '',
+          record.status || 'done',
         ]
       );
 
       // ثبت درآمد خدمت در دفتر معین خزانه
-      if (totalPrice > 0) {
+      if (record.totalPrice > 0) {
         const trxId = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         await client.query(
           `INSERT INTO treasury_transactions (
@@ -1901,10 +1529,10 @@ export const db = {
             'sale_income',
             'services',
             id,
-            totalPrice,
+            record.totalPrice,
             'cash',
             'صندوق خدمات پرینت و کپی',
-            `دریافت وجه خدمت ${serviceName} از مشتری ${customerName}`,
+            `دریافت وجه خدمت ${record.serviceName} از مشتری ${record.customerName}`,
           ]
         );
       }
@@ -1912,15 +1540,15 @@ export const db = {
 
     return {
       id,
-      customerName,
-      customerMobile,
-      serviceName,
-      category,
-      quantity,
-      unitPrice,
-      totalPrice,
-      description,
-      status,
+      customerName: record.customerName,
+      customerMobile: record.customerMobile,
+      serviceName: record.serviceName,
+      category: record.category,
+      quantity: record.quantity,
+      unitPrice: record.unitPrice,
+      totalPrice: record.totalPrice,
+      description: record.description,
+      status: record.status || 'done',
       date: new Date().toISOString(),
     };
   },

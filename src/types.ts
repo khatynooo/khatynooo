@@ -10,11 +10,14 @@ export interface User {
   fullName: string;
   username: string;
   role: UserRole;
+  phone?: string;
   avatar?: string;
   isActive: boolean;
   twoFactorEnabled?: boolean;
   createdAt: string;
 }
+
+export type StaffUser = User;
 
 export type BaseUnitType =
   | 'عدد'
@@ -92,6 +95,9 @@ export interface Product {
   isSpecialOffer?: boolean;
   featured?: boolean;
   isPublished?: boolean;
+  showOnWebsite?: boolean;
+  onlyAccounting?: boolean;
+  extraImages?: string[];
   variants?: ProductVariant[];
   avgRating?: number;
   reviewsCount?: number;
@@ -104,6 +110,7 @@ export interface Customer {
   name: string;
   companyName?: string;
   mobile: string;
+  phone?: string;
   address?: string;
   postalCode?: string;
   province?: string;
@@ -111,6 +118,8 @@ export interface Customer {
   fullAddress?: string;
   email?: string;
   nationalCode?: string;
+  creditLimit?: number;
+  notes?: string;
   profileCompleted?: boolean;
   totalPurchaseAmount?: number;
   balance: number; // مثبت = بستانکار، منفی = بدهکار
@@ -476,14 +485,44 @@ export interface PosTransactionLog {
   latencyMs: number;
 }
 
+export type ServiceVisibility = 'only_accounting' | 'only_website' | 'both';
+
 export interface ServicePreset {
   id: string;
   name: string;
+  title?: string;
   category: 'copy_print' | 'internet' | 'type_scan' | 'binding' | 'other';
+  serviceType?: string;
   unit: string;
   price: number;
-  description?: string;
+  
+  // چند قیمتی بودن: یک‌رو دو قیمت و دورو دو قیمت
+  priceSingle1: number; // قیمت یک‌رو ۱ (عادی / تک‌فروشی)
+  priceSingle2: number; // قیمت یک‌رو ۲ (همکار / تیراژ / مدارس)
+  basePriceSingle?: number; // alias
+  
+  priceDouble1: number; // قیمت دورو ۱ (عادی / تک‌فروشی)
+  priceDouble2: number; // قیمت دورو ۲ (همکار / تیراژ / مدارس)
+  basePriceDouble?: number; // alias
+
+  // هزینه‌های صحافی و خدمات تکمیلی
+  bindingSpiralPrice?: number;
+  bindingHardcoverPrice?: number;
+  bindingCellophanePrice?: number;
+
+  // قواعد تخفیف تیراژ
+  volumeDiscountThreshold?: number;
+  volumeDiscountPercent?: number;
+
+  // وضعیت نمایش و کانال انتشار (فقط حسابداری، فقط سایت، هر دو)
+  visibility?: ServiceVisibility;
   showInPos: boolean;
+  showOnWebsite?: boolean;
+  onlyAccounting?: boolean;
+
+  description?: string;
+  imageUrl?: string;
+  extraImages?: string[];
 }
 
 export interface ServiceRecord {
@@ -857,7 +896,6 @@ export interface DashboardStats {
 }
 
 // Aliases for compatibility
-export type StaffUser = User;
 export type Banner = WebsiteBanner;
 export type ShippingMethod = ShippingMethodConfig;
 export type ProductionOrder = ProductionRun;

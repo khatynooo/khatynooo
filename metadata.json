@@ -1,6 +1,6 @@
 {
   "name": "خطینو (Khatinoo)",
   "description": "پلتفرم جامع فروش آنلاین لوازم‌تحریر و سیستم حسابداری، انبارداری، صندوق POS، تولید و خدمات کپی/پرینت یکپارچه",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

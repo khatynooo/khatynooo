@@ -1,0 +1,10 @@
+-- Migration 013: افزودن ستون‌های تکمیلی برای مدیریت جامع مشتریان و تامین‌کنندگان
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit BIGINT DEFAULT 5000000;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT;
+
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_account VARCHAR(100);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS shaba VARCHAR(100);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS notes TEXT;

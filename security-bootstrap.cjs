@@ -34,6 +34,74 @@ if (isProduction) {
 }
 
 /*
+ * Production log redaction.
+ * The application has legacy log statements that may contain OTPs, mobile
+ * numbers, credentials, authorization headers, SQL parameters, or tokens.
+ * Redact these at the process boundary so a forgotten debug statement cannot
+ * put authentication secrets into PM2/container logs.
+ */
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'passwordhash',
+  'pass',
+  'secret',
+  'jwtsecret',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'authorization',
+  'cookie',
+  'otp',
+  'otpcode',
+  'code',
+  'simulatedcode',
+  'apikey',
+  'api_key',
+  'privatekey',
+]);
+
+function redactString(value) {
+  let output = String(value);
+
+  // Authorization headers and bearer tokens.
+  output = output.replace(/(Bearer\s+)[A-Za-z0-9._~+\/-]+/gi, '$1[REDACTED]');
+  output = output.replace(/(Authorization\s*[:=]\s*)[^,\s]+/gi, '$1[REDACTED]');
+
+  // JWT-shaped values (three base64url segments).
+  output = output.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[JWT_REDACTED]');
+
+  // OTPs in known log/message formats. Never expose a 4-8 digit verification
+  // code when it is labelled as OTP/verification code.
+  output = output.replace(/((?:otp|کد(?:\s+تایید|\s+پیامکی|\s+ورود)?|verification\s*code)\s*(?:[:=]|is|برای)?\s*)(\d{4,8})/gi, '$1[REDACTED]');
+
+  // Common credential assignments in free-form logs.
+  output = output.replace(/((?:password|passwd|secret|api[_-]?key|token)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
+
+  return output;
+}
+
+function redactValue(value, key = '') {
+  if (SENSITIVE_KEYS.has(String(key).toLowerCase())) return '[REDACTED]';
+  if (typeof value === 'string') return redactString(value);
+  if (Array.isArray(value)) return value.map((item) => redactValue(item));
+  if (value && typeof value === 'object') {
+    const result = {};
+    for (const [childKey, childValue] of Object.entries(value)) {
+      result[childKey] = redactValue(childValue, childKey);
+    }
+    return result;
+  }
+  return value;
+}
+
+if (isProduction) {
+  for (const method of ['log', 'info', 'warn', 'error', 'debug']) {
+    const original = console[method].bind(console);
+    console[method] = (...args) => original(...args.map((value) => redactValue(value)));
+  }
+}
+
+/*
  * Harden selected modules before server.ts is loaded. This keeps the existing
  * application behavior intact while ensuring production and Docker cannot
  * accidentally bypass the security layer.
@@ -64,8 +132,6 @@ Module._load = function(request, parent, isMain) {
 
     hardened.sign = function(payload, secretOrPrivateKey, options, callback) {
       const nextOptions = { ...(options || {}) };
-      // Access tokens are intentionally short-lived. Explicitly supplied
-      // shorter expirations are preserved.
       const requested = nextOptions.expiresIn;
       if (requested === undefined || requested === '7d' || requested === '7 days') {
         nextOptions.expiresIn = '30m';
@@ -91,8 +157,6 @@ Module._load = function(request, parent, isMain) {
     express.json = function(options) {
       return originalJson.call(this, {
         ...(options || {}),
-        // Keep request bodies small by default; file uploads should use their
-        // dedicated multipart endpoint rather than giant JSON bodies.
         limit: '2mb',
       });
     };
@@ -152,7 +216,6 @@ function loginRateLimit(req, res, next) {
   }
 
   entry.count += 1;
-  // Successful authentication should not consume a failure slot.
   res.once('finish', () => {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       const current = loginAttempts.get(key);
@@ -179,8 +242,6 @@ originalExpressApplication.post = function(path, ...handlers) {
   return originalPost.call(this, path, ...handlers);
 };
 
-// Public health endpoints intentionally expose no database, inventory,
-// version, uptime, user-count, or infrastructure details.
 originalExpressApplication.get = function(path, ...handlers) {
   const paths = Array.isArray(path) ? path : [path];
   if (paths.includes('/api/health') || paths.includes('/health')) {

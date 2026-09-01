@@ -1,12 +1,13 @@
 -- ==============================================================================
 -- Migration 007: Multi-Warehouse Stock Sync, Triggers & Invariants
+-- اتصال عملیات فروش، خرید، تولید و سفارشات آنلاین به موجودی چند-انباره
 -- ==============================================================================
 
 -- ۱. افزودن ستون warehouse_id به جداول فاکتورها و سفارشات در صورت عدم وجود (Additive)
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
+        SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'sales_invoices' AND column_name = 'warehouse_id'
     ) THEN
         ALTER TABLE sales_invoices ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
@@ -14,7 +15,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
+        SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'purchase_invoices' AND column_name = 'warehouse_id'
     ) THEN
         ALTER TABLE purchase_invoices ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
@@ -22,7 +23,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
+        SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'online_orders' AND column_name = 'warehouse_id'
     ) THEN
         ALTER TABLE online_orders ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_online';
@@ -30,7 +31,7 @@ BEGIN
     END IF;
 
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
+        SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'production_runs' AND column_name = 'warehouse_id'
     ) THEN
         ALTER TABLE production_runs ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
@@ -81,7 +82,7 @@ EXECUTE FUNCTION fn_sync_product_stock_from_inventory();
 
 -- ۴. اطمینان از وجود ردیف موجودی برای تمام کالاهای موجود در انبار مرکزی (Backfill Invariant)
 INSERT INTO inventory_by_location (id, warehouse_id, product_id, stock, min_stock_alert, aisle_shelf, updated_at)
-SELECT
+SELECT 
     'invloc_' || p.id || '_wh_central',
     'wh_central',
     p.id,
@@ -90,20 +91,20 @@ SELECT
     'قفسه مرکزی',
     NOW()
 FROM products p
-ON CONFLICT (warehouse_id, product_id)
-DO UPDATE SET
-    stock = CASE
-        WHEN (SELECT COUNT(*) FROM inventory_by_location WHERE product_id = EXCLUDED.product_id) = 1
-        THEN EXCLUDED.stock
-        ELSE inventory_by_location.stock
+ON CONFLICT (warehouse_id, product_id) 
+DO UPDATE SET 
+    stock = CASE 
+        WHEN (SELECT COUNT(*) FROM inventory_by_location WHERE product_id = products.id) = 1 
+        THEN products.stock 
+        ELSE inventory_by_location.stock 
     END,
     updated_at = NOW();
 
 -- ۵. همگام‌سازی نهایی products.stock بر اساس تجمیع کل تمام انبارها
 UPDATE products p
 SET stock = COALESCE((
-    SELECT SUM(stock)
-    FROM inventory_by_location
+    SELECT SUM(stock) 
+    FROM inventory_by_location 
     WHERE product_id = p.id
 ), 0),
 updated_at = NOW();

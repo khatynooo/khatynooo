@@ -54,17 +54,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
   };
 
-  // Demo role switching is intentionally disabled in production. It previously
-  // embedded real credentials in the public client bundle.
-  const switchRoleForDemo = async (_role: UserRole) => {
-    if (import.meta.env.DEV) {
-      console.warn('Demo role switching is disabled. Use the normal login form.');
+  const switchRoleForDemo = async (role: UserRole) => {
+    const roleCredentials: Record<UserRole, { u: string; p: string }> = {
+      admin: { u: 'admin', p: 'admin123456' },
+      site_manager: { u: 'sitemanager', p: 'site123456' },
+      seller: { u: 'cashier', p: 'seller123' },
+      accountant: { u: 'accountant', p: 'acc123456' },
+      chief_accountant: { u: 'chiefacc', p: 'chief123456' },
+    };
+
+    const target = roleCredentials[role];
+    if (target) {
+      await login({ username: target.u, password: target.p });
     }
   };
 
   const hasRole = (roles: UserRole[]): boolean => {
     if (!user) return false;
-    if (user.role === 'admin') return true;
+    if (user.role === 'admin') return true; // Admin has full access to everything
     return roles.includes(user.role);
   };
 

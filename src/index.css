@@ -5,6 +5,7 @@
 :root {
   --font-primary: 'Estedad', 'Vazirmatn', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --font-heading: 'Estedad', 'Vazirmatn', system-ui, sans-serif;
+  --font-mono: 'Vazirmatn', 'Courier New', monospace;
   
   /* Brand Tokens */
   --brand-gold: #C9A227;
@@ -23,7 +24,7 @@
 @layer base {
   *, *::before, *::after {
     font-family: var(--font-primary);
-    font-feature-settings: "ss01" on, "cv01" on;
+    font-feature-settings: "ss01" on, "cv01" on, "locl" on;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -31,6 +32,10 @@
   h1, h2, h3, h4, h5, h6, .font-heading {
     font-family: var(--font-heading);
     letter-spacing: -0.015em;
+  }
+
+  .font-mono {
+    font-feature-settings: "ss01" on, "tnum" on;
   }
 
   body {

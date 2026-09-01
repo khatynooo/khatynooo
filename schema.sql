@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(60) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(30) NOT NULL CHECK (role IN ('admin', 'site_manager', 'seller', 'accountant', 'chief_accountant')),
+    phone VARCHAR(50),
     avatar_url TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -69,6 +70,9 @@ CREATE TABLE IF NOT EXISTS products (
     description TEXT,
     image_url TEXT,
     gallery JSONB DEFAULT '[]'::jsonb,
+    extra_images JSONB DEFAULT '[]'::jsonb,
+    show_on_website BOOLEAN DEFAULT FALSE,
+    only_accounting BOOLEAN DEFAULT TRUE,
     is_special_offer BOOLEAN DEFAULT FALSE,
     is_featured BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -166,6 +170,7 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
     pos_rrn VARCHAR(60),
     sms_payment_status VARCHAR(20) DEFAULT 'not_sent',
     notes TEXT,
+    warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_by_user_id VARCHAR(64) REFERENCES users(id),
     created_by_user_name VARCHAR(120),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -183,6 +188,7 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     payment_method VARCHAR(30) NOT NULL,
     cheque_info JSONB,
     notes TEXT,
+    warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -227,6 +233,7 @@ CREATE TABLE IF NOT EXISTS online_orders (
     tracking_code VARCHAR(60),
     transaction_ref VARCHAR(60),
     sales_invoice_id VARCHAR(64) REFERENCES sales_invoices(id),
+    warehouse_id VARCHAR(64) DEFAULT 'wh_online',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -268,13 +275,27 @@ CREATE TABLE IF NOT EXISTS service_presets (
     category VARCHAR(40) NOT NULL,
     unit VARCHAR(40) NOT NULL DEFAULT 'صفحه',
     price BIGINT NOT NULL,
+    price_single1 BIGINT DEFAULT 0,
+    price_single2 BIGINT DEFAULT 0,
+    price_double1 BIGINT DEFAULT 0,
+    price_double2 BIGINT DEFAULT 0,
+    binding_spiral_price BIGINT DEFAULT 0,
+    binding_hardcover_price BIGINT DEFAULT 0,
+    binding_cellophane_price BIGINT DEFAULT 0,
+    volume_discount_threshold INT DEFAULT 50,
+    volume_discount_percent INT DEFAULT 10,
+    visibility VARCHAR(30) DEFAULT 'both',
     description TEXT,
-    show_in_pos BOOLEAN DEFAULT TRUE
+    show_in_pos BOOLEAN DEFAULT TRUE,
+    show_on_website BOOLEAN DEFAULT FALSE,
+    only_accounting BOOLEAN DEFAULT TRUE,
+    image_url TEXT,
+    extra_images JSONB DEFAULT '[]'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS service_records (
     id VARCHAR(64) PRIMARY KEY,
-    customer_name VARCHAR(150) NOT NULL,
+    customer_name VARCHAR(150) DEFAULT 'مشتری عمومی / حضوری',
     customer_mobile VARCHAR(30),
     service_name VARCHAR(120) NOT NULL,
     category VARCHAR(50),
@@ -319,6 +340,7 @@ CREATE TABLE IF NOT EXISTS production_runs (
     user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
     user_name VARCHAR(120),
     notes TEXT,
+    warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
     pos_rrn VARCHAR(60),
     sms_payment_status VARCHAR(20) DEFAULT 'not_sent',
     notes TEXT,
+    warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_by_user_id VARCHAR(64) REFERENCES users(id),
     created_by_user_name VARCHAR(120),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -172,6 +173,7 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     payment_method VARCHAR(30) NOT NULL,
     cheque_info JSONB,
     notes TEXT,
+    warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -216,6 +218,7 @@ CREATE TABLE IF NOT EXISTS online_orders (
     tracking_code VARCHAR(60),
     transaction_ref VARCHAR(60),
     sales_invoice_id VARCHAR(64) REFERENCES sales_invoices(id),
+    warehouse_id VARCHAR(64) DEFAULT 'wh_online',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

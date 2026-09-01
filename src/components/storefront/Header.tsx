@@ -25,6 +25,7 @@ import {
   Send,
   Star,
   SunMoon,
+  ArrowRight,
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
@@ -191,19 +192,27 @@ export const Header: React.FC<HeaderProps> = ({
                   style={{
                     height: `${websiteSettings.logoHeight || 48}px`,
                     width: websiteSettings.logoWidth ? `${websiteSettings.logoWidth}px` : 'auto',
-                    maxHeight: `${Math.max(websiteSettings.logoHeight || 48, 160)}px`,
+                    maxHeight: `${Math.max(websiteSettings.logoHeight || 48, 240)}px`,
                     objectFit: websiteSettings.logoFit || 'contain',
                   }}
-                  className={`${websiteSettings.logoBorderRadius || 'rounded-2xl'} shrink-0 shadow-md shadow-[#C9A227]/10 ring-1 ring-[#C9A227]/30 transition-all duration-200`}
+                  className={`${
+                    websiteSettings.logoBorderRadius === 'rounded-none'
+                      ? 'rounded-none'
+                      : websiteSettings.logoBorderRadius || 'rounded-none'
+                  } shrink-0 ${
+                    websiteSettings.logoHasBorder
+                      ? 'shadow-md ring-1 ring-[#C9A227]/40 p-1 bg-white/5'
+                      : 'border-0 ring-0 shadow-none'
+                  } transition-all duration-200`}
                 />
               ) : (
                 <div
                   style={{
                     height: `${websiteSettings?.logoHeight || 48}px`,
                     width: `${websiteSettings?.logoHeight || 48}px`,
-                    maxHeight: `${Math.max(websiteSettings?.logoHeight || 48, 160)}px`,
+                    maxHeight: `${Math.max(websiteSettings?.logoHeight || 48, 240)}px`,
                   }}
-                  className={`${websiteSettings?.logoBorderRadius || 'rounded-2xl'} bg-gradient-to-br from-[#C9A227] to-[#8C6D14] flex items-center justify-center text-slate-950 font-black shadow-lg shadow-[#C9A227]/20 ring-1 ring-[#C9A227]/40 shrink-0`}
+                  className={`${websiteSettings?.logoBorderRadius || 'rounded-xl'} bg-gradient-to-br from-[#C9A227] to-[#8C6D14] flex items-center justify-center text-slate-950 font-black shadow-lg shadow-[#C9A227]/20 shrink-0`}
                 >
                   <BookOpen className="w-6 h-6 text-black" />
                 </div>
@@ -360,17 +369,43 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header id="site-main-header" className="sticky top-0 z-40 bg-white/95 dark:bg-[#111113]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#222225] shadow-xs text-slate-800 dark:text-[#E0E0E0] transition-colors">
-      {/* Top Notification Bar */}
+      {/* Top Notification / Advertisement Bar */}
       {showNotice && (
-        <div id="header-top-notice-bar" className="bg-slate-100 dark:bg-[#0A0A0B] border-b border-slate-200 dark:border-[#222225] text-xs py-2 px-4 sm:px-8 lg:px-12 2xl:px-16 transition-colors">
+        <div
+          id="header-top-notice-bar"
+          className={`border-b text-xs py-2 px-4 sm:px-8 lg:px-12 2xl:px-16 transition-colors ${
+            websiteSettings?.noticeBannerStyle === 'gold_gradient'
+              ? 'bg-gradient-to-r from-amber-500/20 via-[#C9A227]/30 to-amber-600/20 border-[#C9A227]/40 text-slate-900 dark:text-[#F3F4F6]'
+              : websiteSettings?.noticeBannerStyle === 'emerald_deals'
+              ? 'bg-gradient-to-r from-emerald-600/20 via-emerald-500/25 to-teal-600/20 border-emerald-500/40 text-emerald-900 dark:text-emerald-300'
+              : websiteSettings?.noticeBannerStyle === 'indigo_promo'
+              ? 'bg-gradient-to-r from-indigo-600/20 via-blue-600/25 to-violet-600/20 border-indigo-500/40 text-indigo-900 dark:text-indigo-200'
+              : websiteSettings?.noticeBannerStyle === 'rose_hot'
+              ? 'bg-gradient-to-r from-rose-600/20 via-orange-500/25 to-amber-600/20 border-rose-500/40 text-rose-900 dark:text-rose-200'
+              : websiteSettings?.noticeBannerStyle === 'dark_luxury'
+              ? 'bg-[#0A0A0B] border-[#222225] text-[#E0E0E0]'
+              : 'bg-slate-100 dark:bg-[#0A0A0B] border-slate-200 dark:border-[#222225] text-slate-800 dark:text-[#E0E0E0]'
+          }`}
+        >
           <div className="w-full flex flex-wrap justify-between items-center gap-2">
-            <div className="flex items-center gap-2 font-medium">
-              <span className="bg-[#C9A227] text-slate-950 px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-xs shrink-0">
-                {noticeBadgeText}
+            <div className="flex items-center flex-wrap gap-2 font-medium">
+              <span className="bg-[#C9A227] text-slate-950 px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-xs shrink-0 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-black" />
+                <span>{noticeBadgeText}</span>
               </span>
-              <span className="text-slate-700 dark:text-[#8E9299]">
+              <span className="text-slate-800 dark:text-[#E0E0E0] font-semibold text-xs">
                 {noticeText}
               </span>
+              {websiteSettings?.noticeLink && (
+                <button
+                  type="button"
+                  onClick={() => handleMenuClick(websiteSettings.noticeLink!)}
+                  className="inline-flex items-center gap-1 text-[11px] font-black text-[#C9A227] hover:underline bg-black/10 dark:bg-white/10 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                >
+                  <span>{websiteSettings.noticeLinkText || 'مشاهده و سفارش'}</span>
+                  <ArrowRight className="w-3 h-3 -rotate-180" />
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-3 text-slate-600 dark:text-[#8E9299] text-xs">

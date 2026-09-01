@@ -8,7 +8,7 @@ import { torobApiClient } from './torobApiClient';
 import { digikalaApiClient } from './digikalaApiClient';
 import { stationeryMarketBenchmarkCatalog } from './benchmarkCatalog';
 import { findBestStationeryMatch, normalizePersianText } from './textMatcher';
-import { resolveStationerySafeImage, resolveStationerySafeImageWithMeta } from './imageResolver';
+import { resolveStationerySafeImage, resolveStationerySafeImageWithMeta, resolveStationeryMultiImages } from './imageResolver';
 import { getProductPriceHistory, recordPriceSnapshot } from './priceHistoryStore';
 import { categoryPriceListCache, torobSearchCache, inventoryAuditCache } from './cache';
 
@@ -325,7 +325,7 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
     for (const trb of liveTorobResults) {
       if (trb.price && trb.price > 1000) {
         const title = trb.name1 || trb.name2 || q;
-        const imgMeta = resolveStationerySafeImageWithMeta(title, 'نوشت‌افزار', trb.image_url);
+        const imgResolved = resolveStationeryMultiImages(title, 'نوشت‌افزار', trb.image_url, trb.more_images || trb.images || [trb.image_url]);
         const minP = trb.price;
         const maxP = Math.round(minP * 1.25);
         const avgP = Math.round(minP * 1.12);
@@ -338,8 +338,9 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
           subCategory: 'استعلام زنده',
           brand: 'بازار آزاد',
           unit: 'عدد',
-          image: imgMeta.url,
-          gallery: [imgMeta.url],
+          image: imgResolved.primaryImage,
+          gallery: imgResolved.gallery,
+          extraImages: imgResolved.gallery,
           torobUrl: trb.random_key ? `https://torob.com/p/${trb.random_key}/` : `https://torob.com/search/?query=${encodeURIComponent(title)}`,
           specs: {
             'وضعیت کالا': 'موجود در بازار',
@@ -372,7 +373,7 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
           lastUpdated: 'هم‌اکنون (استعلام زنده لحظه‌ای)',
           isLiveScraped: true,
           isBenchmarkCatalog: false,
-          isGenericStockPhoto: imgMeta.isGenericStockPhoto,
+          isGenericStockPhoto: imgResolved.isGenericStockPhoto,
           sourceLink: `https://torob.com/search/?query=${encodeURIComponent(title)}`,
         });
       }
@@ -388,7 +389,8 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
         // اگر قبلاً در نتایج ترب نبوده
         if (!liveItems.some((it) => it.title === title)) {
           const imgUrl = dp.images?.main?.url?.[0];
-          const imgMeta = resolveStationerySafeImageWithMeta(title, dp.category?.title_fa || 'تحریر', imgUrl);
+          const digiGallery = [imgUrl, ...(dp.images?.list?.map((i: any) => i?.url?.[0]) || [])].filter(Boolean);
+          const imgResolved = resolveStationeryMultiImages(title, dp.category?.title_fa || 'تحریر', imgUrl, digiGallery);
           const priceToman = Math.round(priceRial / 10);
           const minP = priceToman;
           const buyP = Math.round(minP * 0.80);
@@ -400,8 +402,9 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
             subCategory: 'دیجی‌کالا',
             brand: dp.brand?.title_fa || 'استاندارد',
             unit: 'عدد',
-            image: imgMeta.url,
-            gallery: [imgMeta.url],
+            image: imgResolved.primaryImage,
+            gallery: imgResolved.gallery,
+            extraImages: imgResolved.gallery,
             torobUrl: `https://www.digikala.com/product/dkp-${dp.id}`,
             specs: {
               'کد دیجی‌کالا': `DKP-${dp.id}`,
@@ -522,7 +525,7 @@ export async function getTorobStationeryCategoryList(options?: {
         for (const trb of liveTrb.slice(0, 12)) {
           if (trb.price && trb.price > 1000) {
             const title = trb.name1 || trb.name2 || 'کالای تحریر ترب';
-            const imgMeta = resolveStationerySafeImageWithMeta(title, 'نوشت‌افزار', trb.image_url);
+            const imgResolved = resolveStationeryMultiImages(title, 'نوشت‌افزار', trb.image_url, trb.more_images || trb.images || [trb.image_url]);
             const minP = trb.price;
             const buyP = Math.round(minP * 0.80);
             const shop1 = Math.round(minP * 1.15);
@@ -584,8 +587,9 @@ export async function getTorobStationeryCategoryList(options?: {
               subCategory: subCategory || 'استعلام زنده وب',
               brand: trb.brand || 'بازار آزاد',
               unit: 'عدد',
-              image: imgMeta.url,
-              gallery: [imgMeta.url],
+              image: imgResolved.primaryImage,
+              gallery: imgResolved.gallery,
+              extraImages: imgResolved.gallery,
               minPrice: minP,
               maxPrice,
               avgPrice,
@@ -612,7 +616,7 @@ export async function getTorobStationeryCategoryList(options?: {
               matchScore: matchedInv?.score,
               isLiveScraped: true,
               isBenchmarkCatalog: false,
-              isGenericStockPhoto: imgMeta.isGenericStockPhoto,
+              isGenericStockPhoto: imgResolved.isGenericStockPhoto,
               lastUpdated: 'هم‌اکنون (استعلام زنده لحظه‌ای)',
             });
           }
@@ -624,7 +628,9 @@ export async function getTorobStationeryCategoryList(options?: {
           if (priceRial && priceRial > 10000) {
             const minP = Math.round(priceRial / 10);
             const title = dp.title_fa || 'کالای تحریر';
-            const imgMeta = resolveStationerySafeImageWithMeta(title, 'نوشت‌افزار', dp.images?.main?.url?.[0]);
+            const imgUrl = dp.images?.main?.url?.[0];
+            const digiGallery = [imgUrl, ...(dp.images?.list?.map((i: any) => i?.url?.[0]) || [])].filter(Boolean);
+            const imgResolved = resolveStationeryMultiImages(title, dp.category?.title_fa || 'نوشت‌افزار', imgUrl, digiGallery);
             const buyP = Math.round(minP * 0.80);
             const shop1 = Math.round(minP * 1.15);
             const shop2 = Math.round(minP * 0.98);
@@ -644,8 +650,9 @@ export async function getTorobStationeryCategoryList(options?: {
               subCategory: subCategory || 'استعلام زنده دیجی‌کالا',
               brand: dp.brand?.title_fa || 'استاندارد',
               unit: 'عدد',
-              image: imgMeta.url,
-              gallery: [imgMeta.url],
+              image: imgResolved.primaryImage,
+              gallery: imgResolved.gallery,
+              extraImages: imgResolved.gallery,
               minPrice: minP,
               maxPrice: Math.round(minP * 1.2),
               avgPrice: minP,

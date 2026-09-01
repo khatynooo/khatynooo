@@ -18,6 +18,7 @@ import {
   Printer,
   Info,
   MapPin,
+  Check,
   CheckCircle2,
   Sparkles,
   Bot,
@@ -104,6 +105,17 @@ export const TorobMarketView: React.FC = () => {
   const [zoomedImage, setZoomedImage] = useState<{ src: string; title: string } | null>(null);
   const [activeSellerModalPhoto, setActiveSellerModalPhoto] = useState<string | null>(null);
 
+  // Storage Destination & Multi-Image Import Modal
+  const [importModalItem, setImportModalItem] = useState<any | null>(null);
+  const [importStorageDestination, setImportStorageDestination] = useState<'both' | 'site_only' | 'accounting_only'>('both');
+  const [importBuyPrice, setImportBuyPrice] = useState<number>(0);
+  const [importPriceShop1, setImportPriceShop1] = useState<number>(0);
+  const [importPriceShop2, setImportPriceShop2] = useState<number>(0);
+  const [importPriceShop3, setImportPriceShop3] = useState<number>(0);
+  const [importStock, setImportStock] = useState<number>(20);
+  const [importAllImages, setImportAllImages] = useState<string[]>([]);
+  const [isSubmittingImportModal, setIsSubmittingImportModal] = useState<boolean>(false);
+
   const subCategoriesList = [
     { key: 'all', label: 'همه اقلام دسته‌بندی ۱۱۰' },
     { key: 'paper', label: '📄 کاغذ و مقوا' },
@@ -155,30 +167,85 @@ export const TorobMarketView: React.FC = () => {
     loadCategory110(selectedSubCat, catSort, catSearchQuery);
   };
 
-  // Add Torob Category Item Directly to Inventory
-  const handleImportToInventory = async (item: any) => {
-    setImportingId(item.id);
-    try {
-      await api.importTorobToInventory({
-        name: item.title,
-        category: item.category,
-        brand: item.brand,
-        unit: item.unit || 'عدد',
-        image: item.image,
-        buyPrice: item.multiTierPricing?.suggestedBuyPrice || Math.round(item.minPrice * 0.8),
-        priceShop1: item.multiTierPricing?.suggestedShop1Price || Math.round(item.minPrice * 1.05),
-        priceShop2: item.multiTierPricing?.suggestedShop2Price || item.minPrice,
-        priceShop3: item.multiTierPricing?.suggestedShop3Price || Math.round(item.minPrice * 0.9),
-        stock: 25,
-        minStock: 5,
+  // Open the Storage Destination & Multi-Image Import Modal
+  const handleOpenImportModal = (item: any) => {
+    const rawImages: string[] = [];
+    if (item.image) rawImages.push(item.image);
+    if (Array.isArray(item.gallery)) rawImages.push(...item.gallery);
+    if (Array.isArray(item.extraImages)) rawImages.push(...item.extraImages);
+    if (Array.isArray(item.sellers)) {
+      item.sellers.forEach((s: any) => {
+        if (s.image) rawImages.push(s.image);
       });
-      showToast(`کالای «${item.title}» همراه با تصویر و قیمت‌های ۳ سطحی در انبار خطی‌نو افزوده شد.`, 'success');
+    }
+    const uniqueImages = Array.from(new Set(rawImages.filter(Boolean)));
+
+    const bPrice = item.multiTierPricing?.suggestedBuyPrice || Math.round(item.minPrice * 0.8);
+    const p1 = item.multiTierPricing?.suggestedShop1Price || Math.round(item.minPrice * 1.05);
+    const p2 = item.multiTierPricing?.suggestedShop2Price || item.minPrice;
+    const p3 = item.multiTierPricing?.suggestedShop3Price || Math.round(item.minPrice * 0.9);
+
+    setImportModalItem(item);
+    setImportAllImages(uniqueImages.length > 0 ? uniqueImages : (item.image ? [item.image] : []));
+    setImportBuyPrice(bPrice);
+    setImportPriceShop1(p1);
+    setImportPriceShop2(p2);
+    setImportPriceShop3(p3);
+    setImportStock(25);
+    setImportStorageDestination('both');
+  };
+
+  // Confirm Import with Destination & Multi-Image resolution
+  const handleConfirmImportWithConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importModalItem) return;
+
+    setIsSubmittingImportModal(true);
+    try {
+      const showOnWebsite = importStorageDestination === 'both' || importStorageDestination === 'site_only';
+      const onlyAccounting = importStorageDestination === 'accounting_only';
+
+      await api.importTorobToInventory({
+        name: importModalItem.title,
+        category: importModalItem.category,
+        brand: importModalItem.brand,
+        unit: importModalItem.unit || 'عدد',
+        image: importAllImages[0] || importModalItem.image,
+        gallery: importAllImages,
+        extraImages: importAllImages,
+        buyPrice: importBuyPrice,
+        priceShop1: importPriceShop1,
+        priceShop2: importPriceShop2,
+        priceShop3: importPriceShop3,
+        stock: importStock,
+        minStock: 5,
+        showOnWebsite,
+        onlyAccounting,
+      });
+
+      const destLabel =
+        importStorageDestination === 'both'
+          ? 'سایت آنلاین و نرم‌افزار حسابداری'
+          : importStorageDestination === 'site_only'
+          ? 'فقط وب‌سایت آنلاین'
+          : 'فقط سیستم حسابداری و انبارداری داخلی';
+
+      showToast(
+        `کالای «${importModalItem.title}» همراه با تمام ${toPersianDigits(importAllImages.length)} تصویر و با تعیین مقصد (${destLabel}) با موفقیت ذخیره شد.`,
+        'success'
+      );
+      setImportModalItem(null);
       await loadCategory110(selectedSubCat, catSort, catSearchQuery);
     } catch (err: any) {
-      showToast(err.message || 'خطا در ثبت کالا در انبار', 'error');
+      showToast(err.message || 'خطا در ثبت کالا در سیستم', 'error');
     } finally {
-      setImportingId(null);
+      setIsSubmittingImportModal(false);
     }
+  };
+
+  // Add Torob Category Item Directly to Inventory
+  const handleImportToInventory = async (item: any) => {
+    handleOpenImportModal(item);
   };
 
   // Sync 3-tier prices of a Torob item with existing inventory product
@@ -1046,7 +1113,7 @@ export const TorobMarketView: React.FC = () => {
             <div className="p-5 md:p-6 overflow-y-auto space-y-6">
               {/* Product Hero Banner */}
               <div className="bg-[#161619] border border-[#2D2D33] rounded-3xl p-5 flex flex-col md:flex-row items-center md:items-start gap-6">
-                {/* Product Image & Gallery */}
+                {/* Product Image & Multi-Image Gallery */}
                 <div className="flex flex-col items-center gap-3 shrink-0">
                   <div className="relative w-48 h-48 md:w-56 md:h-56 bg-[#111113] rounded-2xl border border-[#2D2D33] p-3 flex items-center justify-center overflow-hidden group shadow-inner">
                     <img
@@ -1067,6 +1134,61 @@ export const TorobMarketView: React.FC = () => {
                       <span>بزرگ‌نمایی</span>
                     </button>
                   </div>
+
+                  {/* Multi-Image Gallery Thumbnails (All extracted images of this product) */}
+                  {(() => {
+                    const allImgs: string[] = [];
+                    if (selectedSellerItem.image) allImgs.push(selectedSellerItem.image);
+                    if (Array.isArray(selectedSellerItem.gallery)) allImgs.push(...selectedSellerItem.gallery);
+                    if (Array.isArray(selectedSellerItem.extraImages)) allImgs.push(...selectedSellerItem.extraImages);
+                    if (Array.isArray(selectedSellerItem.sellers)) {
+                      selectedSellerItem.sellers.forEach((s: any) => {
+                        if (s.image) allImgs.push(s.image);
+                      });
+                    }
+                    const uniqueImages = Array.from(new Set(allImgs.filter(Boolean)));
+
+                    if (uniqueImages.length <= 1) return null;
+
+                    return (
+                      <div className="w-full max-w-[240px] space-y-1.5 bg-[#111113] p-2.5 rounded-2xl border border-[#2D2D33]">
+                        <div className="flex items-center justify-between text-[11px] text-[#8E9299]">
+                          <span className="flex items-center gap-1 text-[#C9A227] font-bold">
+                            <Layers className="w-3 h-3" />
+                            <span>گالری تصاویر ({toPersianDigits(uniqueImages.length)} عکس)</span>
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-medium">همه ذخیره می‌شوند</span>
+                        </div>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                          {uniqueImages.map((imgUrl, iIdx) => {
+                            const isCurrent = (activeSellerModalPhoto || selectedSellerItem.image) === imgUrl;
+                            return (
+                              <button
+                                key={iIdx}
+                                type="button"
+                                onClick={() => setActiveSellerModalPhoto(imgUrl)}
+                                className={`w-11 h-11 rounded-xl bg-[#1A1A20] border p-1 shrink-0 overflow-hidden cursor-pointer transition-all ${
+                                  isCurrent
+                                    ? 'border-[#C9A227] ring-2 ring-[#C9A227]/40 scale-105 shadow-md'
+                                    : 'border-[#2D2D35] hover:border-[#8E9299] opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <img
+                                  src={imgUrl}
+                                  alt={`تصویر ${iIdx + 1}`}
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = getCategoryFallbackImage(selectedSellerItem.title, selectedSellerItem.category);
+                                  }}
+                                  className="w-full h-full object-contain"
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Badges */}
                   <div className="flex items-center gap-2 flex-wrap justify-center">
@@ -1572,6 +1694,271 @@ export const TorobMarketView: React.FC = () => {
             <h4 className="text-xs font-bold text-[#F3F4F6] text-center px-4 line-clamp-2">
               {zoomedImage.title}
             </h4>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: STORAGE DESTINATION & MULTI-IMAGE INVENTORY IMPORT CONFIGURATION */}
+      {/* ========================================================================= */}
+      {importModalItem && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto animate-in fade-in"
+          onClick={() => !isSubmittingImportModal && setImportModalItem(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl bg-[#141417] border border-[#C9A227]/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-[#E0E0E0]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-[#222225] bg-[#1A1A20] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#C9A227]/20 border border-[#C9A227]/40 text-[#C9A227] flex items-center justify-center font-bold">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-[#F3F4F6]">
+                    افزودن و ذخیره کالا در انبار و سیستم خطی‌نو
+                  </h3>
+                  <p className="text-[11px] text-[#8E9299]">
+                    انتخاب مقصد انتشار و ذخیره کلیه عکس‌های استخراج‌شده کالا
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => !isSubmittingImportModal && setImportModalItem(null)}
+                className="text-[#8E9299] hover:text-white p-2 rounded-xl bg-[#222226] hover:bg-[#2D2D33] border border-[#2D2D33] cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleConfirmImportWithConfig} className="p-5 sm:p-6 space-y-5 overflow-y-auto max-h-[75vh]">
+              {/* Product Summary Header */}
+              <div className="flex items-center gap-4 bg-[#111113] p-3.5 rounded-2xl border border-[#222225]">
+                <img
+                  src={importAllImages[0] || importModalItem.image}
+                  alt={importModalItem.title}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = getCategoryFallbackImage(importModalItem.title, importModalItem.category);
+                  }}
+                  className="w-14 h-14 rounded-xl object-contain bg-[#1A1A20] border border-[#2D2D35] p-1 shrink-0"
+                />
+                <div className="overflow-hidden space-y-1 text-right flex-1">
+                  <span className="text-[10px] text-[#C9A227] font-bold block">{importModalItem.category}</span>
+                  <h4 className="font-black text-xs text-[#F3F4F6] truncate">{importModalItem.title}</h4>
+                  <div className="flex items-center gap-2 text-[11px] text-[#8E9299]">
+                    <span>برند: <strong className="text-[#E0E0E0]">{importModalItem.brand || 'استاندارد'}</strong></span>
+                    <span>•</span>
+                    <span>کف قیمت بازار: <strong className="text-emerald-400 font-mono">{formatToman(importModalItem.minPrice)}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 1: Storage Destination (مقصد ذخیره کالا) */}
+              <div className="space-y-2">
+                <label className="block text-xs font-black text-[#F3F4F6]">
+                  موقعیت و مقصد ذخیره‌سازی کالا:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* Option 1: Both */}
+                  <div
+                    onClick={() => setImportStorageDestination('both')}
+                    className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                      importStorageDestination === 'both'
+                        ? 'bg-[#C9A227]/15 border-[#C9A227] text-white shadow-md'
+                        : 'bg-[#161619] border-[#2D2D33] hover:border-[#44444C] text-[#8E9299]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg">🌐 + 💼</span>
+                      <input
+                        type="radio"
+                        name="storageDestination"
+                        checked={importStorageDestination === 'both'}
+                        onChange={() => setImportStorageDestination('both')}
+                        className="accent-[#C9A227]"
+                      />
+                    </div>
+                    <div>
+                      <strong className={`block text-xs ${importStorageDestination === 'both' ? 'text-[#C9A227]' : 'text-[#E0E0E0]'}`}>
+                        هم در سایت و هم حسابداری
+                      </strong>
+                      <span className="text-[10px] text-[#8E9299] block mt-0.5">
+                        قابل خرید توسط مشتریان آنلاین و ثبت در فاکتورهای حسابداری
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Option 2: Site Only */}
+                  <div
+                    onClick={() => setImportStorageDestination('site_only')}
+                    className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                      importStorageDestination === 'site_only'
+                        ? 'bg-blue-500/15 border-blue-500 text-white shadow-md'
+                        : 'bg-[#161619] border-[#2D2D33] hover:border-[#44444C] text-[#8E9299]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg">🌐</span>
+                      <input
+                        type="radio"
+                        name="storageDestination"
+                        checked={importStorageDestination === 'site_only'}
+                        onChange={() => setImportStorageDestination('site_only')}
+                        className="accent-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <strong className={`block text-xs ${importStorageDestination === 'site_only' ? 'text-blue-400' : 'text-[#E0E0E0]'}`}>
+                        فقط در سایت فروشگاه
+                      </strong>
+                      <span className="text-[10px] text-[#8E9299] block mt-0.5">
+                        نمایش در ویترین فروشگاه خطی‌نو
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Option 3: Accounting Only */}
+                  <div
+                    onClick={() => setImportStorageDestination('accounting_only')}
+                    className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                      importStorageDestination === 'accounting_only'
+                        ? 'bg-purple-500/15 border-purple-500 text-white shadow-md'
+                        : 'bg-[#161619] border-[#2D2D33] hover:border-[#44444C] text-[#8E9299]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg">📊</span>
+                      <input
+                        type="radio"
+                        name="storageDestination"
+                        checked={importStorageDestination === 'accounting_only'}
+                        onChange={() => setImportStorageDestination('accounting_only')}
+                        className="accent-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <strong className={`block text-xs ${importStorageDestination === 'accounting_only' ? 'text-purple-400' : 'text-[#E0E0E0]'}`}>
+                        فقط در حسابداری (مخفی از سایت)
+                      </strong>
+                      <span className="text-[10px] text-[#8E9299] block mt-0.5">
+                        استفاده در فاکتورهای رسمی و انبارداری داخلی
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Multi-Images Gallery to Save */}
+              <div className="space-y-2 bg-[#111113] p-3.5 rounded-2xl border border-[#222225]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#F3F4F6]">
+                    <Layers className="w-4 h-4 text-[#C9A227]" />
+                    <span>تصاویر کالا جهت ذخیره‌سازی:</span>
+                  </div>
+                  <span className="text-[11px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                    ✓ هر {toPersianDigits(importAllImages.length)} تصویر با هم ذخیره می‌شوند
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 pt-2">
+                  {importAllImages.map((imgUrl, idx) => (
+                    <div key={idx} className="relative group rounded-xl overflow-hidden bg-[#1A1A20] border border-[#2D2D35] p-1 aspect-square flex items-center justify-center">
+                      <img
+                        src={imgUrl}
+                        alt={`عکس ${idx + 1}`}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-contain"
+                      />
+                      {idx === 0 && (
+                        <span className="absolute bottom-0 inset-x-0 bg-black/80 text-[8px] text-[#C9A227] font-bold text-center py-0.5">
+                          عکس اصلی
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* SECTION 3: Initial Stock & Prices */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] text-[#8E9299] mb-1">موجودی اولیه در انبار:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={importStock}
+                    onChange={(e) => setImportStock(Number(e.target.value) || 0)}
+                    className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl px-3 py-2 text-white font-mono text-center focus:border-[#C9A227] outline-none font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-[#8E9299] mb-1">قیمت خرید برآوردی (تومان):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={importBuyPrice}
+                    onChange={(e) => setImportBuyPrice(Number(e.target.value) || 0)}
+                    className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl px-3 py-2 text-emerald-400 font-mono text-center focus:border-[#C9A227] outline-none font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-[#8E9299] mb-1">قیمت فروش آنلاین سایت (تومان):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={importPriceShop2}
+                    onChange={(e) => setImportPriceShop2(Number(e.target.value) || 0)}
+                    className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl px-3 py-2 text-[#C9A227] font-mono text-center focus:border-[#C9A227] outline-none font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-[#8E9299] mb-1">قیمت عمده / همکار (تومان):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={importPriceShop3}
+                    onChange={(e) => setImportPriceShop3(Number(e.target.value) || 0)}
+                    className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl px-3 py-2 text-blue-400 font-mono text-center focus:border-[#C9A227] outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-3 border-t border-[#222225] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={isSubmittingImportModal}
+                  onClick={() => setImportModalItem(null)}
+                  className="px-4 py-2.5 rounded-xl bg-[#222226] hover:bg-[#2D2D33] text-[#8E9299] hover:text-white text-xs font-bold transition-colors cursor-pointer"
+                >
+                  انصراف
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingImportModal}
+                  className="px-6 py-2.5 rounded-xl bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 text-xs font-black transition-all shadow-lg flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSubmittingImportModal ? (
+                    <span>در حال ذخیره‌سازی...</span>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4 text-black" />
+                      <span>تأیید و ذخیره نهایی در انبار خطی‌نو</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

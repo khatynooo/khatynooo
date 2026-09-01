@@ -255,9 +255,9 @@ app.get('/api/users', authenticateToken, requireRole(['admin']), async (req, res
 });
 
 app.post('/api/users', authenticateToken, requireRole(['admin']), async (req, res) => {
-  const { fullName, username, password, role } = req.body;
+  const { fullName, username, password, role, phone } = req.body;
   if (!fullName || !username || !password || !role) {
-    return res.status(400).json({ error: 'تمامی فیلدها الزامی هستند.' });
+    return res.status(400).json({ error: 'تمامی فیلدها (نام، نام کاربری، رمز عبور و نقش) الزامی هستند.' });
   }
 
   try {
@@ -272,6 +272,7 @@ app.post('/api/users', authenticateToken, requireRole(['admin']), async (req, re
       username,
       passwordHash,
       role,
+      phone: phone || '',
     });
 
     res.json({ user, message: 'کاربر جدید با موفقیت ایجاد شد.' });
@@ -284,7 +285,7 @@ app.put('/api/users/:id', authenticateToken, requireRole(['admin']), async (req,
   try {
     const user = await db.updateUser(req.params.id, req.body);
     if (!user) return res.status(404).json({ error: 'کاربر یافت نشد.' });
-    res.json({ user, message: 'اطلاعات کاربر با موفقیت به‌روزرسانی شد.' });
+    res.json({ user, message: 'اطلاعات و دسترسی‌های کاربر با موفقیت به‌روزرسانی شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -764,6 +765,68 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
 });
 
 // -------------------------------------------------------------
+// 5.1. RETURN INVOICES (مرجوعی کالا - خرابی یا انصراف)
+// -------------------------------------------------------------
+app.get('/api/invoices/returns', authenticateToken, async (req, res) => {
+  try {
+    const returnInvoices = await db.getReturnInvoices();
+    res.json({ returnInvoices });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, res) => {
+  const {
+    originalInvoiceId,
+    originalInvoiceNumber,
+    customerId,
+    customerName,
+    customerMobile,
+    type = 'sales_return',
+    reasonCategory, // 'defective' | 'unwanted'
+    reasonNote,
+    items,
+    totalRefundAmount,
+    refundMethod = 'cash',
+    warehouseId,
+  } = req.body;
+
+  if (!items || !items.length) {
+    return res.status(400).json({ error: 'حداقل یک قلم کالا برای مرجوعی باید مشخص شود.' });
+  }
+  if (!customerName) {
+    return res.status(400).json({ error: 'نام مشتری برای ثبت سند مرجوعی الزامی است.' });
+  }
+  if (!reasonCategory || !['defective', 'unwanted'].includes(reasonCategory)) {
+    return res.status(400).json({ error: 'علت مرجوعی (خرابی/معیوب یا انصراف/نخواستن) باید مشخص شود.' });
+  }
+
+  try {
+    const result = await db.createReturnInvoice({
+      originalInvoiceId,
+      originalInvoiceNumber,
+      customerId,
+      customerName,
+      customerMobile,
+      type,
+      reasonCategory,
+      reasonNote,
+      items,
+      totalRefundAmount: Number(totalRefundAmount) || 0,
+      refundMethod,
+      warehouseId,
+      userId: req.user?.id,
+      userName: req.user?.name || req.user?.username,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
 // 6. CUSTOMERS & SUPPLIERS (SQL-Backed)
 // -------------------------------------------------------------
 app.get('/api/customers', authenticateToken, async (req, res) => {
@@ -776,12 +839,48 @@ app.get('/api/customers', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/customers', authenticateToken, async (req, res) => {
-  const { name, companyName, mobile, nationalCode, address } = req.body;
-  if (!name || !mobile) return res.status(400).json({ error: 'نام و موبایل مشتری الزامی است.' });
+  const { name, companyName, mobile, phone, nationalCode, address, postalCode, province, city, fullAddress, email, creditLimit, notes } = req.body;
+  if (!name || !mobile) return res.status(400).json({ error: 'نام و شماره تماس مشتری الزامی است.' });
 
   try {
-    const customer = await db.createCustomer({ name, companyName, mobile, nationalCode, address });
+    const customer = await db.createCustomer({
+      name,
+      companyName,
+      mobile,
+      phone,
+      nationalCode,
+      address,
+      postalCode,
+      province,
+      city,
+      fullAddress,
+      email,
+      creditLimit,
+      notes,
+    });
     res.json({ customer, message: 'مشتری جدید با موفقیت ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/customers/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const updated = await db.updateCustomer(id, req.body);
+    if (!updated) return res.status(404).json({ error: 'مشتری مورد نظر یافت نشد.' });
+    res.json({ customer: updated, message: 'اطلاعات مشتری با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/customers/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const success = await db.deleteCustomer(id);
+    if (!success) return res.status(404).json({ error: 'مشتری یافت نشد یا امکان حذف وجود ندارد.' });
+    res.json({ success: true, message: 'مشتری با موفقیت حذف شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -891,12 +990,34 @@ app.post('/api/suppliers/:id/record-payment', authenticateToken, requireRole(['a
 });
 
 app.post('/api/suppliers', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
-  const { name, mobile, address } = req.body;
+  const { name, contactPerson, mobile, phone, address, bankAccount, shaba, debtToSupplier } = req.body;
   if (!name || !mobile) return res.status(400).json({ error: 'نام و تلفن تامین‌کننده الزامی است.' });
 
   try {
-    const supplier = await db.createSupplier({ name, mobile, address });
-    res.json({ supplier, message: 'تامین‌کننده جدید ثبت شد.' });
+    const supplier = await db.createSupplier({ name, contactPerson, mobile, phone, address, bankAccount, shaba, debtToSupplier });
+    res.json({ supplier, message: 'تامین‌کننده جدید با موفقیت ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/suppliers/:id', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const updated = await db.updateSupplier(id, req.body);
+    if (!updated) return res.status(404).json({ error: 'تامین‌کننده مورد نظر یافت نشد.' });
+    res.json({ supplier: updated, message: 'اطلاعات تامین‌کننده با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/suppliers/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const success = await db.deleteSupplier(id);
+    if (!success) return res.status(404).json({ error: 'تامین‌کننده یافت نشد یا امکان حذف وجود ندارد.' });
+    res.json({ success: true, message: 'تامین‌کننده با موفقیت حذف شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -951,60 +1072,131 @@ app.get('/api/services/presets', async (req, res) => {
 });
 
 app.post('/api/services/presets', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
-  const { name, category, unit, price, description, showInPos } = req.body;
   try {
-    const preset = await db.createServicePreset({ name, category, unit, price, description, showInPos });
-    res.json({ preset, message: 'تعرفه سرویس کپی/پرینت جدید ثبت شد.' });
+    const preset = await db.createServicePreset(req.body);
+    res.json({ preset, message: 'تعرفه خدمت جدید با موفقیت ثبت شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/services/calculate', (req, res) => {
-  const {
-    paperSize = 'A4',
-    colorType = 'bw',
-    printSide = 'single',
-    paperWeight = '80g',
-    pageCount = 10,
-    copyCount = 1,
-    bindingType = 'none',
-  } = req.body;
+app.put('/api/services/presets/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const preset = await db.updateServicePreset(req.params.id, req.body);
+    if (!preset) return res.status(404).json({ error: 'تعرفه خدمت یافت نشد.' });
+    res.json({ preset, message: 'تعرفه خدمت با موفقیت به‌روزرسانی شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  let baseRate = colorType === 'color' ? 4500 : 900;
-  if (paperSize === 'A3') baseRate *= 2;
-  if (paperSize === 'A5') baseRate *= 0.6;
-  if (printSide === 'double') baseRate *= 1.5;
-  if (paperWeight === '100g') baseRate += 400;
-  if (paperWeight === 'glossy') baseRate += 2500;
-  if (paperWeight === 'card') baseRate += 3500;
+app.delete('/api/services/presets/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const success = await db.deleteServicePreset(req.params.id);
+    if (!success) return res.status(404).json({ error: 'تعرفه خدمت یافت نشد.' });
+    res.json({ success: true, message: 'تعرفه خدمت با موفقیت حذف گردید.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  const unitPagePrice = Math.round(baseRate);
-  let bindingPrice = 0;
-  if (bindingType === 'spiral') bindingPrice = 25000;
-  if (bindingType === 'cellophane') bindingPrice = 18000;
-  if (bindingType === 'hardcover') bindingPrice = 65000;
-  if (bindingType === 'staple') bindingPrice = 4000;
+app.post('/api/services/calculate', async (req, res) => {
+  try {
+    const {
+      paperSize = 'A4',
+      colorType = 'bw',
+      printSide = 'single',
+      paperWeight = '80g',
+      pageCount = 10,
+      copyCount = 1,
+      bindingType = 'none',
+    } = req.body;
 
-  const totalPages = Number(pageCount) * Number(copyCount);
-  const printTotal = totalPages * unitPagePrice;
-  const finalAmount = printTotal + bindingPrice * Number(copyCount);
+    const totalPages = Math.max(1, Number(pageCount)) * Math.max(1, Number(copyCount));
 
-  res.json({
-    calculation: {
-      paperSize,
-      colorType,
-      printSide,
-      paperWeight,
-      pageCount: Number(pageCount),
-      copyCount: Number(copyCount),
-      bindingType,
-      unitPagePrice,
-      bindingPrice,
-      totalPages,
-      finalAmount,
-    },
-  });
+    // دریافت تعرفه‌های فعال از دیتابیس
+    const presets = await db.getServicePresets();
+    const websitePresets = presets.filter((p) => p.showOnWebsite || p.visibility === 'only_website' || p.visibility === 'both');
+
+    // جستجوی تعرفه منطبق با سیاه و سفید / رنگی
+    let matchedPreset = websitePresets.find((p) => {
+      const name = (p.name || p.title || '').toLowerCase();
+      if (colorType === 'color') {
+        return name.includes('رنگی') || name.includes('color');
+      } else {
+        return name.includes('سیاه') || name.includes('bw') || name.includes('تک‌رو') || name.includes('کپی');
+      }
+    }) || websitePresets[0] || presets[0];
+
+    let unitPagePrice = 2000;
+    let bindingPrice = 0;
+
+    if (matchedPreset) {
+      const single1 = Number(matchedPreset.priceSingle1 || matchedPreset.basePriceSingle || matchedPreset.price || 2000);
+      const single2 = Number(matchedPreset.priceSingle2 || Math.round(single1 * 0.85));
+      const double1 = Number(matchedPreset.priceDouble1 || matchedPreset.basePriceDouble || Math.round(single1 * 1.6));
+      const double2 = Number(matchedPreset.priceDouble2 || Math.round(single1 * 1.35));
+      const threshold = Number(matchedPreset.volumeDiscountThreshold || 50);
+
+      const isTier2 = totalPages >= threshold;
+
+      if (printSide === 'double') {
+        unitPagePrice = isTier2 ? double2 : double1;
+      } else {
+        unitPagePrice = isTier2 ? single2 : single1;
+      }
+
+      // تنظیم سایز کاغذ
+      if (paperSize === 'A3') unitPagePrice = Math.round(unitPagePrice * 1.9);
+      if (paperSize === 'A5') unitPagePrice = Math.round(unitPagePrice * 0.65);
+
+      // گرماژ کاغذ
+      if (paperWeight === '100g') unitPagePrice += 500;
+      if (paperWeight === 'glossy') unitPagePrice += 3000;
+      if (paperWeight === 'card') unitPagePrice += 4500;
+
+      // صحافی
+      if (bindingType === 'spiral') bindingPrice = Number(matchedPreset.bindingSpiralPrice || 35000);
+      if (bindingType === 'hardcover') bindingPrice = Number(matchedPreset.bindingHardcoverPrice || 85000);
+      if (bindingType === 'cellophane') bindingPrice = Number(matchedPreset.bindingCellophanePrice || 15000);
+      if (bindingType === 'staple') bindingPrice = 5000;
+    } else {
+      let baseRate = colorType === 'color' ? 5500 : 1800;
+      if (paperSize === 'A3') baseRate *= 1.9;
+      if (paperSize === 'A5') baseRate *= 0.65;
+      if (printSide === 'double') baseRate *= 1.6;
+      if (paperWeight === '100g') baseRate += 500;
+      if (paperWeight === 'glossy') baseRate += 3000;
+      if (paperWeight === 'card') baseRate += 4500;
+      unitPagePrice = Math.round(baseRate);
+
+      if (bindingType === 'spiral') bindingPrice = 35000;
+      if (bindingType === 'hardcover') bindingPrice = 85000;
+      if (bindingType === 'cellophane') bindingPrice = 15000;
+      if (bindingType === 'staple') bindingPrice = 5000;
+    }
+
+    const printTotal = totalPages * unitPagePrice;
+    const finalAmount = printTotal + bindingPrice * Number(copyCount);
+
+    res.json({
+      calculation: {
+        paperSize,
+        colorType,
+        printSide,
+        paperWeight,
+        pageCount: Number(pageCount),
+        copyCount: Number(copyCount),
+        bindingType,
+        unitPagePrice,
+        bindingPrice,
+        totalPages,
+        finalAmount,
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/services/records', authenticateToken, async (req, res) => {
@@ -1170,6 +1362,8 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
       brand,
       unit,
       image,
+      gallery,
+      extraImages,
       buyPrice = 0,
       priceShop1 = 0,
       priceShop2 = 0,
@@ -1177,6 +1371,8 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
       stock = 20,
       minStock = 5,
       barcode,
+      showOnWebsite,
+      onlyAccounting,
     } = req.body;
 
     if (!name || !name.trim()) {
@@ -1187,6 +1383,9 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
     const cleanBuyPrice = Number(buyPrice) || 0;
     const cleanStock = Number(stock) || 0;
     const cleanSalePrice = Number(priceShop2 || priceShop1 || 0);
+    const allImages = Array.isArray(extraImages) && extraImages.length > 0
+      ? extraImages
+      : (Array.isArray(gallery) && gallery.length > 0 ? gallery : (image ? [image] : []));
 
     // ۱. بررسی وجود کالای هم‌نام یا دارای بارکد مشابه
     const allProducts = await db.getProducts();
@@ -1200,6 +1399,7 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
       // اگر کالا از قبل وجود دارد، موجودی را افزایش می‌دهیم و قیمت‌ها را به‌روزرسانی می‌کنیم
       const prevStock = Number(existingProduct.stock || 0);
       const newStock = prevStock + cleanStock;
+      const mergedGallery = Array.from(new Set([...(existingProduct.gallery || []), ...allImages]));
 
       const updated = await db.updateProduct(
         existingProduct.id,
@@ -1212,6 +1412,10 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
           priceShop3: Number(priceShop3) || existingProduct.priceShop3,
           wholesalePrice: Number(priceShop3) || existingProduct.wholesalePrice,
           image: image || existingProduct.image,
+          gallery: mergedGallery,
+          extraImages: mergedGallery,
+          showOnWebsite: showOnWebsite !== undefined ? Boolean(showOnWebsite) : existingProduct.showOnWebsite,
+          onlyAccounting: onlyAccounting !== undefined ? Boolean(onlyAccounting) : existingProduct.onlyAccounting,
         },
         {
           userId: req.user?.id,
@@ -1239,12 +1443,15 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
       return res.json({
         product: updated,
         isExisting: true,
-        message: `کالای «${existingProduct.name}» از قبل در سیستم موجود بود. موجودی آن از ${prevStock} به ${newStock} افزایش یافت و سند خرید خزانه (${totalPurchaseCost.toLocaleString('fa-IR')} تومان) با موفقیت ثبت شد.`,
+        message: `کالای «${existingProduct.name}» از قبل در سیستم موجود بود. موجودی آن از ${prevStock} به ${newStock} افزایش یافت و تصاویر و قیمت‌ها همگام شدند.`,
       });
     }
 
-    // ۲. کالا وجود ندارد -> ثبت به عنوان کالای جدید
+    // ۲. کالا وجود ندارد -> ثبت به عنوان کالای جدید (پیش‌فرض: فقط حسابداری مگر اینکه صریحاً ارسال به سایت انتخاب شود)
     const code = `INV-${Date.now().toString().slice(-6)}`;
+    const shouldPublishToWebsite = Boolean(showOnWebsite);
+    const isOnlyAccounting = onlyAccounting !== undefined ? Boolean(onlyAccounting) : !shouldPublishToWebsite;
+
     const newProduct = await db.createProduct({
       name: trimmedName,
       code,
@@ -1252,7 +1459,11 @@ app.post('/api/torob/import-to-inventory', authenticateToken, requireRole(['admi
       categoryId: 'cat_stationery',
       categoryName: category || 'نوشت‌افزار',
       unit: unit || 'عدد',
-      image: image || '',
+      image: image || allImages[0] || '',
+      gallery: allImages,
+      extraImages: allImages,
+      showOnWebsite: shouldPublishToWebsite,
+      onlyAccounting: isOnlyAccounting,
       stock: cleanStock,
       minStockAlert: Number(minStock) || 5,
       minAllowedPrice: cleanBuyPrice,

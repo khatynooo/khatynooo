@@ -152,3 +152,76 @@ export function resolveStationerySafeImage(title: string, category?: string, cur
 
   return STATIONERY_IMAGE_BANK.paperDoubleA;
 }
+
+/**
+ * تجمیع، اعتبارسنجی و استخراج تمامی تصاویر باکیفیت یک کالا (عکس اصلی + تمام تصاویر گالری شرکت/ترب/دیجی‌کالا)
+ */
+export function resolveStationeryMultiImages(
+  title: string,
+  category: string,
+  primaryImageUrl?: string | null,
+  rawGallery?: Array<string | { url?: string; image_url?: string }> | null
+): { primaryImage: string; gallery: string[]; isGenericStockPhoto: boolean } {
+  const imagesSet = new Set<string>();
+
+  // ۱. بررسی و استخراج تصاویر از آرایه خام
+  if (Array.isArray(rawGallery)) {
+    for (const item of rawGallery) {
+      const url = typeof item === 'string' ? item : item?.url || item?.image_url;
+      if (url && typeof url === 'string' && isValidStationeryImage(title, url)) {
+        imagesSet.add(url);
+      }
+    }
+  }
+
+  // ۲. بررسی تصویر اصلی
+  let primaryValid = false;
+  if (primaryImageUrl && typeof primaryImageUrl === 'string' && isValidStationeryImage(title, primaryImageUrl)) {
+    imagesSet.add(primaryImageUrl);
+    primaryValid = true;
+  }
+
+  let isGenericStockPhoto = false;
+
+  // ۳. در صورتی که هیچ تصویر معتبری یافت نشد، از تصاویر کاتالوگ بنچمارک متناسب با دسته‌بندی استفاده می‌شود
+  if (imagesSet.size === 0) {
+    const fallback = getMatchingCategoryPlaceholder(title, category);
+    imagesSet.add(fallback);
+    isGenericStockPhoto = true;
+  }
+
+  // ۴. افزودن تصاویر مرتبط دسته‌ای جهت ایجاد گالری کامل چندتصویره برای کالا
+  const titleLower = (title || '').toLowerCase();
+  if (titleLower.includes('کاغذ') || titleLower.includes('a4') || titleLower.includes('کپی')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.paperDoubleA);
+    imagesSet.add(STATIONERY_IMAGE_BANK.paperCopyMax);
+  } else if (titleLower.includes('خودکار') || titleLower.includes('روان نویس') || titleLower.includes('پنتر') || titleLower.includes('بیک')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.penPanterSemiGel);
+    imagesSet.add(STATIONERY_IMAGE_BANK.penBicCrystal);
+  } else if (titleLower.includes('مداد رنگی') || titleLower.includes('فابر') || titleLower.includes('آریا')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsFaber);
+    imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsArya);
+  } else if (titleLower.includes('ماژیک') || titleLower.includes('هایلایتر') || titleLower.includes('استابیلو')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.highlighterStabilo);
+    imagesSet.add(STATIONERY_IMAGE_BANK.markerSnowmanWb);
+  } else if (titleLower.includes('اتود') || titleLower.includes('مداد نوکی') || titleLower.includes('فابر')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.pencilFaberGrip);
+    imagesSet.add(STATIONERY_IMAGE_BANK.pencilZebraDrafix);
+  } else if (titleLower.includes('چسب') || titleLower.includes('غلط گیر')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.correctionPanterTape);
+    imagesSet.add(STATIONERY_IMAGE_BANK.glueCancoStick);
+  } else if (titleLower.includes('دفتر') || titleLower.includes('کلاسور') || titleLower.includes('پاپکو')) {
+    imagesSet.add(STATIONERY_IMAGE_BANK.notebookPapco100);
+    imagesSet.add(STATIONERY_IMAGE_BANK.binderPapcoOffice);
+  }
+
+  const galleryList = Array.from(imagesSet);
+  const primaryImage = primaryValid && primaryImageUrl ? primaryImageUrl : galleryList[0];
+
+  return {
+    primaryImage,
+    gallery: galleryList,
+    isGenericStockPhoto,
+  };
+}
+

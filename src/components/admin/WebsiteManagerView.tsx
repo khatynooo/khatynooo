@@ -1422,31 +1422,83 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 </div>
               </div>
 
-              {/* Top Notification Bar */}
-              <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-3">
-                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
-                  <Sparkles className="w-4 h-4" />
-                  <span>نوار اعلان بالای سایت (Top Notification Bar)</span>
+              {/* Top Notification & Advertisement Bar */}
+              <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <Sparkles className="w-4 h-4" />
+                    <span>نوار اعلان، تبلیغات و بنر بالای سایت (Notice & Advertisement Bar)</span>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={webSettings.showNotice !== false}
+                      onChange={(e) => setWebSettings({ ...webSettings, showNotice: e.target.checked })}
+                      className="accent-[#C9A227] w-3.5 h-3.5 rounded"
+                    />
+                    <span className="text-xs text-[#E0E0E0] font-bold">نمایش نوار تبلیغات/اعلان</span>
+                  </label>
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">نشان اعلان (Badge Text):</label>
+                    <label className="font-bold text-[#8E9299] block mb-1">نشان تبلیغ یا اعلان (Badge):</label>
                     <input
                       type="text"
                       value={webSettings.noticeBadgeText || ''}
                       onChange={(e) => setWebSettings({ ...webSettings, noticeBadgeText: e.target.value })}
-                      placeholder="مثال: اطلاعیه فروشگاه"
-                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none"
+                      placeholder="مثال: تبلیغات ویژه یا تخفیف روز"
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="font-bold text-[#8E9299] block mb-1">متن پیام نوار اعلان:</label>
+                    <label className="font-bold text-[#8E9299] block mb-1">متن تبلیغ یا پیام اطلاعیه:</label>
                     <input
                       type="text"
                       value={webSettings.noticeText || ''}
                       onChange={(e) => setWebSettings({ ...webSettings, noticeText: e.target.value })}
-                      placeholder="🎉 ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان در سراسر کشور با کد KHATINOO"
-                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none"
+                      placeholder="🎉 جشنواره تخفیف ویژه لوازم‌تحریر و دفاتر اختصاصی خطی‌نو با کد تخفیف KHATINOO"
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1 text-[11px]">طرح و تم بنر تبلیغاتی:</label>
+                    <select
+                      value={webSettings.noticeBannerStyle || 'default'}
+                      onChange={(e) => setWebSettings({ ...webSettings, noticeBannerStyle: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="default">ساده و کلاسیک (پیش‌فرض)</option>
+                      <option value="gold_gradient">طلایی جذاب و درخشان (Gold Gradient)</option>
+                      <option value="emerald_deals">سبز زمردی و تخفیف ویژه (Emerald)</option>
+                      <option value="indigo_promo">آبی و سرمه‌ای پروموشن (Indigo Promo)</option>
+                      <option value="rose_hot">قرمز آتشین و پیشنهاد داغ (Rose Hot)</option>
+                      <option value="dark_luxury">مشکی کربن و لوکس (Dark Luxury)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1 text-[11px]">لینک یا مقصد تبلیغ (اختیاری):</label>
+                    <input
+                      type="text"
+                      value={webSettings.noticeLink || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, noticeLink: e.target.value })}
+                      placeholder="مثال: /category/cat_notebooks یا #calculator"
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs font-mono text-left"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1 text-[11px]">متن دکمه عمل تبلیغ:</label>
+                    <input
+                      type="text"
+                      value={webSettings.noticeLinkText || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, noticeLinkText: e.target.value })}
+                      placeholder="مثال: مشاهده و خرید"
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
                     />
                   </div>
                 </div>
@@ -1630,31 +1682,39 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                       </span>
                     </div>
 
-                    <div className="w-full h-32 rounded-2xl bg-[#161619] border border-[#2D2D33] flex items-center justify-center overflow-hidden relative shadow-inner p-2">
+                    <div className="w-full h-36 rounded-2xl bg-[#161619] border border-[#2D2D33] flex items-center justify-center overflow-hidden relative shadow-inner p-2">
                       {webSettings.logoUrl ? (
                         <img
                           src={webSettings.logoUrl}
                           alt="لوگوی فروشگاه"
                           style={{
-                            height: `${Math.min(Math.max(webSettings.logoHeight || 48, 24), 110)}px`,
-                            width: webSettings.logoWidth ? `${Math.min(webSettings.logoWidth, 200)}px` : 'auto',
+                            height: `${Math.min(Math.max(webSettings.logoHeight || 48, 24), 130)}px`,
+                            width: webSettings.logoWidth ? `${Math.min(webSettings.logoWidth, 240)}px` : 'auto',
                             maxHeight: '100%',
                             maxWidth: '100%',
                             objectFit: (webSettings.logoFit as any) || 'contain',
                           }}
-                          className={`${webSettings.logoBorderRadius || 'rounded-2xl'} shadow-xs transition-all duration-200`}
+                          className={`${
+                            webSettings.logoBorderRadius === 'rounded-none'
+                              ? 'rounded-none'
+                              : webSettings.logoBorderRadius || 'rounded-none'
+                          } ${
+                            webSettings.logoHasBorder
+                              ? 'ring-1 ring-[#C9A227]/40 p-1 bg-white/5'
+                              : 'ring-0 border-0 shadow-none'
+                          } transition-all duration-200`}
                         />
                       ) : (
                         <div className="text-center p-2 text-[#8E9299]">
                           <BookOpen className="w-8 h-8 mx-auto text-[#C9A227] mb-1" />
-                          <span className="text-[10px]">بدون تصویر</span>
+                          <span className="text-[10px]">بدون تصویر لوگو</span>
                         </div>
                       )}
                     </div>
 
                     <label className="w-full bg-[#1C1C20] hover:bg-[#25252B] text-[#C9A227] border border-[#C9A227]/30 font-bold py-2 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-colors text-[11px]">
                       <Upload className="w-3.5 h-3.5" />
-                      <span>{isUploadingLogo ? 'در حال آپلود...' : 'انتخاب و آپلود لوگو'}</span>
+                      <span>{isUploadingLogo ? 'در حال آپلود...' : 'انتخاب و آپلود تصویر خام لوگو'}</span>
                       <input
                         type="file"
                         accept="image/*"
@@ -1668,7 +1728,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                       type="text"
                       value={webSettings.logoUrl || ''}
                       onChange={(e) => setWebSettings({ ...webSettings, logoUrl: e.target.value })}
-                      placeholder="یا وارد کردن لینک مستقیم URL"
+                      placeholder="یا لینک مستقیم اینترنتی عکس لوگو"
                       className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[10px] text-center font-mono outline-none text-[#E0E0E0]"
                     />
 
@@ -1676,16 +1736,27 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     <div className="pt-2 border-t border-[#222225] space-y-3">
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-[#8E9299] font-bold">اندازه و ارتفاع لوگو:</span>
-                          <span className="text-[#C9A227] font-mono font-bold">{webSettings.logoHeight || 48} پیکسل</span>
+                          <span className="text-[#8E9299] font-bold">اندازه و ارتفاع آرم (پیکسل):</span>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="20"
+                              max="240"
+                              value={webSettings.logoHeight || 48}
+                              onChange={(e) => setWebSettings({ ...webSettings, logoHeight: Number(e.target.value) })}
+                              className="w-14 bg-[#161619] border border-[#2D2D33] text-[#C9A227] font-mono font-bold text-center text-xs rounded px-1 py-0.5 outline-none"
+                            />
+                            <span className="text-[10px] text-[#8E9299]">px</span>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-5 gap-1">
+                        <div className="grid grid-cols-6 gap-1">
                           {[
                             { label: 'کوچک', size: 36 },
-                            { label: 'متوسط', size: 48 },
-                            { label: 'بزرگ', size: 64 },
-                            { label: 'خیلی‌بزرگ', size: 84 },
-                            { label: 'ویژه', size: 110 },
+                            { label: 'عادی', size: 48 },
+                            { label: 'بزرگ', size: 72 },
+                            { label: 'خیلی‌بزرگ', size: 100 },
+                            { label: 'ماکزیمم', size: 140 },
+                            { label: 'غول‌آسا', size: 180 },
                           ].map((preset) => (
                             <button
                               key={preset.size}
@@ -1703,8 +1774,8 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         </div>
                         <input
                           type="range"
-                          min="24"
-                          max="160"
+                          min="20"
+                          max="240"
                           step="2"
                           value={webSettings.logoHeight || 48}
                           onChange={(e) => setWebSettings({ ...webSettings, logoHeight: Number(e.target.value) })}
@@ -1712,34 +1783,48 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         />
                       </div>
 
-                      {/* Display Mode & Border Radius */}
+                      {/* Frame / Border Toggle & Corner Rounding */}
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
                         <div>
-                          <label className="text-[#8E9299] block mb-1 font-bold">نحوه پر کردن کادر:</label>
+                          <label className="text-[#8E9299] block mb-1 font-bold">حاشیه و قاب کادر:</label>
                           <select
-                            value={webSettings.logoFit || 'contain'}
-                            onChange={(e) => setWebSettings({ ...webSettings, logoFit: e.target.value as any })}
+                            value={webSettings.logoHasBorder ? 'framed' : 'borderless'}
+                            onChange={(e) => setWebSettings({ ...webSettings, logoHasBorder: e.target.value === 'framed' })}
                             className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] text-[#E0E0E0] rounded-lg p-1.5 outline-none font-sans"
                           >
-                            <option value="contain">طبیعی و متناسب (Contain)</option>
-                            <option value="cover">برش و پوشش کامل (Cover)</option>
-                            <option value="fill">کشیدگی (Fill)</option>
+                            <option value="borderless">بدون کادر (شفاف و دقیق خود عکس)</option>
+                            <option value="framed">دارای کادر و قاب طلایی</option>
                           </select>
                         </div>
                         <div>
                           <label className="text-[#8E9299] block mb-1 font-bold">گردی گوشه‌ها:</label>
                           <select
-                            value={webSettings.logoBorderRadius || 'rounded-2xl'}
+                            value={webSettings.logoBorderRadius || 'rounded-none'}
                             onChange={(e) => setWebSettings({ ...webSettings, logoBorderRadius: e.target.value as any })}
                             className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] text-[#E0E0E0] rounded-lg p-1.5 outline-none font-sans"
                           >
-                            <option value="rounded-none">بدون گردی (مستطیل)</option>
-                            <option value="rounded-lg">گردی کم (8px)</option>
+                            <option value="rounded-none">بدون گردی (مستطیل و شکل طبیعی عکس)</option>
+                            <option value="rounded-lg">گردی ملایم (8px)</option>
                             <option value="rounded-xl">گردی متوسط (12px)</option>
                             <option value="rounded-2xl">گردی مدرن (16px)</option>
-                            <option value="rounded-full">دایره کامل (Full)</option>
+                            <option value="rounded-3xl">گردی زیاد (24px)</option>
+                            <option value="rounded-full">دایره کامل (Full Circle)</option>
                           </select>
                         </div>
+                      </div>
+
+                      {/* Display Mode (Object Fit) */}
+                      <div className="text-[10px]">
+                        <label className="text-[#8E9299] block mb-1 font-bold">نحوه نمایش و مقیاس تصویر:</label>
+                        <select
+                          value={webSettings.logoFit || 'contain'}
+                          onChange={(e) => setWebSettings({ ...webSettings, logoFit: e.target.value as any })}
+                          className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] text-[#E0E0E0] rounded-lg p-1.5 outline-none font-sans"
+                        >
+                          <option value="contain">طبیعی و حفظ تناسب ابعاد (Contain)</option>
+                          <option value="cover">برش و پوشش کامل کادر (Cover)</option>
+                          <option value="fill">کشیدگی عرضی و طولی (Fill)</option>
+                        </select>
                       </div>
 
                       {/* Show / Hide Site Name Text */}

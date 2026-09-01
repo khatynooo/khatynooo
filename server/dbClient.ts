@@ -83,6 +83,47 @@ export async function testDbConnection(): Promise<boolean> {
       implementation: () => `uuid_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
     });
 
+    // ثبت تابع abs برای مقادیر عددی در pg-mem
+    try {
+      memDb.public.registerFunction({
+        name: 'abs',
+        args: [DataType.integer],
+        returns: DataType.integer,
+        implementation: (x: any) => (x == null ? null : Math.abs(Number(x))),
+      });
+      memDb.public.registerFunction({
+        name: 'abs',
+        args: [DataType.float],
+        returns: DataType.float,
+        implementation: (x: any) => (x == null ? null : Math.abs(Number(x))),
+      });
+    } catch (e) {
+      console.warn('⚠️ [DEV PG-MEM] ثبت تابع abs با هشدار همراه بود:', e);
+    }
+
+    // ثبت تابع date برای تبدیل تاریخ‌ها در محیط pg-mem
+    memDb.public.registerFunction({
+      name: 'date',
+      args: [DataType.timestamp],
+      returns: DataType.text,
+      implementation: (val: any) => {
+        if (!val) return null;
+        const d = val instanceof Date ? val : new Date(val);
+        return d.toISOString().split('T')[0];
+      },
+    });
+
+    memDb.public.registerFunction({
+      name: 'date',
+      args: [DataType.text],
+      returns: DataType.text,
+      implementation: (val: any) => {
+        if (!val) return null;
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? String(val) : d.toISOString().split('T')[0];
+      },
+    });
+
     const pgAdapter = memDb.adapters.createPg();
     pool = new pgAdapter.Pool();
     isRealPostgres = false;
@@ -276,6 +317,21 @@ export async function initializeSchema(): Promise<void> {
             }
           }
         }
+      }
+    }
+
+    // اطمینان از وجود ستون‌های مهم و همگام‌سازی چند-انباره
+    const ensureColumns = [
+      "ALTER TABLE sales_invoices ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE purchase_invoices ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE online_orders ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_online'",
+      "ALTER TABLE production_runs ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+    ];
+    for (const colSql of ensureColumns) {
+      try {
+        await rawQuery(colSql);
+      } catch (e) {
+        // ستون از قبل وجود دارد
       }
     }
 

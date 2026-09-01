@@ -10,11 +10,14 @@ export interface User {
   fullName: string;
   username: string;
   role: UserRole;
+  phone?: string;
   avatar?: string;
   isActive: boolean;
   twoFactorEnabled?: boolean;
   createdAt: string;
 }
+
+export type StaffUser = User;
 
 export type BaseUnitType =
   | 'عدد'
@@ -92,6 +95,10 @@ export interface Product {
   isSpecialOffer?: boolean;
   featured?: boolean;
   isPublished?: boolean;
+  showOnWebsite?: boolean;
+  onlyAccounting?: boolean;
+  isService?: boolean;
+  extraImages?: string[];
   variants?: ProductVariant[];
   avgRating?: number;
   reviewsCount?: number;
@@ -104,6 +111,7 @@ export interface Customer {
   name: string;
   companyName?: string;
   mobile: string;
+  phone?: string;
   address?: string;
   postalCode?: string;
   province?: string;
@@ -111,6 +119,8 @@ export interface Customer {
   fullAddress?: string;
   email?: string;
   nationalCode?: string;
+  creditLimit?: number;
+  notes?: string;
   profileCompleted?: boolean;
   totalPurchaseAmount?: number;
   balance: number; // مثبت = بستانکار، منفی = بدهکار
@@ -126,6 +136,7 @@ export interface CustomerOtpResponse {
   expiresInSeconds: number;
   isSimulated?: boolean;
   simulatedCode?: string;
+  debugCode?: string;
 }
 
 export interface CustomerAuthResponse {
@@ -244,6 +255,42 @@ export interface PurchaseInvoice {
   notes?: string;
   warehouseId?: string;
   warehouseName?: string;
+  createdAt: string;
+}
+
+export type ReturnReason = 'defective' | 'unwanted';
+export type ReturnRefundMethod = 'cash' | 'customer_credit' | 'bank_transfer' | 'none';
+
+export interface ReturnInvoiceItem {
+  productId: string;
+  productName: string;
+  unit?: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  reasonCategory: ReturnReason; // 'defective' (معیوب / خرابی) | 'unwanted' (انصراف / نخواستن)
+  reasonNote?: string;
+  targetWarehouseId?: string;
+}
+
+export interface ReturnInvoice {
+  id: string;
+  returnNumber: string;
+  originalInvoiceId?: string;
+  originalInvoiceNumber?: string;
+  customerId?: string;
+  customerName: string;
+  customerMobile?: string;
+  type: 'sales_return' | 'purchase_return';
+  reasonCategory: ReturnReason;
+  reasonNote?: string;
+  items: ReturnInvoiceItem[];
+  totalRefundAmount: number;
+  refundMethod: ReturnRefundMethod;
+  warehouseId: string;
+  status: 'completed' | 'pending' | 'rejected';
+  createdByUserId?: string;
+  createdByUserName?: string;
   createdAt: string;
 }
 
@@ -409,12 +456,15 @@ export interface WebsiteSettings {
   defaultPriceTier: PriceTier;
   minOrderAmount: number;
   logoUrl?: string;
-  logoHeight?: number; // Height in pixels (e.g., 32 to 160px)
+  logoHeight?: number; // Height in pixels (e.g., 24 to 240px)
   logoWidth?: number; // Width in pixels (optional or proportional)
   logoFit?: 'contain' | 'cover' | 'fill' | 'none';
   logoBorderRadius?: 'rounded-none' | 'rounded-lg' | 'rounded-xl' | 'rounded-2xl' | 'rounded-3xl' | 'rounded-full';
+  logoHasBorder?: boolean; // When false, removes border and ring framing
   showLogoText?: boolean;
   faviconUrl?: string;
+  noticeLinkText?: string;
+  noticeBannerStyle?: 'default' | 'gold_gradient' | 'emerald_deals' | 'indigo_promo' | 'rose_hot' | 'dark_luxury';
   seoMetaTitle?: string;
   seoMetaDescription?: string;
   footerText?: string;
@@ -476,14 +526,44 @@ export interface PosTransactionLog {
   latencyMs: number;
 }
 
+export type ServiceVisibility = 'only_accounting' | 'only_website' | 'both';
+
 export interface ServicePreset {
   id: string;
   name: string;
+  title?: string;
   category: 'copy_print' | 'internet' | 'type_scan' | 'binding' | 'other';
+  serviceType?: string;
   unit: string;
   price: number;
-  description?: string;
+  
+  // چند قیمتی بودن: یک‌رو دو قیمت و دورو دو قیمت
+  priceSingle1: number; // قیمت یک‌رو ۱ (عادی / تک‌فروشی)
+  priceSingle2: number; // قیمت یک‌رو ۲ (همکار / تیراژ / مدارس)
+  basePriceSingle?: number; // alias
+  
+  priceDouble1: number; // قیمت دورو ۱ (عادی / تک‌فروشی)
+  priceDouble2: number; // قیمت دورو ۲ (همکار / تیراژ / مدارس)
+  basePriceDouble?: number; // alias
+
+  // هزینه‌های صحافی و خدمات تکمیلی
+  bindingSpiralPrice?: number;
+  bindingHardcoverPrice?: number;
+  bindingCellophanePrice?: number;
+
+  // قواعد تخفیف تیراژ
+  volumeDiscountThreshold?: number;
+  volumeDiscountPercent?: number;
+
+  // وضعیت نمایش و کانال انتشار (فقط حسابداری، فقط سایت، هر دو)
+  visibility?: ServiceVisibility;
   showInPos: boolean;
+  showOnWebsite?: boolean;
+  onlyAccounting?: boolean;
+
+  description?: string;
+  imageUrl?: string;
+  extraImages?: string[];
 }
 
 export interface ServiceRecord {
@@ -857,7 +937,6 @@ export interface DashboardStats {
 }
 
 // Aliases for compatibility
-export type StaffUser = User;
 export type Banner = WebsiteBanner;
 export type ShippingMethod = ShippingMethodConfig;
 export type ProductionOrder = ProductionRun;

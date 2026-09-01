@@ -4,6 +4,7 @@ import {
   X,
   Trash2,
   ArrowLeft,
+  ArrowRight,
   ShieldCheck,
   Truck,
   CreditCard,
@@ -13,6 +14,11 @@ import {
   KeyRound,
   AlertTriangle,
   MapPin,
+  Phone,
+  Send,
+  Building,
+  FileText,
+  Printer,
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
@@ -23,10 +29,20 @@ import { MandatoryProfileModal } from '../customer/MandatoryProfileModal';
 
 export const CartDrawer: React.FC = () => {
   const { cart, removeFromCart, updateQuantity, clearCart, totalPrice, isCartOpen, setIsCartOpen } = useCart();
-  const { customer, isAuthenticated, openAuthModal, isProfileCompleted, refreshCustomer, totalPurchaseAmount } = useCustomerAuth();
+  const { customer, isAuthenticated, openAuthModal, isProfileCompleted, refreshCustomer, totalPurchaseAmount, sendOtp, verifyOtp } = useCustomerAuth();
   const { showToast } = useToast();
 
-  const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart');
+  // Steps: 'cart' -> 'phone' -> 'details' -> 'payment' -> 'success'
+  const [step, setStep] = useState<'cart' | 'phone' | 'details' | 'payment' | 'success'>('cart');
+  
+  // Phone auth stage
+  const [phoneInput, setPhoneInput] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+
+  // Customer details
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -45,7 +61,10 @@ export const CartDrawer: React.FC = () => {
   useEffect(() => {
     if (customer) {
       if (customer.name) setCustomerName(customer.name);
-      if (customer.mobile) setCustomerMobile(customer.mobile);
+      if (customer.mobile) {
+        setCustomerMobile(customer.mobile);
+        setPhoneInput(customer.mobile);
+      }
       if (customer.fullAddress || customer.address) setCustomerAddress(customer.fullAddress || customer.address || '');
       if (customer.postalCode) setPostalCode(customer.postalCode);
       if (customer.province) setProvince(customer.province);
@@ -53,16 +72,24 @@ export const CartDrawer: React.FC = () => {
     }
   }, [customer]);
 
+  // Countdown timer for OTP
+  useEffect(() => {
+    let timer: any;
+    if (otpCountdown > 0) {
+      timer = setTimeout(() => setOtpCountdown(otpCountdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpCountdown]);
+
   const shippingCost = totalPrice >= 300000 ? 0 : 35000;
   const finalPayable = Math.max(0, totalPrice + shippingCost - discountAmount);
 
-  // Check if purchase exceeds 100,000 Toman threshold requiring profile completion
+  // Check high value threshold
   const isHighValuePurchase = finalPayable >= 100000 || (totalPurchaseAmount + finalPayable) >= 100000;
-  const needsProfileCompletion = isAuthenticated && isHighValuePurchase && !isProfileCompleted;
 
   const handleApplyCoupon = () => {
     if (!couponCode.trim()) return;
-    if (couponCode.toUpperCase() === 'KHATINOO10' || couponCode.toUpperCase() === 'NOROOZ' || couponCode.toUpperCase() === 'KHATINOO') {
+    if (['KHATINOO10', 'NOROOZ', 'KHATINOO', 'OFF10'].includes(couponCode.toUpperCase().trim())) {
       const disc = Math.round(totalPrice * 0.1);
       setDiscountAmount(disc);
       showToast(`کد تخفیف ۱۰٪ با موفقیت اعمال شد (${formatToman(disc)} تخفیف).`, 'success');
@@ -71,40 +98,120 @@ export const CartDrawer: React.FC = () => {
     }
   };
 
-  const handleProceedToCheckout = () => {
-    if (needsProfileCompletion) {
-      setShowProfileModal(true);
+  // Step 1: Cart -> Phone
+  const handleProceedToPhoneStep = () => {
+    if (cart.length === 0) {
+      showToast('سبد خرید شما خالی است.', 'warning');
       return;
     }
-    setStep('checkout');
+    // If already logged in, we can jump straight to details or prefill phone
+    if (isAuthenticated && customer?.mobile) {
+      setCustomerMobile(customer.mobile);
+      setPhoneInput(customer.mobile);
+      setStep('details');
+    } else {
+      setStep('phone');
+    }
   };
 
-  const handlePlaceOrder = async (e: React.FormEvent) => {
+  // Step 2: Request OTP
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = phoneInput.replace(/[^0-9]/g, '');
+    if (clean.length < 10 || !clean.startsWith('09') && !clean.startsWith('9')) {
+      showToast('لطفاً یک شماره موبایل معتبر ۱۱ رقمی (مانند 09123456789) وارد کنید.', 'warning');
+      return;
+    }
+    const formatted = clean.startsWith('9') ? `0${clean}` : clean;
+    setCustomerMobile(formatted);
+
+    try {
+      setIsVerifyingOtp(true);
+      const res = await sendOtp(formatted);
+      setIsOtpSent(true);
+      setOtpCountdown(120);
+      showToast(res.message || 'کد تایید پیامکی ارسال شد.', 'success');
+      if (res.debugCode) {
+        setOtpCode(res.debugCode);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ارسال پیامک', 'error');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  // Step 2: Verify OTP and proceed to Details
+  const handleVerifyOtpAndProceed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode.trim() || otpCode.trim().length < 4) {
+      showToast('لطفاً کد تایید ۴ یا ۶ رقمی دریافتی را وارد کنید.', 'warning');
+      return;
+    }
+
+    try {
+      setIsVerifyingOtp(true);
+      const res = await verifyOtp(customerMobile, otpCode.trim());
+      if (res.success) {
+        showToast('شماره تماس تایید شد. لطفاً مشخصات تحویل را تکمیل نمایید.', 'success');
+        if (res.customer) {
+          if (res.customer.name) setCustomerName(res.customer.name);
+          if (res.customer.fullAddress || res.customer.address) setCustomerAddress(res.customer.fullAddress || res.customer.address || '');
+          if (res.customer.postalCode) setPostalCode(res.customer.postalCode);
+          if (res.customer.province) setProvince(res.customer.province);
+          if (res.customer.city) setCity(res.customer.city);
+        }
+        setStep('details');
+      } else {
+        showToast('کد تایید نادرست است.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'کد تایید معتبر نیست', 'error');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  // Quick bypass for guest phone
+  const handleContinueAsGuestPhone = () => {
+    const clean = phoneInput.replace(/[^0-9]/g, '');
+    if (clean.length < 10) {
+      showToast('شماره موبایل وارد شده معتبر نیست.', 'warning');
+      return;
+    }
+    const formatted = clean.startsWith('9') ? `0${clean}` : clean;
+    setCustomerMobile(formatted);
+    setStep('details');
+  };
+
+  // Step 3: Details -> Payment Review
+  const handleProceedToPaymentReview = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!customerName.trim() || !customerMobile.trim() || !customerAddress.trim()) {
-      showToast('لطفاً تمامی مشخصات گیرنده و آدرس را تکمیل فرمایید.', 'warning');
+    if (!customerName.trim()) {
+      showToast('لطفاً نام و نام خانوادگی تحویل‌گیرنده را وارد کنید.', 'warning');
+      return;
+    }
+    if (!customerAddress.trim()) {
+      showToast('لطفاً آدرس دقیق پستی را وارد نمایید.', 'warning');
+      return;
+    }
+    if (isHighValuePurchase && (!postalCode || postalCode.trim().length < 10)) {
+      showToast('برای سفارشات بالای ۱۰۰ هزار تومان، ورود کد پستی ۱۰ رقمی الزامی است.', 'warning');
       return;
     }
 
-    const cleanMobile = customerMobile.replace(/[^0-9]/g, '');
-    if (cleanMobile.length < 10) {
-      showToast('شماره تلفن همراه معتبر نیست.', 'warning');
-      return;
-    }
+    setStep('payment');
+  };
 
-    // If purchase is over threshold and customer is logged in, verify profile completion
-    if (isHighValuePurchase && isAuthenticated && !isProfileCompleted && (!postalCode || postalCode.length < 10)) {
-      setShowProfileModal(true);
-      return;
-    }
-
+  // Step 4: Final Place Order & Payment
+  const handleExecutePayment = async () => {
     setIsSubmitting(true);
     try {
       const orderPayload = {
         customerId: customer?.id,
         customerName: customerName.trim(),
-        customerMobile: cleanMobile,
+        customerMobile: customerMobile.trim(),
         customerAddress: customerAddress.trim(),
         customerPostalCode: postalCode.trim() || customer?.postalCode,
         customerProvince: province || customer?.province,
@@ -128,10 +235,10 @@ export const CartDrawer: React.FC = () => {
         setStep('success');
         clearCart();
         refreshCustomer();
-        showToast('سفارش شما با موفقیت ثبت شد و پیامک تایید ارسال گردید.', 'success');
+        showToast('سفارش شما با موفقیت ثبت شد و فاکتور نهایی صادر گردید.', 'success');
       }
     } catch (err: any) {
-      showToast(err.message || 'خطا در ثبت سفارش', 'error');
+      showToast(err.message || 'خطا در ثبت و پرداخت سفارش', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -160,13 +267,17 @@ export const CartDrawer: React.FC = () => {
             className="w-screen max-w-md bg-[#111113] border-r border-[#222225] text-[#E0E0E0] shadow-2xl flex flex-col justify-between overflow-hidden"
           >
             {/* Header */}
-            <div className="p-4 sm:p-6 bg-[#0A0A0B] border-b border-[#222225] text-white flex items-center justify-between">
+            <div className="p-4 sm:p-5 bg-[#0A0A0B] border-b border-[#222225] text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-[#F3F4F6]">
-                  {step === 'cart' ? 'سبد خرید شما' : step === 'checkout' ? 'تکمیل اطلاعات و پرداخت' : 'تایید نهایی سفارش'}
+                <h2 className="text-sm sm:text-base font-black text-[#F3F4F6]">
+                  {step === 'cart' && 'سبد خرید شما'}
+                  {step === 'phone' && 'مرحله ۱: ورود شماره تماس'}
+                  {step === 'details' && 'مرحله ۲: مشخصات و نشانی'}
+                  {step === 'payment' && 'مرحله ۳: بررسی و پرداخت'}
+                  {step === 'success' && 'تایید نهایی سفارش'}
                 </h2>
                 {cart.length > 0 && step === 'cart' && (
-                  <span className="bg-[#C9A227] text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">
+                  <span className="bg-[#C9A227] text-slate-950 text-[11px] font-black px-2 py-0.5 rounded-full">
                     {toPersianDigits(cart.length)} قلم
                   </span>
                 )}
@@ -182,37 +293,36 @@ export const CartDrawer: React.FC = () => {
               </button>
             </div>
 
+            {/* Stepper Indicator */}
+            {step !== 'success' && (
+              <div className="px-4 py-2 bg-[#141416] border-b border-[#222225] flex items-center justify-between text-[11px] font-bold text-[#8E9299]">
+                <div className={`flex items-center gap-1 ${step === 'cart' ? 'text-[#C9A227]' : 'text-[#E0E0E0]'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${step === 'cart' ? 'bg-[#C9A227] text-slate-950' : 'bg-white/10'}`}>۱</span>
+                  <span>سبد</span>
+                </div>
+                <div className="w-4 h-px bg-[#2D2D33]" />
+                <div className={`flex items-center gap-1 ${step === 'phone' ? 'text-[#C9A227]' : step === 'details' || step === 'payment' ? 'text-emerald-400' : 'text-[#8E9299]'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${step === 'phone' ? 'bg-[#C9A227] text-slate-950' : 'bg-white/10'}`}>۲</span>
+                  <span>شماره</span>
+                </div>
+                <div className="w-4 h-px bg-[#2D2D33]" />
+                <div className={`flex items-center gap-1 ${step === 'details' ? 'text-[#C9A227]' : step === 'payment' ? 'text-emerald-400' : 'text-[#8E9299]'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${step === 'details' ? 'bg-[#C9A227] text-slate-950' : 'bg-white/10'}`}>۳</span>
+                  <span>مشخصات</span>
+                </div>
+                <div className="w-4 h-px bg-[#2D2D33]" />
+                <div className={`flex items-center gap-1 ${step === 'payment' ? 'text-[#C9A227]' : 'text-[#8E9299]'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${step === 'payment' ? 'bg-[#C9A227] text-slate-950' : 'bg-white/10'}`}>۴</span>
+                  <span>پرداخت</span>
+                </div>
+              </div>
+            )}
+
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
               {/* STEP 1: CART ITEMS */}
               {step === 'cart' && (
                 <>
-                  {/* Customer Auth Quick Banner */}
-                  {!isAuthenticated ? (
-                    <div className="p-3 rounded-2xl bg-[#161619] border border-[#2D2D33] flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <KeyRound className="w-4 h-4 text-[#C9A227]" />
-                        <span className="text-xs text-[#E0E0E0] font-medium">عضو فروشگاه هستید؟</span>
-                      </div>
-                      <button
-                        onClick={() => openAuthModal('برای اعمال تخفیف و ذخیره فاکتور در حسابتان وارد شوید.')}
-                        className="bg-[#C9A227]/20 hover:bg-[#C9A227]/30 text-[#C9A227] text-xs font-bold px-3 py-1 rounded-xl transition-colors cursor-pointer"
-                      >
-                        ورود با پیامک
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-2xl bg-amber-500/10 border border-[#C9A227]/30 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-[#C9A227]" />
-                        <span className="text-[#F3F4F6] font-bold">
-                          خرید با حساب: {customer?.name || toPersianDigits(customer?.mobile || '')}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-emerald-400 font-bold">متصل به حساب</span>
-                    </div>
-                  )}
-
                   {cart.length === 0 ? (
                     <div className="py-16 text-center space-y-3">
                       <div className="w-16 h-16 rounded-full bg-[#161619] border border-[#222225] flex items-center justify-center mx-auto text-[#8E9299]">
@@ -220,7 +330,7 @@ export const CartDrawer: React.FC = () => {
                       </div>
                       <div className="text-[#F3F4F6] font-bold text-sm">سبد خرید شما خالی است</div>
                       <p className="text-xs text-[#8E9299] max-w-xs mx-auto">
-                        از میان کالاهای متنوع و دفترهای تولیدی خطی‌نو، اقلام مورد نیاز خود را انتخاب کنید.
+                        از میان محصولات و دفاتر تولیدی خطی‌نو، اقلام مورد نیاز خود را انتخاب فرمایید.
                       </p>
                     </div>
                   ) : (
@@ -277,18 +387,135 @@ export const CartDrawer: React.FC = () => {
                 </>
               )}
 
-              {/* STEP 2: CHECKOUT FORM */}
-              {step === 'checkout' && (
-                <form onSubmit={handlePlaceOrder} className="space-y-4 text-xs">
-                  {/* Threshold Notification for Profile */}
-                  {isHighValuePurchase && (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-[#C9A227]/40 text-[#C9A227] text-xs flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>
-                        سفارش بالای ۱۰۰ هزار تومان جهت صدور بارنامه رسمی و ارسال پستی مستلزم ثبت آدرس و کد پستی دقیق است.
-                      </span>
+              {/* STEP 2: PHONE NUMBER AUTH */}
+              {step === 'phone' && (
+                <div className="space-y-4">
+                  <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-3">
+                    <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                      <Phone className="w-4 h-4" />
+                      <span>ورود شماره تماس برای ثبت سفارش و ارسال فاکتور</span>
                     </div>
-                  )}
+                    <p className="text-xs text-[#8E9299] leading-relaxed">
+                      شماره موبایل شما جهت پیگیری، هماهنگی ارسال مرسوله و دریافت پیامک کد رهگیری استفاده می‌شود.
+                    </p>
+
+                    {!isOtpSent ? (
+                      <form onSubmit={handleSendOtp} className="space-y-3 pt-1">
+                        <div>
+                          <label className="block text-xs font-bold text-[#E0E0E0] mb-1">
+                            شماره تلفن همراه (موبایل):
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="tel"
+                              dir="ltr"
+                              required
+                              autoFocus
+                              value={phoneInput}
+                              onChange={(e) => setPhoneInput(e.target.value)}
+                              placeholder="09123456789"
+                              className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 text-center text-sm font-mono text-[#F3F4F6] outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={handleContinueAsGuestPhone}
+                            className="w-1/2 bg-[#1C1C20] hover:bg-[#25252A] text-[#E0E0E0] border border-[#2D2D33] font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
+                          >
+                            ادامه با این شماره
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isVerifyingOtp}
+                            className="w-1/2 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            <Send className="w-3.5 h-3.5 text-black" />
+                            <span>{isVerifyingOtp ? 'در حال ارسال...' : 'دریافت کد پیامکی'}</span>
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <form onSubmit={handleVerifyOtpAndProceed} className="space-y-3 pt-1">
+                        <div className="text-center space-y-1">
+                          <div className="text-xs text-[#8E9299]">
+                            کد تایید به شماره <span className="text-[#F3F4F6] font-mono font-bold">{toPersianDigits(customerMobile)}</span> ارسال شد.
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#E0E0E0] mb-1 text-center">
+                            کد تایید ۴ یا ۶ رقمی پیامک شده:
+                          </label>
+                          <input
+                            type="text"
+                            dir="ltr"
+                            required
+                            autoFocus
+                            maxLength={6}
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value)}
+                            placeholder="1234"
+                            className="w-full bg-[#111113] border-2 border-[#C9A227] rounded-xl px-3 py-2.5 text-center text-lg font-mono tracking-widest text-[#F3F4F6] outline-none"
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={isVerifyingOtp}
+                          className="w-full bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-[#C9A227]/20 cursor-pointer disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-black" />
+                          <span>{isVerifyingOtp ? 'در حال تایید...' : 'تایید شماره و ادامه ثبت مشخصات'}</span>
+                        </button>
+
+                        <div className="flex justify-between items-center text-[11px] pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setIsOtpSent(false)}
+                            className="text-[#8E9299] hover:text-[#E0E0E0] cursor-pointer"
+                          >
+                            تغییر شماره همراه
+                          </button>
+                          {otpCountdown > 0 ? (
+                            <span className="text-[#8E9299] font-mono">
+                              ارسال مجدد ({toPersianDigits(otpCountdown)} ثانیه)
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleSendOtp}
+                              className="text-[#C9A227] font-bold hover:underline cursor-pointer"
+                            >
+                              ارسال مجدد کد
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: CUSTOMER DETAILS FORM */}
+              {step === 'details' && (
+                <form onSubmit={handleProceedToPaymentReview} className="space-y-4 text-xs">
+                  <div className="p-3 bg-[#161619] border border-[#2D2D33] rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-[#C9A227]" />
+                      <span className="text-xs text-[#E0E0E0]">شماره تماس:</span>
+                      <span className="font-mono font-bold text-[#F3F4F6]">{toPersianDigits(customerMobile)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStep('phone')}
+                      className="text-[11px] text-[#C9A227] hover:underline cursor-pointer"
+                    >
+                      تغییر شماره
+                    </button>
+                  </div>
 
                   <div className="space-y-1">
                     <label className="font-bold text-[#E0E0E0]">نام و نام خانوادگی تحویل‌گیرنده:</label>
@@ -299,18 +526,6 @@ export const CartDrawer: React.FC = () => {
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="مثال: علی حسینی"
                       className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2.5 text-[#E0E0E0] placeholder-[#8E9299] focus:border-[#C9A227] outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-bold text-[#E0E0E0]">شماره موبایل جهت هماهنگی و پیامک:</label>
-                    <input
-                      type="tel"
-                      required
-                      value={customerMobile}
-                      onChange={(e) => setCustomerMobile(e.target.value)}
-                      placeholder="09123456789"
-                      className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2.5 text-[#E0E0E0] placeholder-[#8E9299] focus:border-[#C9A227] outline-none font-mono"
                     />
                   </div>
 
@@ -364,7 +579,7 @@ export const CartDrawer: React.FC = () => {
                   </div>
 
                   {/* Shipping Method */}
-                  <div className="space-y-1.5 pt-2">
+                  <div className="space-y-1.5 pt-1">
                     <label className="font-bold text-[#E0E0E0]">شیوه ارسال مرسوله:</label>
                     <div className="grid grid-cols-2 gap-2">
                       <label className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer ${
@@ -401,7 +616,7 @@ export const CartDrawer: React.FC = () => {
                   </div>
 
                   {/* Gateway */}
-                  <div className="space-y-1.5 pt-2">
+                  <div className="space-y-1.5 pt-1">
                     <label className="font-bold text-[#E0E0E0]">درگاه امن پرداخت آنلاین:</label>
                     <div className="grid grid-cols-2 gap-2">
                       <label className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer ${
@@ -432,7 +647,7 @@ export const CartDrawer: React.FC = () => {
                   </div>
 
                   {/* Coupon */}
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <label className="font-bold text-[#E0E0E0] block mb-1">کد تخفیف دارید؟</label>
                     <div className="flex gap-2">
                       <input
@@ -454,7 +669,66 @@ export const CartDrawer: React.FC = () => {
                 </form>
               )}
 
-              {/* STEP 3: SUCCESS CONFIRMATION */}
+              {/* STEP 4: REVIEW AND PAYMENT */}
+              {step === 'payment' && (
+                <div className="space-y-4 text-xs">
+                  <div className="bg-[#161619] border border-[#2D2D33] rounded-2xl p-4 space-y-3 text-right">
+                    <div className="flex items-center justify-between border-b border-[#222225] pb-2">
+                      <span className="text-[#C9A227] font-bold flex items-center gap-1.5">
+                        <FileText className="w-4 h-4" />
+                        <span>پیش‌فاکتور نهایی سفارش</span>
+                      </span>
+                      <span className="text-[11px] text-[#8E9299]">
+                        {toPersianDigits(cart.length)} قلم کالا
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-[#8E9299]">تحویل‌گیرنده:</span>
+                        <span className="font-bold text-[#F3F4F6]">{customerName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#8E9299]">شماره تماس:</span>
+                        <span className="font-mono text-[#F3F4F6]">{toPersianDigits(customerMobile)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#8E9299]">نشانی ارسال:</span>
+                        <span className="text-[#E0E0E0] text-left max-w-[200px] truncate">{province} - {city} - {customerAddress}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#8E9299]">درگاه پرداخت:</span>
+                        <span className="font-bold text-emerald-400">
+                          {paymentGateway === 'zarinpal' ? 'شاپرک (زرین‌پال)' : 'بانک پاسارگاد'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#161619] border border-[#2D2D33] rounded-2xl p-4 space-y-2">
+                    <div className="flex justify-between text-[#8E9299]">
+                      <span>مبلغ کل سفارش:</span>
+                      <span>{formatToman(totalPrice)}</span>
+                    </div>
+                    <div className="flex justify-between text-[#8E9299]">
+                      <span>هزینه بسته‌بندی و ارسال:</span>
+                      <span>{shippingCost === 0 ? 'رایگان' : formatToman(shippingCost)}</span>
+                    </div>
+                    {discountAmount > 0 && (
+                      <div className="flex justify-between text-emerald-400 font-bold">
+                        <span>تخفیف اعمال شده:</span>
+                        <span>- {formatToman(discountAmount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-[#F3F4F6] font-black text-sm pt-2 border-t border-[#222225]">
+                      <span>مبلغ نهایی قابل پرداخت:</span>
+                      <span className="text-[#C9A227] text-base">{formatToman(finalPayable)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 5: SUCCESS CONFIRMATION */}
               {step === 'success' && completedOrder && (
                 <div className="py-8 text-center space-y-4">
                   <div className="w-16 h-16 bg-[#161619] border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-400 shadow-lg shadow-emerald-500/10">
@@ -462,7 +736,7 @@ export const CartDrawer: React.FC = () => {
                   </div>
                   <h3 className="text-lg font-black text-[#F3F4F6]">سفارش شما با موفقیت ثبت شد!</h3>
                   <p className="text-xs text-[#8E9299] leading-relaxed max-w-xs mx-auto">
-                    شماره پیگیری و فاکتور شما صادر شد. پیامک تایید با جزییات سفارش به شماره {toPersianDigits(completedOrder.customerMobile)} ارسال گردید.
+                    شماره پیگیری و فاکتور شما صادر شد. پیامک تایید با جزییات سفارش به شماره {toPersianDigits(completedOrder.customerMobile || customerMobile)} ارسال گردید.
                   </p>
 
                   <div className="bg-[#161619] border border-[#222225] rounded-2xl p-4 text-xs space-y-2 text-right">
@@ -489,46 +763,58 @@ export const CartDrawer: React.FC = () => {
 
             {/* Footer Actions */}
             {cart.length > 0 && step !== 'success' && (
-              <div className="p-4 sm:p-6 bg-[#0A0A0B] border-t border-[#222225] space-y-3">
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex justify-between text-[#8E9299]">
-                    <span>جمع کل اقلام:</span>
-                    <span>{formatToman(totalPrice)}</span>
-                  </div>
-                  <div className="flex justify-between text-[#8E9299]">
-                    <span>هزینه بسته‌بندی و ارسال:</span>
-                    <span>{shippingCost === 0 ? 'رایگان (سفارش بالای ۳۰۰ تومان)' : formatToman(shippingCost)}</span>
-                  </div>
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-emerald-400 font-bold">
-                      <span>تخفیف:</span>
-                      <span>- {formatToman(discountAmount)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-[#F3F4F6] font-black text-sm pt-2 border-t border-[#222225]">
-                    <span>مبلغ قابل پرداخت:</span>
-                    <span className="text-[#C9A227] text-base">{formatToman(finalPayable)}</span>
-                  </div>
-                </div>
-
-                {step === 'cart' ? (
+              <div className="p-4 sm:p-5 bg-[#0A0A0B] border-t border-[#222225] space-y-3">
+                {step === 'cart' && (
                   <button
-                    onClick={handleProceedToCheckout}
-                    className="w-full bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-3 rounded-xl transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={handleProceedToPhoneStep}
+                    className="w-full bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-3 rounded-xl transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 cursor-pointer text-xs"
                   >
-                    <span>ادامه و تکمیل مشخصات سفارش</span>
+                    <span>ثبت سفارش و ورود شماره تماس</span>
                     <ArrowLeft className="w-4 h-4 text-black" />
                   </button>
-                ) : (
+                )}
+
+                {step === 'phone' && (
+                  <button
+                    onClick={() => setStep('cart')}
+                    className="w-full bg-[#1C1C20] hover:bg-[#25252A] text-[#E0E0E0] border border-[#2D2D33] font-bold py-2.5 rounded-xl transition-colors cursor-pointer text-xs"
+                  >
+                    بازگشت به سبد خرید
+                  </button>
+                )}
+
+                {step === 'details' && (
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setStep('cart')}
+                      type="button"
+                      onClick={() => setStep('phone')}
                       className="w-1/3 bg-[#1C1C20] hover:bg-[#25252A] text-[#E0E0E0] border border-[#2D2D33] font-bold py-3 rounded-xl transition-colors cursor-pointer text-xs"
                     >
                       بازگشت
                     </button>
                     <button
-                      onClick={handlePlaceOrder}
+                      type="button"
+                      onClick={handleProceedToPaymentReview}
+                      className="w-2/3 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-3 rounded-xl transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 cursor-pointer text-xs"
+                    >
+                      <span>ادامه به مرحله پرداخت</span>
+                      <ArrowLeft className="w-4 h-4 text-black" />
+                    </button>
+                  </div>
+                )}
+
+                {step === 'payment' && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep('details')}
+                      className="w-1/3 bg-[#1C1C20] hover:bg-[#25252A] text-[#E0E0E0] border border-[#2D2D33] font-bold py-3 rounded-xl transition-colors cursor-pointer text-xs"
+                    >
+                      ویرایش اطلاعات
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExecutePayment}
                       disabled={isSubmitting}
                       className="w-2/3 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-3 rounded-xl transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 cursor-pointer text-xs disabled:opacity-50"
                     >
@@ -541,7 +827,7 @@ export const CartDrawer: React.FC = () => {
             )}
 
             {step === 'success' && (
-              <div className="p-4 sm:p-6 bg-[#0A0A0B] border-t border-[#222225]">
+              <div className="p-4 sm:p-5 bg-[#0A0A0B] border-t border-[#222225]">
                 <button
                   onClick={() => {
                     setIsCartOpen(false);
@@ -562,7 +848,7 @@ export const CartDrawer: React.FC = () => {
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
         onSuccess={() => {
-          setStep('checkout');
+          setStep('details');
         }}
         reasonText="ثبت سفارش بالای ۱۰۰ هزار تومان نیازمند تکمیل اطلاعات پستی و کد پستی است."
       />

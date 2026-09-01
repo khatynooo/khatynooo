@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { ShoppingBag, Eye, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { ShoppingBag, Eye, Check, AlertCircle, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { Product, WebsiteSettings } from '../../types';
 import { formatToman, toPersianDigits } from '../../lib/utils';
 import { useCart } from '../../context/CartContext';
@@ -171,6 +171,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           className="w-full h-full object-contain group-hover:scale-108 transition-transform duration-300"
           loading="lazy"
         />
+
+        {/* Multi-image gallery badge */}
+        {(() => {
+          const count = Array.from(new Set([product.image, ...(product.gallery || []), ...(product.extraImages || []), ...((product as any).extra_images || [])].filter(Boolean))).length;
+          if (count > 1) {
+            return (
+              <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md text-[#C9A227] text-[10px] font-bold px-2 py-0.5 rounded-lg border border-[#C9A227]/30 flex items-center gap-1 shadow-sm pointer-events-none">
+                <ImageIcon className="w-3 h-3" />
+                <span>{toPersianDigits(count)} عکس</span>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Quick view overlay button */}
         <button

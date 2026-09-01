@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { toEnglishDigits } from '../lib/utils';
 
 type ScannerCallback = (barcode: string) => void;
 interface ScannerOptions {
@@ -8,7 +9,7 @@ interface ScannerOptions {
 
 /**
  * هوک جامع گوش دادن به دستگاه‌های بارکدخوان فیزیکی (USB و بی‌سیم/بلوتوث)
- * سازگار با ارسال مستقیم تابع یا آبجکت آپشن‌ها
+ * سازگار با ارسال مستقیم تابع یا آبجکت آپشن‌ها، همراه با تبدیل خودکار اعداد فارسی به انگلیسی
  */
 export function useHardwareBarcodeScanner(
   callbackOrOptions: ScannerCallback | ScannerOptions,
@@ -42,13 +43,14 @@ export function useHardwareBarcodeScanner(
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
-      // اگر فاصله دو کلید بیشتر از ۷۰ میلی‌ثانیه باشد، بافر را پاک می‌کنیم چون تایپ دست انسان است
-      if (timeDiff > 70 && bufferRef.current.length > 0) {
+      // اگر فاصله دو کلید بیشتر از ۸۰ میلی‌ثانیه باشد، بافر را پاک می‌کنیم چون تایپ کند دست انسان است
+      if (timeDiff > 80 && bufferRef.current.length > 0) {
         bufferRef.current = '';
       }
 
       if (e.key === 'Enter') {
-        const code = bufferRef.current.trim();
+        const raw = bufferRef.current.trim();
+        const code = toEnglishDigits(raw);
         if (code.length >= 3) {
           onScan(code);
           bufferRef.current = '';
@@ -61,7 +63,7 @@ export function useHardwareBarcodeScanner(
         return;
       }
 
-      // تنها کاراکترهای تک‌حرفی قابل چاپ
+      // تنها کاراکترهای تک‌حرفی قابل چاپ (اعداد و حروف)
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         bufferRef.current += e.key;
       }
@@ -73,3 +75,4 @@ export function useHardwareBarcodeScanner(
     };
   }, [onScan, isEnabled]);
 }
+

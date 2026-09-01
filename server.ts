@@ -2077,7 +2077,7 @@ app.delete('/api/cms/page-builder/templates/:id', authenticateToken, requireRole
 });
 
 // Media Library & Direct File Upload to Server
-app.post('/api/upload', authenticateToken, requireRole(['admin', 'site_manager']), (req, res) => {
+app.post('/api/upload', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant', 'seller']), (req, res) => {
   try {
     const { dataUrl, filename, category = 'logo', title, altText } = req.body;
     if (!dataUrl) {

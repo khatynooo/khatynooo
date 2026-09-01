@@ -118,21 +118,37 @@
   scrollbar-width: none;
 }
 
-/* Thermal Printer & Receipt Styles */
+/* Thermal Printer, Label Sheet & Receipt Styles */
 @media print {
+  @page {
+    size: auto;
+    margin: 4mm;
+  }
+
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
   
-  .no-print, header, aside, nav, footer, button {
+  .no-print, header, aside, nav, footer, button, .print\:hidden {
     display: none !important;
   }
 
-  #printable-receipt {
+  #printable-receipt, #printable-barcode-sheet {
     display: block !important;
     width: 100% !important;
     color: #000000 !important;
     background: #ffffff !important;
+    page-break-after: avoid;
+    break-after: avoid;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  svg {
+    shape-rendering: crispEdges !important;
+    image-rendering: pixelated !important;
   }
 }

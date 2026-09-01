@@ -14,6 +14,62 @@ export function toPersianDigits(str: string | number): string {
   return String(str).replace(/\d/g, (x) => persianDigits[parseInt(x, 10)]);
 }
 
+export function toEnglishDigits(str: string | number | null | undefined): string {
+  if (str === null || str === undefined) return '';
+  const s = String(str);
+  const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+  let res = s;
+  for (let i = 0; i < 10; i++) {
+    res = res.replaceAll(persian[i], String(i)).replaceAll(arabic[i], String(i));
+  }
+  return res.trim();
+}
+
+/**
+ * بررسی و اعتبارسنجی دقیق رقم کنترلی بارکدهای استاندارد (EAN-13, EAN-8, UPC-A)
+ * جهت جلوگیری از خطای اپتیکال دوربین یا خواندن اشتباه ارقام (مانند خواندن ۵ به جای ۶ یا ۲)
+ */
+export function isValidBarcodeChecksum(code: string): boolean {
+  const clean = toEnglishDigits(code).replace(/[^0-9]/g, '');
+  if (!clean) return true; // Barcodes with letters like CODE-128 / QR pass through
+
+  // EAN-13
+  if (clean.length === 13) {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      const d = parseInt(clean[i], 10);
+      sum += i % 2 === 0 ? d * 1 : d * 3;
+    }
+    const check = (10 - (sum % 10)) % 10;
+    return check === parseInt(clean[12], 10);
+  }
+
+  // EAN-8
+  if (clean.length === 8) {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = parseInt(clean[i], 10);
+      sum += i % 2 === 0 ? d * 3 : d * 1;
+    }
+    const check = (10 - (sum % 10)) % 10;
+    return check === parseInt(clean[7], 10);
+  }
+
+  // UPC-A (12 digits)
+  if (clean.length === 12) {
+    let sum = 0;
+    for (let i = 0; i < 11; i++) {
+      const d = parseInt(clean[i], 10);
+      sum += i % 2 === 0 ? d * 3 : d * 1;
+    }
+    const check = (10 - (sum % 10)) % 10;
+    return check === parseInt(clean[11], 10);
+  }
+
+  return true; // Other formats without fixed length
+}
+
 export function getRoleTitle(role: string): string {
   const map: Record<string, string> = {
     admin: 'مدیر کل',

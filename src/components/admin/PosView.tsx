@@ -21,12 +21,15 @@ import {
   X,
   FileText,
   Warehouse as WarehouseIcon,
+  ScanLine,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits } from '../../lib/utils';
 import { Product, Customer, PriceTier, Warehouse, ServicePreset } from '../../types';
 import { useToast } from '../common/Toast';
 import { ReceiptModal } from './ReceiptModal';
+import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
+import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 
 export const PosView: React.FC = () => {
   const { showToast } = useToast();
@@ -83,7 +86,27 @@ export const PosView: React.FC = () => {
   const [newCustName, setNewCustName] = useState('');
   const [newCustMobile, setNewCustMobile] = useState('');
 
+  // Camera Barcode Scanner Modal (Supports high-speed continuous scan)
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
+
   const barcodeRef = useRef<HTMLInputElement>(null);
+
+  // Hardware USB / Bluetooth Barcode Reader Listener
+  useHardwareBarcodeScanner({
+    onScan: (scannedCode) => {
+      const clean = toEnglishDigits(scannedCode).trim();
+      const match = products.find(
+        (p) => (p.barcode && toEnglishDigits(p.barcode) === clean) || p.code.toLowerCase() === clean.toLowerCase()
+      );
+      if (match) {
+        addToPosCart(match);
+        showToast(`«${match.name}» با اسکنر سخت‌افزاری اضافه شد.`, 'success');
+      } else {
+        showToast(`کالایی با بارکد «${clean}» یافت نشد.`, 'error');
+      }
+    },
+    enabled: true,
+  });
 
   useEffect(() => {
     loadData();
@@ -193,8 +216,8 @@ export const PosView: React.FC = () => {
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!barcodeInput.trim()) return;
-    const code = barcodeInput.trim();
-    const match = products.find((p) => p.barcode === code || p.code.toLowerCase() === code.toLowerCase());
+    const code = toEnglishDigits(barcodeInput.trim());
+    const match = products.find((p) => (p.barcode && toEnglishDigits(p.barcode) === code) || p.code.toLowerCase() === code.toLowerCase());
     if (match) {
       addToPosCart(match);
       showToast(`«${match.name}» اضافه شد.`, 'success');
@@ -495,16 +518,48 @@ export const PosView: React.FC = () => {
               <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">انتخاب سریع یا جستجو</span>
             </div>
 
-            {/* Search Input */}
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جستجوی همزمان کالا و خدمات (خودکار، دفتر، پرینت، فنرزنی، لمینت، اسکن...)"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-4 py-2.5 text-xs text-slate-800 focus:bg-white outline-none"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+            {/* Search & Barcode Input Row */}
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <div className="relative flex-1 w-full">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="جستجوی نام، کد کالا یا خدمت (خودکار، دفتر، پرینت، فنرزنی...)"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-4 py-2 text-xs text-slate-800 focus:bg-white outline-none"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+              </div>
+
+              {/* Barcode Quick Form */}
+              <form onSubmit={handleBarcodeSubmit} className="flex items-center gap-1.5 w-full sm:w-auto">
+                <div className="relative flex-1 sm:w-44">
+                  <input
+                    ref={barcodeRef}
+                    type="text"
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                    placeholder="بارکد کالا..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-2 py-2 text-xs font-mono text-slate-800 focus:bg-white outline-none"
+                  />
+                  <Barcode className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5" />
+                </div>
+                <button
+                  type="submit"
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-3 py-2 rounded-xl transition-colors shrink-0 cursor-pointer"
+                >
+                  افزودن
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCameraScannerOpen(true)}
+                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-3 py-2 rounded-xl transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                  title="اسکن فوق‌سریع با دوربین یا بارکدخوان فیزیکی"
+                >
+                  <ScanLine className="w-4 h-4 text-indigo-600" />
+                  <span className="hidden sm:inline">دوربین</span>
+                </button>
+              </form>
             </div>
 
             {/* Live Search Results OR Quick Pick Grid */}
@@ -1015,6 +1070,24 @@ export const PosView: React.FC = () => {
         isOpen={showReceiptModal}
         onClose={() => setShowReceiptModal(false)}
         invoice={completedInvoice}
+      />
+
+      {/* High Performance Camera Barcode Scanner Modal with continuous mode */}
+      <BarcodeScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        onScan={(scannedCode) => {
+          const match = products.find(
+            (p) => p.barcode === scannedCode || p.code.toLowerCase() === scannedCode.toLowerCase()
+          );
+          if (match) {
+            addToPosCart(match);
+            showToast(`«${match.name}» به فاکتور اضافه شد.`, 'success');
+          } else {
+            showToast(`کالایی با بارکد «${scannedCode}» پیدا نشد.`, 'error');
+          }
+        }}
+        title="اسکن سریع بارکد در صندوق فروش"
       />
     </div>
   );

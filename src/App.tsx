@@ -125,8 +125,17 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
     };
   }, [loadStorefrontData]);
 
+  // Strictly isolate website products (exclude accounting-only products)
+  const websiteProducts = React.useMemo(() => {
+    return products.filter((p) => {
+      const isOnlyAcc = Boolean((p as any).onlyAccounting || (p as any).only_accounting);
+      const isShowWeb = (p as any).showOnWebsite !== undefined ? Boolean((p as any).showOnWebsite) : !isOnlyAcc;
+      return isShowWeb && !isOnlyAcc;
+    });
+  }, [products]);
+
   // Filter products by category, search query, and filter tab
-  const filteredProducts = products.filter((p) => {
+  const filteredProducts = websiteProducts.filter((p) => {
     if (selectedCategory && p.categoryId !== selectedCategory) {
       return false;
     }
@@ -178,7 +187,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
               key={block.id}
               block={block}
               categories={categories}
-              products={products}
+              products={websiteProducts}
               banners={banners}
               websiteSettings={websiteSettings}
               onSelectCategory={setSelectedCategory}

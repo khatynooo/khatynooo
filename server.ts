@@ -817,7 +817,7 @@ app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, re
       refundMethod,
       warehouseId,
       userId: req.user?.id,
-      userName: req.user?.name || req.user?.username,
+      userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
     });
 
     res.json(result);

@@ -673,6 +673,7 @@ export interface TorobProductInfo {
   unit: string;
   image: string;
   gallery?: string[];
+  extraImages?: string[];
   torobUrl: string;
   specs: Record<string, string>;
   description?: string;
@@ -718,6 +719,7 @@ export interface TorobStationeryCategoryItem {
   unit: string;
   image: string;
   gallery?: string[];
+  extraImages?: string[];
   minPrice: number;
   maxPrice: number;
   avgPrice: number;

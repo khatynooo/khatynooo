@@ -65,6 +65,15 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
 }) => {
   if (!block.isEnabled) return null;
 
+  // Strict channel separation: exclude accounting-only items from all website dynamic blocks
+  const websiteProducts = React.useMemo(() => {
+    return products.filter((p) => {
+      const isOnlyAcc = Boolean((p as any).onlyAccounting || (p as any).only_accounting);
+      const isShowWeb = (p as any).showOnWebsite !== undefined ? Boolean((p as any).showOnWebsite) : !isOnlyAcc;
+      return isShowWeb && !isOnlyAcc;
+    });
+  }, [products]);
+
   const { settings } = block;
   const heading = settings?.headingText || block.title;
   const subheading = settings?.subheadingText;
@@ -239,7 +248,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
             }`}
           >
             {categories.slice(0, settings?.limitCount || 12).map((cat) => {
-              const count = products.filter((p) => p.categoryId === cat.id).length;
+              const count = websiteProducts.filter((p) => p.categoryId === cat.id).length;
               return (
                 <button
                   key={cat.id}
@@ -268,7 +277,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
     // ۴. ویترین محصولات تولید اختصاصی خطی‌نو
     // -------------------------------------------------------------------------
     case 'featured_products': {
-      const featuredList = products
+      const featuredList = websiteProducts
         .filter((p) => {
           if (settings?.categoryId) return p.categoryId === settings.categoryId;
           return p.isFeatured || p.categoryName?.includes('دفتر') || p.categoryName?.includes('خطی‌نو');
@@ -345,7 +354,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
     // ۵. پیشنهادات شگفت‌انگیز و تخفیف‌دار
     // -------------------------------------------------------------------------
     case 'special_offers': {
-      const specialList = products
+      const specialList = websiteProducts
         .filter((p) => p.isSpecialOffer || (p.discountPercent && p.discountPercent > 0))
         .slice(0, settings?.limitCount || 12);
 

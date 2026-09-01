@@ -32,6 +32,7 @@ export interface MarketItemResult {
   unit: string;
   image: string;
   gallery?: string[];
+  extraImages?: string[];
   minPrice: number;
   maxPrice: number;
   avgPrice: number;
@@ -82,6 +83,7 @@ export interface TorobStationeryCategoryItem {
   unit: string;
   image: string;
   gallery?: string[];
+  extraImages?: string[];
   minPrice: number;
   maxPrice: number;
   avgPrice: number;

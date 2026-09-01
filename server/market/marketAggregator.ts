@@ -437,7 +437,7 @@ export async function searchTorobMarket(query?: string): Promise<TorobProductInf
             lastUpdated: 'هم‌اکنون (استعلام زنده دیجی‌کالا)',
             isLiveScraped: true,
             isBenchmarkCatalog: false,
-            isGenericStockPhoto: imgMeta.isGenericStockPhoto,
+            isGenericStockPhoto: imgResolved.isGenericStockPhoto,
             sourceLink: `https://www.digikala.com/product/dkp-${dp.id}`,
           });
         }
@@ -691,7 +691,7 @@ export async function getTorobStationeryCategoryList(options?: {
               matchScore: matchedInv?.score,
               isLiveScraped: true,
               isBenchmarkCatalog: false,
-              isGenericStockPhoto: imgMeta.isGenericStockPhoto,
+              isGenericStockPhoto: imgResolved.isGenericStockPhoto,
               lastUpdated: 'هم‌اکنون (استعلام زنده دیجی‌کالا)',
             });
           }

@@ -42,6 +42,14 @@ import {
 
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
 function formatProduct(row: any): Product {
+  const isShowOnWeb = row.show_on_website !== undefined && row.show_on_website !== null
+    ? Boolean(row.show_on_website)
+    : (row.only_accounting !== undefined && row.only_accounting !== null ? !Boolean(row.only_accounting) : true);
+
+  const isOnlyAcc = row.only_accounting !== undefined && row.only_accounting !== null
+    ? Boolean(row.only_accounting)
+    : !isShowOnWeb;
+
   return {
     id: row.id,
     name: row.name,
@@ -66,8 +74,8 @@ function formatProduct(row: any): Product {
     image: row.image_url || '',
     gallery: Array.isArray(row.gallery) ? row.gallery : (typeof row.gallery === 'string' ? JSON.parse(row.gallery || '[]') : []),
     extraImages: Array.isArray(row.extra_images) ? row.extra_images : (typeof row.extra_images === 'string' ? JSON.parse(row.extra_images || '[]') : []),
-    showOnWebsite: Boolean(row.show_on_website),
-    onlyAccounting: row.only_accounting !== undefined ? Boolean(row.only_accounting) : true,
+    showOnWebsite: isShowOnWeb,
+    onlyAccounting: isOnlyAcc,
     isSpecialOffer: Boolean(row.is_special_offer),
     featured: Boolean(row.is_featured),
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
@@ -1753,20 +1761,20 @@ export const db = {
       const priceDouble1 = Number(r.price_double1 !== undefined && r.price_double1 !== null && Number(r.price_double1) > 0 ? r.price_double1 : Math.round(priceSingle1 * 1.6));
       const priceDouble2 = Number(r.price_double2 !== undefined && r.price_double2 !== null && Number(r.price_double2) > 0 ? r.price_double2 : Math.round(priceSingle1 * 1.35));
 
-      const isOnlyAcc = r.only_accounting !== undefined ? Boolean(r.only_accounting) : false;
-      const isShowWeb = Boolean(r.show_on_website);
-      const isShowPos = r.show_in_pos !== undefined ? Boolean(r.show_in_pos) : true;
-
       let visibility: 'only_accounting' | 'only_website' | 'both' = 'both';
       if (r.visibility) {
         visibility = r.visibility;
-      } else if (isOnlyAcc && !isShowWeb) {
+      } else if (Boolean(r.only_accounting) && !Boolean(r.show_on_website)) {
         visibility = 'only_accounting';
-      } else if (isShowWeb && !isShowPos) {
+      } else if (Boolean(r.show_on_website) && r.show_in_pos === false) {
         visibility = 'only_website';
       } else {
         visibility = 'both';
       }
+
+      const isShowWeb = visibility === 'only_website' || visibility === 'both';
+      const isOnlyAcc = visibility === 'only_accounting';
+      const isShowPos = visibility === 'only_accounting' || visibility === 'both';
 
       return {
         id: r.id,

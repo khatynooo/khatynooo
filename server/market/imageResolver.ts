@@ -154,6 +154,18 @@ export function resolveStationerySafeImage(title: string, category?: string, cur
 }
 
 /**
+ * بررسی صحت و مرتبط بودن آدرس تصویر با صنف تحریر
+ */
+export function isValidStationeryImage(title: string, url?: string | null): boolean {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) return false;
+  if (url.includes('undefined') || url.includes('null')) return false;
+  const t = (title || '').toLowerCase();
+  const hasBannedKw = BANNED_NON_STATIONERY_KEYWORDS.some((kw) => t.includes(kw));
+  if (hasBannedKw) return false;
+  return true;
+}
+
+/**
  * تجمیع، اعتبارسنجی و استخراج تمامی تصاویر باکیفیت یک کالا (عکس اصلی + تمام تصاویر گالری شرکت/ترب/دیجی‌کالا)
  */
 export function resolveStationeryMultiImages(
@@ -185,7 +197,7 @@ export function resolveStationeryMultiImages(
 
   // ۳. در صورتی که هیچ تصویر معتبری یافت نشد، از تصاویر کاتالوگ بنچمارک متناسب با دسته‌بندی استفاده می‌شود
   if (imagesSet.size === 0) {
-    const fallback = getMatchingCategoryPlaceholder(title, category);
+    const fallback = resolveStationerySafeImage(title, category);
     imagesSet.add(fallback);
     isGenericStockPhoto = true;
   }
@@ -211,7 +223,7 @@ export function resolveStationeryMultiImages(
     imagesSet.add(STATIONERY_IMAGE_BANK.correctionPanterTape);
     imagesSet.add(STATIONERY_IMAGE_BANK.glueCancoStick);
   } else if (titleLower.includes('دفتر') || titleLower.includes('کلاسور') || titleLower.includes('پاپکو')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.notebookPapco100);
+    imagesSet.add(STATIONERY_IMAGE_BANK.notebookPapco);
     imagesSet.add(STATIONERY_IMAGE_BANK.binderPapcoOffice);
   }
 

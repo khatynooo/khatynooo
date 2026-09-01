@@ -479,14 +479,34 @@ export interface WebsiteSettings {
   showProductBadges?: boolean;
   customBadges?: CustomBadge[];
   customSymbols?: CustomSymbol[];
-  headerLayoutStyle?: 'default' | 'centered' | 'minimal';
-  footerLayoutStyle?: 'default' | 'compact' | 'detailed';
+  headerLayoutStyle?: 'default' | 'centered' | 'minimal' | 'modern_compact';
+  footerLayoutStyle?: 'default' | 'compact' | 'detailed' | 'columns_4';
+  containerWidth?: 'standard' | 'wide' | 'full';
+  productsPerRow?: number; // 2, 3, 4, 5, 6
+  // Address & Physical Store Location
+  address?: string;
+  physicalAddress?: string;
+  province?: string;
+  city?: string;
+  postalCode?: string;
+  fullAddress?: string;
+  mapLatitude?: number;
+  mapLongitude?: number;
+  googleMapsUrl?: string;
+  neshanUrl?: string;
+  baladUrl?: string;
+  showLocationMap?: boolean;
+  locationTitle?: string;
+  addressNotes?: string;
 }
 
 export interface StoreSettings {
   storeName: string;
   phone: string;
   address: string;
+  province?: string;
+  city?: string;
+  postalCode?: string;
   taxRate: number; // e.g. 10%
   barcodePrefix: string;
   autoPrintReceipt: boolean;

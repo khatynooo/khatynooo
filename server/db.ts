@@ -3202,6 +3202,20 @@ export const db = {
       customSymbols: customSymbols,
       headerLayoutStyle: r.header_layout_style || 'default',
       footerLayoutStyle: r.footer_layout_style || 'default',
+      address: r.address || '',
+      physicalAddress: r.address || '',
+      city: r.city || '',
+      province: r.province || '',
+      postalCode: r.postal_code || '',
+      mapLatitude: r.map_latitude ? Number(r.map_latitude) : undefined,
+      mapLongitude: r.map_longitude ? Number(r.map_longitude) : undefined,
+      googleMapsUrl: r.google_maps_url || '',
+      neshanUrl: r.neshan_url || '',
+      baladUrl: r.balad_url || '',
+      showLocationMap: r.show_location_map !== false,
+      locationTitle: r.location_title || '',
+      productsPerRow: r.products_per_row ? Number(r.products_per_row) : 4,
+      containerWidth: r.container_width || 'wide',
     };
   },
 
@@ -3248,7 +3262,20 @@ export const db = {
         logo_fit = COALESCE($38, logo_fit),
         logo_border_radius = COALESCE($39, logo_border_radius),
         show_logo_text = COALESCE($40, show_logo_text),
-        header_elements = COALESCE($41, header_elements)
+        header_elements = COALESCE($41, header_elements),
+        address = COALESCE($42, address),
+        city = COALESCE($43, city),
+        province = COALESCE($44, province),
+        postal_code = COALESCE($45, postal_code),
+        map_latitude = COALESCE($46, map_latitude),
+        map_longitude = COALESCE($47, map_longitude),
+        google_maps_url = COALESCE($48, google_maps_url),
+        neshan_url = COALESCE($49, neshan_url),
+        balad_url = COALESCE($50, balad_url),
+        show_location_map = COALESCE($51, show_location_map),
+        location_title = COALESCE($52, location_title),
+        products_per_row = COALESCE($53, products_per_row),
+        container_width = COALESCE($54, container_width)
        WHERE id = 'default'`,
       [
         w.siteTitle,
@@ -3292,8 +3319,38 @@ export const db = {
         w.logoBorderRadius,
         w.showLogoText,
         w.headerElements ? JSON.stringify(w.headerElements) : null,
+        w.address || w.physicalAddress,
+        w.city,
+        w.province,
+        w.postalCode,
+        w.mapLatitude,
+        w.mapLongitude,
+        w.googleMapsUrl,
+        w.neshanUrl,
+        w.baladUrl,
+        w.showLocationMap,
+        w.locationTitle,
+        w.productsPerRow,
+        w.containerWidth,
       ]
     );
+
+    // همگام‌سازی نشانی و تلفن با تنظیمات حسابداری فروشگاه
+    if (w.address || w.supportPhone || w.siteTitle) {
+      try {
+        await query(
+          `UPDATE store_settings SET
+            store_name = COALESCE($1, store_name),
+            phone = COALESCE($2, phone),
+            address = COALESCE($3, address)
+           WHERE id = 'default'`,
+          [w.siteTitle, w.supportPhone, w.address || w.physicalAddress]
+        );
+      } catch (err) {
+        console.warn('⚠️ [StoreSettings sync warning]:', err);
+      }
+    }
+
     return this.getWebsiteSettings();
   },
 

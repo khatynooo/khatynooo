@@ -320,12 +320,37 @@ export async function initializeSchema(): Promise<void> {
       }
     }
 
-    // اطمینان از وجود ستون‌های مهم و همگام‌سازی چند-انباره
+    // اطمینان از وجود ستون‌های مهم و همگام‌سازی چند-انباره و تنظیمات آدرس و وب‌سایت
     const ensureColumns = [
-      "ALTER TABLE sales_invoices ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
-      "ALTER TABLE purchase_invoices ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
-      "ALTER TABLE online_orders ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_online'",
-      "ALTER TABLE production_runs ADD COLUMN warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_online'",
+      "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS address TEXT",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS postal_code VARCHAR(30)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS map_latitude NUMERIC(10, 6)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS map_longitude NUMERIC(10, 6)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS google_maps_url TEXT",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS neshan_url TEXT",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS balad_url TEXT",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS show_location_map BOOLEAN DEFAULT TRUE",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS location_title VARCHAR(200)",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS products_per_row INT DEFAULT 4",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS container_width VARCHAR(30) DEFAULT 'wide'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS header_layout_style VARCHAR(30) DEFAULT 'default'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS footer_layout_style VARCHAR(30) DEFAULT 'default'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS button_color_theme VARCHAR(30) DEFAULT 'gold'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS primary_color_hex VARCHAR(30) DEFAULT '#C9A227'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS button_border_radius VARCHAR(30) DEFAULT 'rounded-xl'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS catalog_layout_mode VARCHAR(30) DEFAULT 'grid'",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS show_product_badges BOOLEAN DEFAULT TRUE",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS custom_badges JSONB",
+      "ALTER TABLE website_settings ADD COLUMN IF NOT EXISTS custom_symbols JSONB",
+      "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+      "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+      "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS postal_code VARCHAR(30)",
     ];
     for (const colSql of ensureColumns) {
       try {
@@ -333,6 +358,22 @@ export async function initializeSchema(): Promise<void> {
       } catch (e) {
         // ستون از قبل وجود دارد
       }
+    }
+
+    // در صورت وجود مقدار پیش‌فرض قدیمی، شماره تماس و ساعات کاری به‌روزرسانی شود
+    try {
+      await rawQuery(`
+        UPDATE website_settings 
+        SET support_phone = '۰۳۱۵۲۴۰۸۳۹۰' 
+        WHERE support_phone = '021-88990011' OR support_phone IS NULL OR support_phone = ''
+      `);
+      await rawQuery(`
+        UPDATE store_settings 
+        SET phone = '۰۳۱۵۲۴۰۸۳۹۰' 
+        WHERE phone = '021-88990011' OR phone IS NULL OR phone = ''
+      `);
+    } catch (e) {
+      // ignore
     }
 
     console.log('✅ [PostgreSQL Schema] ساختار کامل تمام جداول و مایگریشن‌ها با موفقیت آماده‌سازی شد.');

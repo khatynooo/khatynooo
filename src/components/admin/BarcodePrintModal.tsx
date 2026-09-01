@@ -74,6 +74,16 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   const [barcodeType, setBarcodeType] = useState<'barcode' | 'qrcode' | 'both'>('barcode');
   const [barcodeHeight, setBarcodeHeight] = useState<number>(32); // in px
   const [barcodeLineWidth, setBarcodeLineWidth] = useState<number>(1.4);
+  const [barcodeWidthPercent, setBarcodeWidthPercent] = useState<number>(90); // 40% to 100%
+  const [qrSize, setQrSize] = useState<number>(48);
+
+  // Granular Spacings (فاصله‌های اختصاصی بین المان‌ها بر حسب پیکسل)
+  const [gapStoreTop, setGapStoreTop] = useState<number>(2);
+  const [gapStoreToName, setGapStoreToName] = useState<number>(3);
+  const [gapNameToBarcode, setGapNameToBarcode] = useState<number>(4);
+  const [gapBarcodeToPrice, setGapBarcodeToPrice] = useState<number>(4);
+  const [gapPriceBottom, setGapPriceBottom] = useState<number>(2);
+  const [customPaddingPx, setCustomPaddingPx] = useState<number>(6);
 
   // Typography & Font Sizes
   const [nameFontSize, setNameFontSize] = useState<'xs' | 'sm' | 'md' | 'lg' | 'xl'>('sm');
@@ -521,7 +531,10 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       return (
                         <div
                           key={idx}
-                          className={`bg-white rounded-lg flex flex-col justify-between items-center text-center overflow-hidden transition-all break-inside-avoid ${getPaddingClass()} ${
+                          style={{
+                            padding: `${customPaddingPx}px`,
+                          }}
+                          className={`bg-white rounded-lg flex flex-col justify-between items-center text-center overflow-hidden transition-all break-inside-avoid ${
                             borderStyle === 'dashed'
                               ? 'border border-dashed border-slate-400'
                               : borderStyle === 'solid'
@@ -531,7 +544,10 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                         >
                           {/* Top: Store Name / Brand */}
                           {includeStoreName && (
-                            <div className="text-[9px] font-bold text-slate-500 font-sans tracking-wide">
+                            <div
+                              style={{ marginTop: `${gapStoreTop}px`, marginBottom: `${gapStoreToName}px` }}
+                              className="text-[9px] font-bold text-slate-500 font-sans tracking-wide shrink-0"
+                            >
                               {storeNameText}
                             </div>
                           )}
@@ -539,7 +555,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                           {/* Middle: Product Name */}
                           {includeName && (
                             <div
-                              className={`text-slate-950 font-sans line-clamp-2 w-full px-1 ${getNameFontClass()} ${
+                              style={{ marginBottom: `${gapNameToBarcode}px` }}
+                              className={`text-slate-950 font-sans line-clamp-2 w-full px-1 shrink-0 ${getNameFontClass()} ${
                                 nameFontWeight === 'black'
                                   ? 'font-black'
                                   : nameFontWeight === 'bold'
@@ -553,7 +570,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
                           {/* Secondary info (SKU / Unit) */}
                           {(includeProductCode || includeUnit) && (
-                            <div className="flex items-center gap-1 text-[9px] text-slate-500 font-mono">
+                            <div className="flex items-center gap-1 text-[9px] text-slate-500 font-mono mb-1 shrink-0">
                               {includeProductCode && <span>کد: {p.code}</span>}
                               {includeProductCode && includeUnit && <span>•</span>}
                               {includeUnit && <span>واحد: {p.unit}</span>}
@@ -561,7 +578,13 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                           )}
 
                           {/* Barcode / QR Code Vector Svg */}
-                          <div className="w-full flex justify-center items-center py-0.5 overflow-hidden">
+                          <div
+                            style={{
+                              width: `${barcodeWidthPercent}%`,
+                              marginBottom: `${gapBarcodeToPrice}px`,
+                            }}
+                            className="flex justify-center items-center py-0.5 overflow-hidden mx-auto"
+                          >
                             <BarcodeSvg
                               value={barcodeVal}
                               type={barcodeType}
@@ -569,13 +592,16 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                               width={barcodeLineWidth}
                               displayValue={includeBarcodeDigits}
                               fontSize={9}
-                              qrSize={barcodeType === 'qrcode' ? 64 : 45}
+                              qrSize={qrSize}
                             />
                           </div>
 
                           {/* Bottom: Price in Tomans */}
                           {includePrice && (
-                            <div className="w-full pt-1 border-t border-slate-100 flex items-center justify-center gap-1 font-sans">
+                            <div
+                              style={{ marginBottom: `${gapPriceBottom}px` }}
+                              className="w-full pt-1 border-t border-slate-100 flex items-center justify-center gap-1 font-sans shrink-0"
+                            >
                               <span className={`text-slate-950 font-mono ${getPriceFontClass()}`}>
                                 {formatToman(priceVal)}
                               </span>
@@ -888,51 +914,189 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 </div>
               </div>
 
-              {/* Barcode Vector Geometry Settings */}
+              {/* Barcode Vector Geometry & Dimensions */}
               <div className="bg-[#0A0A0B] p-4 rounded-2xl border border-[#222225] space-y-3">
                 <h4 className="font-black text-sm text-[#F3F4F6] flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-[#C9A227]" />
-                  تنظیمات ابعاد و مشخصات خطوط بارکد
+                  تنظیمات ابعاد، طول، عرض و مشخصات خطوط بارکد
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">ارتفاع خطوط بارکد:</label>
-                    <select
-                      value={barcodeHeight}
-                      onChange={(e) => setBarcodeHeight(Number(e.target.value))}
-                      className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2 font-bold text-[#E0E0E0] focus:border-[#C9A227] outline-none"
-                    >
-                      <option value={22}>کوچک (22px)</option>
-                      <option value={30}>استاندارد (30px)</option>
-                      <option value={42}>درشت (42px)</option>
-                      <option value={55}>بسیار درشت (55px)</option>
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-[#8E9299]">عرض بارکد (%):</label>
+                      <span className="font-mono text-[#C9A227] font-bold">{toPersianDigits(barcodeWidthPercent)}٪</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={100}
+                      step={5}
+                      value={barcodeWidthPercent}
+                      onChange={(e) => setBarcodeWidthPercent(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
                   </div>
 
                   <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">ضخامت خطوط بارکد:</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-[#8E9299]">طول/ارتفاع خطوط (px):</label>
+                      <span className="font-mono text-[#C9A227] font-bold">{toPersianDigits(barcodeHeight)}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={16}
+                      max={90}
+                      step={2}
+                      value={barcodeHeight}
+                      onChange={(e) => setBarcodeHeight(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">ضخامت خطوط میله‌ای:</label>
                     <select
                       value={barcodeLineWidth}
                       onChange={(e) => setBarcodeLineWidth(Number(e.target.value))}
-                      className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2 font-bold text-[#E0E0E0] focus:border-[#C9A227] outline-none"
+                      className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2 font-bold text-[#E0E0E0] focus:border-[#C9A227] outline-none text-xs"
                     >
-                      <option value={1.2}>فشرده و ظریف</option>
-                      <option value={1.5}>متوسط (استاندارد)</option>
-                      <option value={1.8}>ضخیم (اسکن آسان‌تر)</option>
+                      <option value={1.0}>بسیار ظریف (1.0)</option>
+                      <option value={1.2}>ظریف و فشرده (1.2)</option>
+                      <option value={1.4}>استاندارد (1.4)</option>
+                      <option value={1.7}>ضخیم (1.7)</option>
+                      <option value={2.0}>بسیار ضخیم (2.0)</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="font-bold text-[#8E9299] block mb-1">فاصله و پدینگ برچسب:</label>
-                    <select
-                      value={labelPadding}
-                      onChange={(e) => setLabelPadding(e.target.value as any)}
-                      className="w-full bg-[#161619] border border-[#2D2D33] rounded-xl p-2 font-bold text-[#E0E0E0] focus:border-[#C9A227] outline-none"
-                    >
-                      <option value="tight">فشرده (Tight)</option>
-                      <option value="normal">معمولی (Normal)</option>
-                      <option value="relaxed">باز و جادار (Relaxed)</option>
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-[#8E9299]">اندازه QR کد:</label>
+                      <span className="font-mono text-[#C9A227] font-bold">{toPersianDigits(qrSize)}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={30}
+                      max={110}
+                      step={4}
+                      value={qrSize}
+                      onChange={(e) => setQrSize(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Granular Vertical Element Spacing (فاصله‌گذاری دقیق المان‌ها) */}
+              <div className="bg-[#0A0A0B] p-4 rounded-2xl border border-[#222225] space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-sm text-[#F3F4F6] flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#C9A227]" />
+                    تنظیم فواصل اختصاصی بین قیمت، بارکد، نام کالا و فروشگاه
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGapStoreTop(2);
+                      setGapStoreToName(3);
+                      setGapNameToBarcode(4);
+                      setGapBarcodeToPrice(4);
+                      setGapPriceBottom(2);
+                      setCustomPaddingPx(6);
+                    }}
+                    className="text-[11px] text-[#8E9299] hover:text-[#C9A227] underline cursor-pointer"
+                  >
+                    بازنشانی به فواصل پیش‌فرض
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-6 gap-3 pt-1">
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">بالای فروشگاه:</span>
+                      <span className="font-mono text-[#C9A227]">{gapStoreTop}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      value={gapStoreTop}
+                      onChange={(e) => setGapStoreTop(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">فروشگاه تا کالا:</span>
+                      <span className="font-mono text-[#C9A227]">{gapStoreToName}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={25}
+                      value={gapStoreToName}
+                      onChange={(e) => setGapStoreToName(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">نام کالا تا بارکد:</span>
+                      <span className="font-mono text-[#C9A227]">{gapNameToBarcode}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      value={gapNameToBarcode}
+                      onChange={(e) => setGapNameToBarcode(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">بارکد تا قیمت:</span>
+                      <span className="font-mono text-[#C9A227]">{gapBarcodeToPrice}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      value={gapBarcodeToPrice}
+                      onChange={(e) => setGapBarcodeToPrice(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">زیر قیمت:</span>
+                      <span className="font-mono text-[#C9A227]">{gapPriceBottom}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={20}
+                      value={gapPriceBottom}
+                      onChange={(e) => setGapPriceBottom(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
+                    <div className="flex items-center justify-between text-[11px] font-bold mb-1">
+                      <span className="text-[#8E9299]">پدینگ کلی:</span>
+                      <span className="font-mono text-[#C9A227]">{customPaddingPx}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={2}
+                      max={24}
+                      value={customPaddingPx}
+                      onChange={(e) => setCustomPaddingPx(Number(e.target.value))}
+                      className="w-full accent-[#C9A227] cursor-pointer"
+                    />
                   </div>
                 </div>
               </div>

@@ -12,9 +12,9 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ onOpenCalculator, onOpenTracker, websiteSettings, storeSettings }) => {
   const siteTitle = websiteSettings?.siteTitle || storeSettings?.storeName || 'خطی‌نو';
-  const address = storeSettings?.address || 'تهران، خیابان انقلاب، پاساژ نوشت‌افزار، طبقه همکف';
-  const phone = websiteSettings?.supportPhone || storeSettings?.phone || '۰۲۱-۸۸۹۹۰۰۱۱';
-  const workingHours = websiteSettings?.workingHours || 'شنبه تا پنجشنبه ۹:۰۰ الی ۲۱:۰۰';
+  const address = websiteSettings?.address || storeSettings?.address || 'دفتر و فروشگاه خطی‌نو';
+  const phone = websiteSettings?.supportPhone || storeSettings?.phone || '۰۳۱۵۲۴۰۸۳۹۰';
+  const workingHours = websiteSettings?.workingHours || 'شنبه تا پنج‌شنبه ۹ الی ۲۱';
 
   return (
     <footer className="bg-slate-50 dark:bg-[#08090B] text-slate-600 dark:text-[#8E9299] pt-12 pb-8 border-t border-slate-200/80 dark:border-[#1E1F26] text-xs transition-colors">
@@ -105,15 +105,59 @@ export const Footer: React.FC<FooterProps> = ({ onOpenCalculator, onOpenTracker,
             </ul>
           </div>
 
-          {/* Contact */}
+          {/* Contact & Location */}
           <div className="space-y-2.5 md:col-span-1">
-            <h4 className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm mb-3">اطلاعات فروشگاه و تماس</h4>
-            <div className="space-y-2 text-slate-600 dark:text-[#8E9299]">
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#C9A227] shrink-0" />
-                <span>{address}</span>
+            <h4 className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm mb-3">اطلاعات فروشگاه، آدرس و مسیریابی</h4>
+            <div className="space-y-2.5 text-slate-600 dark:text-[#8E9299]">
+              <div className="flex items-start gap-2">
+                <MapPin className="w-4 h-4 text-[#C9A227] shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="leading-relaxed block">{websiteSettings?.address || address}</span>
+                  {websiteSettings?.postalCode && (
+                    <span className="text-[10px] text-slate-400 block font-mono">
+                      کد پستی: {toPersianDigits(websiteSettings.postalCode)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* Navigation and map links */}
+              {websiteSettings?.showLocationMap !== false && (websiteSettings?.googleMapsUrl || websiteSettings?.neshanUrl || websiteSettings?.baladUrl) && (
+                <div className="pt-1.5 flex flex-wrap gap-1.5">
+                  {websiteSettings.googleMapsUrl && (
+                    <a
+                      href={websiteSettings.googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <span>Google Maps</span>
+                    </a>
+                  )}
+                  {websiteSettings.neshanUrl && (
+                    <a
+                      href={websiteSettings.neshanUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <span>مسیریابی در نشان</span>
+                    </a>
+                  )}
+                  {websiteSettings.baladUrl && (
+                    <a
+                      href={websiteSettings.baladUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1 transition-colors"
+                    >
+                      <span>مسیریابی در بلد</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
                 <Phone className="w-4 h-4 text-[#C9A227] shrink-0" />
                 <span>شماره تماس: {toPersianDigits(phone)}</span>
               </div>

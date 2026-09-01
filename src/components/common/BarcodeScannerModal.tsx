@@ -70,6 +70,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [maxExposure, setMaxExposure] = useState<number>(2);
   const [hasExposure, setHasExposure] = useState(false);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
+  const [fullFrameScan, setFullFrameScan] = useState<boolean>(true); // اسکن تمام‌صفحه و بدون محدودیت کادر برای فواصل دور و نزدیک
+  const [isFocusing, setIsFocusing] = useState<boolean>(false);
 
   // Active tab: 'camera' | 'file'
   const [activeTab, setActiveTab] = useState<'camera' | 'file'>('camera');
@@ -226,12 +228,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
       scannerRef.current = scanner;
 
-      // Start scanning with high FPS, optimal resolution, and sharp bounding area
+      // Start scanning with high FPS, full-frame detection, optimal resolution, and sharp sensor decoding
       await scanner.start(
         cameraId,
         {
           fps: 28,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
+            // In fullFrameScan mode, analyze the entire camera sensor area for long-range and flexible detection
+            if (fullFrameScan) {
+              return {
+                width: Math.floor(viewfinderWidth * 0.98),
+                height: Math.floor(viewfinderHeight * 0.98),
+              };
+            }
             const minDim = Math.min(viewfinderWidth, viewfinderHeight);
             return {
               width: Math.min(340, Math.floor(viewfinderWidth * 0.88)),
@@ -244,6 +253,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             width: { ideal: 1920, min: 1280 },
             height: { ideal: 1080, min: 720 },
             focusMode: 'continuous',
+            advanced: [{ focusMode: 'continuous' }],
           } as any,
         },
         (decodedText) => {
@@ -573,29 +583,60 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
               {/* Guide Overlay & Reticle */}
               {isScanning && !cameraError && (
-                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                  <div className="w-[78%] max-w-[340px] h-48 border-2 border-[#C9A227]/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] relative flex items-center justify-center">
-                    {/* Corner Reticle Markers */}
-                    <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-[#C9A227] rounded-tl-lg" />
-                    <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-[#C9A227] rounded-tr-lg" />
-                    <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-[#C9A227] rounded-bl-lg" />
-                    <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-[#C9A227] rounded-br-lg" />
+                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
+                  {fullFrameScan ? (
+                    /* Full-Frame Wide Viewfinder Guide for Long-distance and Flexible Scanning */
+                    <div className="w-[94%] h-[82%] border border-dashed border-[#C9A227]/40 rounded-3xl relative flex flex-col items-center justify-between p-3">
+                      {/* Corner Accents */}
+                      <div className="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-[#C9A227] rounded-tl-xl" />
+                      <div className="absolute -top-1 -right-1 w-6 h-6 border-t-2 border-r-2 border-[#C9A227] rounded-tr-xl" />
+                      <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-[#C9A227] rounded-bl-xl" />
+                      <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-[#C9A227] rounded-br-xl" />
 
-                    {/* Laser Scanner animation */}
-                    <div className="absolute left-2 right-2 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse" />
+                      {/* Laser Line */}
+                      <div className="absolute top-1/2 -translate-y-1/2 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_10px_#ef4444] animate-pulse" />
 
-                    <div className="flex flex-col items-center gap-1">
-                      <span className="text-[11px] font-bold text-white/90 bg-black/70 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 flex items-center gap-1.5">
-                        <Target className="w-3.5 h-3.5 text-[#C9A227]" />
-                        بارکد را در این کادر قرار دهید
-                      </span>
-                      {zoomLevel > 1 && (
-                        <span className="text-[10px] font-mono text-[#C9A227] bg-black/80 px-2 py-0.5 rounded-md font-bold">
-                          بزرگنمایی: {zoomLevel.toFixed(1)}x
+                      <div className="w-full flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-white/90 bg-black/75 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 flex items-center gap-1.5 shadow-sm">
+                          <Target className="w-3.5 h-3.5 text-[#C9A227]" />
+                          اسکن آزاد تمام‌صفحه فعال است
                         </span>
-                      )}
+                        {zoomLevel > 1 && (
+                          <span className="text-[10px] font-mono text-[#C9A227] bg-black/85 px-2.5 py-0.5 rounded-full border border-[#C9A227]/30 font-black">
+                            {zoomLevel.toFixed(1)}x
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-center">
+                        <span className="text-[10px] font-bold text-slate-200 bg-black/80 px-3 py-1 rounded-xl backdrop-blur-md border border-white/10">
+                          دوربین را با فاصله دور یا نزدیک بگیرید (بدون نیاز به کادربندی دقیق)
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* Strict Centered Box Mode */
+                    <div className="w-[78%] max-w-[340px] h-48 border-2 border-[#C9A227]/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] relative flex items-center justify-center">
+                      <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-[#C9A227] rounded-tl-lg" />
+                      <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-[#C9A227] rounded-tr-lg" />
+                      <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-[#C9A227] rounded-bl-lg" />
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-[#C9A227] rounded-br-lg" />
+
+                      <div className="absolute left-2 right-2 h-0.5 bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse" />
+
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-[11px] font-bold text-white/90 bg-black/70 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 flex items-center gap-1.5">
+                          <Target className="w-3.5 h-3.5 text-[#C9A227]" />
+                          بارکد را در این کادر قرار دهید
+                        </span>
+                        {zoomLevel > 1 && (
+                          <span className="text-[10px] font-mono text-[#C9A227] bg-black/80 px-2 py-0.5 rounded-md font-bold">
+                            بزرگنمایی: {zoomLevel.toFixed(1)}x
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -665,37 +706,58 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         {/* On-Screen Hardware Controls Bar (Zoom, Focus, Torch, Cameras) */}
         {activeTab === 'camera' && (
           <div className="px-5 py-2.5 bg-[#161619] border-t border-[#222225] flex flex-col gap-2.5">
-            {/* Quick Zoom Presets & Torch */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-bold text-[#8E9299] pl-1">زوم:</span>
-                {[1, 1.5, 2, 3].map((z) => (
+            {/* Quick Zoom Presets, Mode Toggle & Torch */}
+            <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
+              {/* Distance Zoom Chips */}
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-bold text-[#8E9299] pl-1">فاصله/زوم:</span>
+                {[
+                  { z: 1, label: '1x نزدیک' },
+                  { z: 1.5, label: '1.5x' },
+                  { z: 2, label: '2x دور' },
+                  { z: 3, label: '3x خیلی‌دور' },
+                  { z: 4, label: '4x' },
+                ].map(({ z, label }) => (
                   <button
                     key={z}
                     onClick={() => applyZoom(z)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-colors cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition-colors cursor-pointer ${
                       Math.abs(zoomLevel - z) < 0.1
-                        ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                        ? 'bg-[#C9A227] text-slate-950 shadow-xs font-black'
                         : 'bg-[#0A0A0B] text-[#8E9299] hover:text-[#E0E0E0] border border-[#222225]'
                     }`}
                   >
-                    {z}x
+                    {label}
                   </button>
                 ))}
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Action Buttons: FullFrame Toggle, Torch, Settings */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setFullFrameScan(!fullFrameScan)}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all flex items-center gap-1 cursor-pointer ${
+                    fullFrameScan
+                      ? 'bg-amber-500/15 text-[#C9A227] border-amber-500/30 font-bold'
+                      : 'bg-[#0A0A0B] text-[#8E9299] border-[#222225]'
+                  }`}
+                  title="تغییر حالت اسکن بین تمام‌صفحه و کادر محدود"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  <span>{fullFrameScan ? 'اسکن آزاد' : 'کادر محدود'}</span>
+                </button>
+
                 {hasTorch && (
                   <button
                     onClick={toggleTorch}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                       torchOn
                         ? 'bg-[#C9A227] text-slate-950 shadow-md shadow-[#C9A227]/20 font-black'
                         : 'bg-[#0A0A0B] text-[#8E9299] hover:text-[#E0E0E0] border border-[#222225]'
                     }`}
                   >
                     {torchOn ? <ZapOff className="w-3.5 h-3.5" /> : <Zap className="w-3.5 h-3.5" />}
-                    <span>{torchOn ? 'خاموشی فلش' : 'روشن کردن چراغ'}</span>
+                    <span className="hidden sm:inline">{torchOn ? 'خاموش' : 'فلش'}</span>
                   </button>
                 )}
 

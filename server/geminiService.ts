@@ -302,7 +302,7 @@ ${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افز
     if (enableSearchGrounding) {
       try {
         const response = await ai.models.generateContent({
-          model: 'gemini-3.7-flash',
+          model: 'gemini-2.5-flash',
           contents: formattedContents,
           config: {
             systemInstruction: systemPrompt,
@@ -345,7 +345,7 @@ ${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افز
     // مرحله ۲: تلاش ساده با Gemini بدون ابزار جستجوی وب
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-2.5-flash',
         contents: formattedContents,
         config: {
           systemInstruction: systemPrompt,
@@ -386,7 +386,7 @@ export async function groundedWebMarketSearch(queryText: string): Promise<Ground
     // مرحله ۱: تلاش با ابزار جستجوی گوگل متصل به جمینای
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-2.5-flash',
         contents: `با جستجوی زنده در وب (Google Search)، قیمت روز، مشخصات، تولیدکنندگان و وضعیت بازار کالای زیر را در ایران (سایت‌های ترب، دیجی‌کالا، ایمالز، باسلام و بنکداران بازار تهران) به دقت بررسی و خلاصه کن:
 «${q}»
 شامل: کمترین و بیشترین قیمت بازار، میانگین قیمت، برندهای معتبر و توصیه قیمت‌گذاری برای فروشگاه خطی‌نو.`,
@@ -429,7 +429,7 @@ export async function groundedWebMarketSearch(queryText: string): Promise<Ground
     // مرحله ۲: تلاش با مدل استاندارد بدون ابزار جستجو
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-2.5-flash',
         contents: `به عنوان تحلیلگر ارشد بازار لوازم تحریر ایران، قیمت روز، بازه رقابتی در ترب و دیجی‌کالا و استراتژی قیمت‌گذاری برای کالای زیر را تحلیل و فرمت‌بندی کن:
 «${q}»`,
         config: {
@@ -495,7 +495,7 @@ export async function analyzeProductMarketAndPricing(
 }`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
+        model: 'gemini-2.5-flash',
         contents: prompt,
         config: {
           responseMimeType: 'application/json',

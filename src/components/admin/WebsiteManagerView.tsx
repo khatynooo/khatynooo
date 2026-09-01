@@ -41,6 +41,7 @@ import {
   RotateCcw,
   Sliders,
   Settings2,
+  MapPin,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
@@ -942,9 +943,53 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                       onChange={(e) => setWebSettings({ ...webSettings, catalogLayoutMode: e.target.value as any })}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none"
                     >
-                      <option value="grid">شبکه‌ای استاندارد (Grid - ۵ ستونه)</option>
+                      <option value="grid">شبکه‌ای استاندارد (Grid)</option>
                       <option value="compact">شبکه‌ای متراکم و فشرده (Compact Grid)</option>
                       <option value="list">سطری و لیستی (List View)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Extended Layout Settings */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-[#222225]">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">تعداد ستون‌های چیدمان محصولات در دسکتاپ:</label>
+                    <select
+                      value={webSettings.layoutColumns || 5}
+                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value={3}>۳ ستونه (تصاویر بزرگ و ویژه)</option>
+                      <option value={4}>۴ ستونه (متعادل و خوانا)</option>
+                      <option value={5}>۵ ستونه (استاندارد فروشگاه خطی‌نو)</option>
+                      <option value={6}>۶ ستونه (تراکم بالا ویژه مانیتورهای عریض)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان هدر (Header Layout):</label>
+                    <select
+                      value={webSettings.headerLayout || 'standard'}
+                      onChange={(e) => setWebSettings({ ...webSettings, headerLayout: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="standard">استاندارد تجاری (لوگو راست، سرچ وسط، ابزارها چپ)</option>
+                      <option value="compact">فشرده و مینیمال (Compact)</option>
+                      <option value="centered">لوگو در مرکز (Centered Logo)</option>
+                      <option value="fullwidth">عرض کامل با منوی مجزا (Full Width)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان فوتر و پاورقی (Footer Layout):</label>
+                    <select
+                      value={webSettings.footerLayout || 'multi_column'}
+                      onChange={(e) => setWebSettings({ ...webSettings, footerLayout: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="multi_column">چندستونه کامل (شامل مجوزها، نقشه، لینک‌ها و تماس)</option>
+                      <option value="card">کارت‌های شیشه‌ای مجزا (Card Based)</option>
+                      <option value="simple">مینیمال ساده و خلاصه (Minimal Simple)</option>
                     </select>
                   </div>
                 </div>
@@ -2032,69 +2077,200 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
             </div>
           )}
 
-          {/* SUB-TAB 3: CONTACT & GENERAL INFO */}
+          {/* SUB-TAB 3: CONTACT, ADDRESS & LOCATION INFO */}
           {settingsSubTab === 'contact' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">عنوان سایت:</label>
-                  <input
-                    type="text"
-                    value={webSettings.siteTitle || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, siteTitle: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-bold text-[#E0E0E0] outline-none"
-                  />
+            <div className="space-y-6">
+              {/* General Contact Info */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <Phone className="w-4 h-4" />
+                  <span>مشخصات اصلی تماس، پشتیبانی و شبکه‌های اجتماعی</span>
                 </div>
 
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">زیرعنوان و توضیحات فوتر:</label>
-                  <input
-                    type="text"
-                    value={webSettings.siteSubtitle || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, siteSubtitle: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 text-[#E0E0E0] outline-none"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">عنوان سایت:</label>
+                    <input
+                      type="text"
+                      value={webSettings.siteTitle || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, siteTitle: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-bold text-[#E0E0E0] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">زیرعنوان و توضیحات فوتر:</label>
+                    <input
+                      type="text"
+                      value={webSettings.siteSubtitle || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, siteSubtitle: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 text-[#E0E0E0] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">تلفن پشتیبانی و سفارشات:</label>
+                    <input
+                      type="text"
+                      value={webSettings.supportPhone || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, supportPhone: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">شماره واتساپ:</label>
+                    <input
+                      type="text"
+                      value={webSettings.whatsapp || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, whatsapp: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">آی‌دی اینستاگرام:</label>
+                    <input
+                      type="text"
+                      value={webSettings.instagram || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, instagram: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none text-left"
+                      placeholder="@khatynoo"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">ساعات کاری و پاسخگویی:</label>
+                    <input
+                      type="text"
+                      value={webSettings.workingHours || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, workingHours: e.target.value })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 text-[#E0E0E0] outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Physical Address & Map / Routing Location Settings */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <MapPin className="w-4 h-4" />
+                    <span>آدرس پستی دقیق، نقشه و لینک‌های مسیریابی فروشگاه و کارگاه</span>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={webSettings.showLocationMap !== false}
+                      onChange={(e) => setWebSettings({ ...webSettings, showLocationMap: e.target.checked })}
+                      className="accent-[#C9A227] w-3.5 h-3.5 rounded"
+                    />
+                    <span className="text-xs text-[#E0E0E0] font-bold">نمایش دکمه‌های مسیریابی و آدرس در فوتر</span>
+                  </label>
                 </div>
 
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">تلفن پشتیبانی و سفارشات:</label>
-                  <input
-                    type="text"
-                    value={webSettings.supportPhone || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, supportPhone: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none"
-                  />
-                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="font-bold text-[#8E9299] block mb-1">نشانی و آدرس پستی کامل:</label>
+                    <textarea
+                      rows={2}
+                      value={webSettings.address || ''}
+                      onChange={(e) => setWebSettings({ ...webSettings, address: e.target.value })}
+                      placeholder="تهران، بازار بزرگ، خیابان ۱۵ خرداد، بازار آهنگران، کوچه مروی، پلاک ۱۲، فروشگاه و چاپ مرکزی خطی‌نو"
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-3 text-xs leading-relaxed text-[#E0E0E0] outline-none resize-none"
+                    />
+                  </div>
 
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">شماره واتساپ:</label>
-                  <input
-                    type="text"
-                    value={webSettings.whatsapp || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, whatsapp: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1">شهر / استان:</label>
+                      <input
+                        type="text"
+                        value={webSettings.city || ''}
+                        onChange={(e) => setWebSettings({ ...webSettings, city: e.target.value })}
+                        placeholder="تهران"
+                        className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] outline-none text-xs"
+                      />
+                    </div>
 
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">آی‌دی اینستاگرام:</label>
-                  <input
-                    type="text"
-                    value={webSettings.instagram || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, instagram: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 font-mono text-[#E0E0E0] outline-none text-left"
-                    placeholder="@khatynoo"
-                  />
-                </div>
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1">کد پستی ۱۰ رقمی:</label>
+                      <input
+                        type="text"
+                        value={webSettings.postalCode || ''}
+                        onChange={(e) => setWebSettings({ ...webSettings, postalCode: e.target.value })}
+                        placeholder="۱۱۶۸۷۳۴۵۹۱"
+                        className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 font-mono text-center text-[#E0E0E0] outline-none text-xs"
+                      />
+                    </div>
 
-                <div>
-                  <label className="font-bold text-[#8E9299] block mb-1">ساعات کاری و پاسخگویی:</label>
-                  <input
-                    type="text"
-                    value={webSettings.workingHours || ''}
-                    onChange={(e) => setWebSettings({ ...webSettings, workingHours: e.target.value })}
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3.5 py-2.5 text-[#E0E0E0] outline-none"
-                  />
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1">مختصات جغرافیایی (Lat, Lng):</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={webSettings.mapLatitude || ''}
+                          onChange={(e) => setWebSettings({ ...webSettings, mapLatitude: e.target.value })}
+                          placeholder="35.6892"
+                          className="bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2 py-2 font-mono text-center text-[#E0E0E0] outline-none text-[11px]"
+                          title="Latitude (عرض جغرافیایی)"
+                        />
+                        <input
+                          type="text"
+                          value={webSettings.mapLongitude || ''}
+                          onChange={(e) => setWebSettings({ ...webSettings, mapLongitude: e.target.value })}
+                          placeholder="51.3890"
+                          className="bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2 py-2 font-mono text-center text-[#E0E0E0] outline-none text-[11px]"
+                          title="Longitude (طول جغرافیایی)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Routing Links */}
+                  <div className="pt-2 border-t border-[#222225] grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1 text-[11px] flex items-center gap-1.5">
+                        <Globe className="w-3.5 h-3.5 text-blue-400" />
+                        <span>لینک گوگل‌مپ (Google Maps):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={webSettings.googleMapsUrl || ''}
+                        onChange={(e) => setWebSettings({ ...webSettings, googleMapsUrl: e.target.value })}
+                        placeholder="https://maps.app.goo.gl/..."
+                        className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 font-mono text-left text-[#E0E0E0] outline-none text-[11px]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1 text-[11px] flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-sky-400" />
+                        <span>لینک مسیریابی در نشان (Neshan):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={webSettings.neshanUrl || ''}
+                        onChange={(e) => setWebSettings({ ...webSettings, neshanUrl: e.target.value })}
+                        placeholder="https://nshn.ir/..."
+                        className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 font-mono text-left text-[#E0E0E0] outline-none text-[11px]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1 text-[11px] flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>لینک مسیریابی در بلد (Balad):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={webSettings.baladUrl || ''}
+                        onChange={(e) => setWebSettings({ ...webSettings, baladUrl: e.target.value })}
+                        placeholder="https://balad.ir/..."
+                        className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 font-mono text-left text-[#E0E0E0] outline-none text-[11px]"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

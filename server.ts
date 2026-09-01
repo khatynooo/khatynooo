@@ -98,6 +98,13 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({ status: 'ok', time: new Date().toISOString(), port: PORT });
 });
 
+// Kavenegar WebPush Service Worker Route
+app.get('/kvn-push-sw.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.send('importScripts("https://cdn.kavenegar.com/sdk/sw.js");');
+});
+
 // -------------------------------------------------------------
 // AUTH MIDDLEWARE
 // -------------------------------------------------------------

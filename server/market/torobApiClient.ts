@@ -34,16 +34,19 @@ export class TorobApiClient {
   }
 
   /**
-   * اجرای درخواست HTTP با قابلیت Timeout خودکار توسط AbortController
+   * اجرای درخواست HTTP با قابلیت Timeout خودکار توسط Promise.race
    */
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let timer: any;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error('Torob API request timed out'));
+      }, this.timeoutMs);
+    });
 
     try {
-      const response = await fetch(url, {
+      const fetchPromise = fetch(url, {
         ...options,
-        signal: controller.signal,
         headers: {
           'User-Agent': this.getRandomUserAgent(),
           'Accept': 'application/json',
@@ -53,7 +56,14 @@ export class TorobApiClient {
           ...(options.headers || {}),
         },
       });
+
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
       return response;
+    } catch (err: any) {
+      if (err.message?.includes('timed out') || err.message?.includes('aborted')) {
+        throw new Error('Torob API request timed out');
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -72,7 +82,7 @@ export class TorobApiClient {
       } catch (err: any) {
         attempt++;
         lastError = err;
-        const isAbort = err.name === 'AbortError';
+        const isAbort = err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted');
         const isBotChallenge = err.message?.includes('HTTP 490') || err.message?.includes('HTTP 403');
         
         // در صورت تشخیص ربات (490/403) تکرار درخواست تاثیری ندارد و بلافاصله متوقف می‌شود

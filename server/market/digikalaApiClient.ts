@@ -32,13 +32,16 @@ export class DigikalaApiClient {
   }
 
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let timer: any;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error('Digikala API request timed out'));
+      }, this.timeoutMs);
+    });
 
     try {
-      const response = await fetch(url, {
+      const fetchPromise = fetch(url, {
         ...options,
-        signal: controller.signal,
         headers: {
           'User-Agent': this.getRandomUserAgent(),
           'Accept': 'application/json',
@@ -46,7 +49,14 @@ export class DigikalaApiClient {
           ...(options.headers || {}),
         },
       });
+
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
       return response;
+    } catch (err: any) {
+      if (err.message?.includes('timed out') || err.message?.includes('aborted')) {
+        throw new Error('Digikala API request timed out');
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }
@@ -62,7 +72,7 @@ export class DigikalaApiClient {
       } catch (err: any) {
         attempt++;
         lastError = err;
-        const isAbort = err.name === 'AbortError';
+        const isAbort = err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted');
         const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 200, 4000);
 
         if (attempt <= this.maxRetries) {
@@ -74,7 +84,7 @@ export class DigikalaApiClient {
       }
     }
 
-    console.error(`❌ [DigikalaApiClient] فراخوانی «${operationName}» پس از ${this.maxRetries + 1} تلاش متوقف شد:`, lastError?.message || lastError);
+    console.warn(`⚠️ [DigikalaApiClient] فراخوانی «${operationName}» پس از ${this.maxRetries + 1} تلاش متوقف شد:`, lastError?.message || lastError);
     return null;
   }
 

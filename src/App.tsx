@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { CustomerAuthProvider } from './context/CustomerAuthContext';
 import { CartProvider } from './context/CartContext';
 import { ToastProvider, useToast } from './components/common/Toast';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { api } from './lib/api';
 import { Product, Category, Banner, WebsiteSettings, StoreSettings, PageBuilderBlock } from './types';
 import { toPersianDigits } from './lib/utils';
@@ -464,38 +465,40 @@ function AdminPortal() {
 // =============================================================================
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <CustomerAuthProvider>
-          <CartProvider>
-            <ToastProvider>
-              <BrowserRouter>
-                <Routes>
-                  {/* ویترین عمومی فروشگاه آنلاین */}
-                  <Route path="/" element={<Storefront />} />
-                  <Route path="/store" element={<Storefront />} />
-                  <Route path="/account" element={<Storefront initialAccountOpen={true} />} />
-                  <Route path="/profile" element={<Storefront initialAccountOpen={true} />} />
-                  <Route path="/orders" element={<Storefront initialAccountOpen={true} />} />
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <CustomerAuthProvider>
+            <CartProvider>
+              <ToastProvider>
+                <BrowserRouter>
+                  <Routes>
+                    {/* ویترین عمومی فروشگاه آنلاین */}
+                    <Route path="/" element={<Storefront />} />
+                    <Route path="/store" element={<Storefront />} />
+                    <Route path="/account" element={<Storefront initialAccountOpen={true} />} />
+                    <Route path="/profile" element={<Storefront initialAccountOpen={true} />} />
+                    <Route path="/orders" element={<Storefront initialAccountOpen={true} />} />
 
-                  {/* پنل اختصاصی مدیریت فروشگاه آنلاین (اسلایدرها، سفارشات اینترنتی، تنظیمات سایت) */}
-                  <Route path="/adminsite" element={<SiteAdminPortal />} />
-                  <Route path="/adminsite/:tab" element={<SiteAdminPortal />} />
-                  <Route path="/adminsite/login" element={<SiteAdminLogin />} />
+                    {/* پنل اختصاصی مدیریت فروشگاه آنلاین (اسلایدرها، سفارشات اینترنتی، تنظیمات سایت) */}
+                    <Route path="/adminsite" element={<SiteAdminPortal />} />
+                    <Route path="/adminsite/:tab" element={<SiteAdminPortal />} />
+                    <Route path="/adminsite/login" element={<SiteAdminLogin />} />
 
-                  {/* پرتال صندوق، انبارداری و حسابداری حضوری */}
-                  <Route path="/admin" element={<AdminPortal />} />
-                  <Route path="/admin/:tab" element={<AdminPortal />} />
-                  <Route path="/admin/login" element={<AdminLogin />} />
+                    {/* پرتال صندوق، انبارداری و حسابداری حضوری */}
+                    <Route path="/admin" element={<AdminPortal />} />
+                    <Route path="/admin/:tab" element={<AdminPortal />} />
+                    <Route path="/admin/login" element={<AdminLogin />} />
 
-                  {/* مسیر پیش‌فرض */}
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </BrowserRouter>
-            </ToastProvider>
-          </CartProvider>
-        </CustomerAuthProvider>
-      </AuthProvider>
-    </ThemeProvider>
+                    {/* مسیر پیش‌فرض */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </BrowserRouter>
+              </ToastProvider>
+            </CartProvider>
+          </CustomerAuthProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

@@ -11,10 +11,6 @@ import {
   Keyboard,
   ZoomIn,
   ZoomOut,
-  Maximize2,
-  Layers,
-  UploadCloud,
-  FileImage,
   Sliders,
   Sparkles,
   Volume2,
@@ -22,6 +18,11 @@ import {
   Target,
   ScanLine,
   ShieldCheck,
+  FileImage,
+  UploadCloud,
+  Eye,
+  Crosshair,
+  Gauge,
 } from 'lucide-react';
 import { toEnglishDigits, isValidBarcodeChecksum, toPersianDigits } from '../../lib/utils';
 
@@ -38,8 +39,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   isOpen,
   onClose,
   onScan,
-  title = 'اسکنر بارکد و QR با دوربین فوق‌سریع و ضدخطا',
-  subtitle = 'بارکد کالا را در کادر قرار دهید (سیستم تأیید ارقام و چک‌سام فعال است)',
+  title = 'اسکنر بارکد هوشمند با خوانش چند-مقیاسی و ضدخطا',
+  subtitle = 'تشخیص خودکار بارکدهای ریز، فشرده و درشت در هر فاصله (بدون نیاز به حرکت دست)',
   allowContinuous = true,
 }) => {
   const [isScanning, setIsScanning] = useState(false);
@@ -51,7 +52,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
-  
+
   // Continuous scanning mode state
   const [continuousMode, setContinuousMode] = useState(false);
   const [scannedHistory, setScannedHistory] = useState<Array<{ code: string; time: string }>>([]);
@@ -60,7 +61,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [highPrecisionMode, setHighPrecisionMode] = useState(true);
   const candidateRef = useRef<{ code: string; count: number; lastTime: number }>({ code: '', count: 0, lastTime: 0 });
 
-  // Hardware Zoom & Focus state
+  // Multi-Scale Auto Tuning Engine (Reads tiny/dense or big/far barcodes without moving hands)
+  const [autoScaleTuning, setAutoScaleTuning] = useState(true);
+  const [autoTuningStep, setAutoTuningStep] = useState<string>('تراز خودکار');
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [minZoom, setMinZoom] = useState<number>(1);
   const [maxZoom, setMaxZoom] = useState<number>(4);
@@ -70,8 +73,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [maxExposure, setMaxExposure] = useState<number>(2);
   const [hasExposure, setHasExposure] = useState(false);
   const [showAdvancedControls, setShowAdvancedControls] = useState(false);
-  const [fullFrameScan, setFullFrameScan] = useState<boolean>(true); // اسکن تمام‌صفحه و بدون محدودیت کادر برای فواصل دور و نزدیک
-  const [isFocusing, setIsFocusing] = useState<boolean>(false);
+  const [fullFrameScan, setFullFrameScan] = useState<boolean>(true);
+  const [engineStatus, setEngineStatus] = useState<'idle' | 'scanning' | 'tuning'>('idle');
 
   // Active tab: 'camera' | 'file'
   const [activeTab, setActiveTab] = useState<'camera' | 'file'>('camera');
@@ -83,7 +86,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const videoTrackRef = useRef<MediaStreamTrack | null>(null);
   const containerId = 'pro-barcode-scanner-reader';
 
-  // Sound Synthesizer for POS Beep
+  // Auto-tuning loop refs
+  const lastDecodeTimeRef = useRef<number>(Date.now());
+  const autoTuneTimerRef = useRef<any>(null);
+  const autoTuneIndexRef = useRef<number>(0);
+  const isTuningRef = useRef<boolean>(false);
+
+  // Audio Synthesizer for POS Beep
   const playScanBeep = useCallback(() => {
     if (!soundEnabled) return;
     try {
@@ -92,17 +101,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const audioCtx = new AudioCtx();
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1800, audioCtx.currentTime + 0.08);
-      
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1900, audioCtx.currentTime + 0.08);
+
+      gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-      
+
       osc.connect(gain);
       gain.connect(audioCtx.destination);
-      
+
       osc.start();
       osc.stop(audioCtx.currentTime + 0.1);
     } catch (_) {}
@@ -113,6 +122,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const clean = toEnglishDigits(code).trim();
       if (!clean) return;
 
+      lastDecodeTimeRef.current = Date.now();
+
       // Avoid immediate duplicate scan in continuous mode within 1.5 seconds
       if (continuousMode && scannedHistory.length > 0 && scannedHistory[0].code === clean) {
         const timeDiff = Date.now() - new Date(scannedHistory[0].time).getTime();
@@ -120,10 +131,11 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
 
       setLastScannedCode(clean);
+      setEngineStatus('idle');
 
       // Trigger Audio & Haptics
       playScanBeep();
-      if (navigator.vibrate) {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
           navigator.vibrate([70, 30, 70]);
         } catch (_) {}
@@ -144,69 +156,190 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   );
 
   /**
-   * ارزیابی دقیق فریم‌های خوانده شده از دوربین جهت جلوگیری از خواندن اشتباه ارقام (مثلاً ۵ به جای ۶ یا ۲)
+   * ارزیابی دقیق فریم‌های خوانده شده از دوربین جهت جلوگیری از خواندن اشتباه ارقام
    */
-  const handleFrameDecoded = useCallback((rawDecodedText: string) => {
-    if (!rawDecodedText) return;
-    const clean = toEnglishDigits(rawDecodedText).trim();
-    if (clean.length < 3) return;
+  const handleFrameDecoded = useCallback(
+    (rawDecodedText: string) => {
+      if (!rawDecodedText) return;
+      const clean = toEnglishDigits(rawDecodedText).trim();
+      if (clean.length < 3) return;
 
-    // ۱. بررسی چک‌سام ریاضی بارکدهای استاندارد (EAN-13, EAN-8, UPC-A)
-    if (!isValidBarcodeChecksum(clean)) {
-      // فریم تار یا مخدوش بوده و رقم کنترلی همخوانی ندارد - از این فریم رد شو
-      return;
-    }
+      // ۱. بررسی چک‌سام ریاضی بارکدهای استاندارد (EAN-13, EAN-8, UPC-A)
+      if (!isValidBarcodeChecksum(clean)) {
+        return;
+      }
 
-    // ۲. در صورت فعال بودن دقت بالا، تطابق حداقل دو فریم متوالی در فاصله زمانی ۴۵۰ میلی‌ثانیه الزامی است
-    if (highPrecisionMode) {
-      const now = Date.now();
-      const candidate = candidateRef.current;
+      // ۲. در صورت فعال بودن دقت بالا، تطابق حداقل دو فریم متوالی در فاصله زمانی ۴۵۰ میلی‌ثانیه الزامی است
+      if (highPrecisionMode) {
+        const now = Date.now();
+        const candidate = candidateRef.current;
 
-      if (candidate.code === clean && now - candidate.lastTime < 450) {
-        candidate.count += 1;
-        candidate.lastTime = now;
-        if (candidate.count >= 2) {
-          // تطابق دو فریم ۱۰۰٪ قطعی شد -> بارکد بدون خطا ثبت می‌شود
-          candidateRef.current = { code: '', count: 0, lastTime: 0 };
-          handleSuccessfulScan(clean);
+        if (candidate.code === clean && now - candidate.lastTime < 450) {
+          candidate.count += 1;
+          candidate.lastTime = now;
+          if (candidate.count >= 2) {
+            candidateRef.current = { code: '', count: 0, lastTime: 0 };
+            handleSuccessfulScan(clean);
+          }
+        } else {
+          candidateRef.current = { code: clean, count: 1, lastTime: now };
         }
       } else {
-        // ثبت کاندیدای اولیه فریم اول
-        candidateRef.current = { code: clean, count: 1, lastTime: now };
+        handleSuccessfulScan(clean);
       }
-    } else {
-      handleSuccessfulScan(clean);
-    }
-  }, [highPrecisionMode, handleSuccessfulScan]);
+    },
+    [highPrecisionMode, handleSuccessfulScan]
+  );
 
-  const stopScanner = async () => {
+  // Apply Hardware or Digital Zoom
+  const applyZoom = useCallback(
+    async (newZoom: number) => {
+      setZoomLevel(newZoom);
+      const track = videoTrackRef.current;
+      if (track) {
+        try {
+          if (typeof track.getCapabilities === 'function') {
+            const caps = (track.getCapabilities() || {}) as any;
+            if (caps?.zoom) {
+              const clamped = Math.max(caps.zoom.min || 1, Math.min(caps.zoom.max || 5, newZoom));
+              await track.applyConstraints({
+                advanced: [{ zoom: clamped } as any],
+              });
+            }
+          }
+        } catch (err) {
+          // Ignore zoom constraint failures gracefully
+        }
+      }
+    },
+    []
+  );
+
+  // Stop scanner safely and clean all streams & timers
+  const stopScanner = useCallback(async () => {
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
+
+    // Clear auto-tuning timer
+    if (autoTuneTimerRef.current) {
+      clearInterval(autoTuneTimerRef.current);
+      autoTuneTimerRef.current = null;
+    }
+
     try {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        await scannerRef.current.stop();
+      if (videoTrackRef.current) {
+        try {
+          videoTrackRef.current.stop();
+        } catch (_) {}
+        videoTrackRef.current = null;
+      }
+
+      if (scannerRef.current) {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
         scannerRef.current.clear();
       }
     } catch (e) {
-      console.warn('Scanner stop warning:', e);
+      console.warn('Scanner cleanup warning:', e);
     } finally {
-      videoTrackRef.current = null;
       scannerRef.current = null;
       setIsScanning(false);
+      setEngineStatus('idle');
       isStoppingRef.current = false;
       candidateRef.current = { code: '', count: 0, lastTime: 0 };
     }
-  };
+  }, []);
+
+  /**
+   * Multi-Scale Auto-Tuning Engine:
+   * هنگامی که در فاصله فعلی بارکدی طی ۶۰۰ تا ۸۰۰ میلی‌ثانیه خوانده نشود،
+   * الگوریتم چند-مقیاسی به صورت خودکار مقیاس‌های زوم و پالس‌های فوکوس را بدون حرکت فیزیکی گوشی تغییر می‌دهد.
+   */
+  useEffect(() => {
+    if (!isScanning || !autoScaleTuning || activeTab !== 'camera') {
+      if (autoTuneTimerRef.current) {
+        clearInterval(autoTuneTimerRef.current);
+        autoTuneTimerRef.current = null;
+      }
+      return;
+    }
+
+    const zoomScaleSequence = [1.0, 1.4, 2.0, 2.8, 1.8, 1.2];
+    lastDecodeTimeRef.current = Date.now();
+
+    autoTuneTimerRef.current = setInterval(async () => {
+      const timeSinceLast = Date.now() - lastDecodeTimeRef.current;
+      if (timeSinceLast > 700 && !isTuningRef.current && isScanning) {
+        isTuningRef.current = true;
+        setEngineStatus('tuning');
+
+        try {
+          autoTuneIndexRef.current = (autoTuneIndexRef.current + 1) % zoomScaleSequence.length;
+          const targetZoom = zoomScaleSequence[autoTuneIndexRef.current];
+
+          setAutoTuningStep(`تنظیم خودکار مقیاس: ${targetZoom.toFixed(1)}x`);
+          await applyZoom(targetZoom);
+
+          // Trigger autofocus re-lock on center
+          const track = videoTrackRef.current;
+          if (track && typeof track.getCapabilities === 'function') {
+            try {
+              const caps = (track.getCapabilities() || {}) as any;
+              if (caps?.pointsOfInterest) {
+                await track.applyConstraints({
+                  advanced: [{ pointsOfInterest: [{ x: 0.5, y: 0.5 }] } as any],
+                });
+              } else if (caps?.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+                await track.applyConstraints({
+                  advanced: [{ focusMode: 'continuous' } as any],
+                });
+              }
+            } catch (_) {
+              // Ignore hardware constraint adjustments
+            }
+          }
+        } catch (_) {
+        } finally {
+          setTimeout(() => {
+            isTuningRef.current = false;
+            setEngineStatus('scanning');
+          }, 350);
+        }
+      }
+    }, 750);
+
+    return () => {
+      if (autoTuneTimerRef.current) {
+        clearInterval(autoTuneTimerRef.current);
+        autoTuneTimerRef.current = null;
+      }
+    };
+  }, [isScanning, autoScaleTuning, activeTab, applyZoom]);
 
   const startScannerWithCamera = async (cameraId: string) => {
     if (!cameraId) return;
     setCameraError(null);
     setIsScanning(true);
+    setEngineStatus('scanning');
     candidateRef.current = { code: '', count: 0, lastTime: 0 };
+    lastDecodeTimeRef.current = Date.now();
 
     try {
       if (scannerRef.current) {
         await stopScanner();
+      }
+
+      // Check HTTPS or Localhost context
+      if (
+        typeof window !== 'undefined' &&
+        window.location.protocol !== 'https:' &&
+        window.location.hostname !== 'localhost' &&
+        window.location.hostname !== '127.0.0.1'
+      ) {
+        setCameraError('دسترسی به دوربین در مرورگرها فقط روی بستر امن HTTPS مجاز است.');
+        setIsScanning(false);
+        return;
       }
 
       const scanner = new Html5Qrcode(containerId, {
@@ -222,19 +355,18 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         ],
         verbose: false,
         experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true, // Hardware BarcodeDetector where supported
+          useBarCodeDetectorIfSupported: true, // Native BarcodeDetector when available (Chromium/Edge)
         },
       });
 
       scannerRef.current = scanner;
 
-      // Start scanning with high FPS, full-frame detection, optimal resolution, and sharp sensor decoding
+      // Start with high sensor resolution (1080p/4K) to resolve ultra-thin barcode lines
       await scanner.start(
         cameraId,
         {
-          fps: 28,
+          fps: 30,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
-            // In fullFrameScan mode, analyze the entire camera sensor area for long-range and flexible detection
             if (fullFrameScan) {
               return {
                 width: Math.floor(viewfinderWidth * 0.98),
@@ -243,59 +375,62 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             }
             const minDim = Math.min(viewfinderWidth, viewfinderHeight);
             return {
-              width: Math.min(340, Math.floor(viewfinderWidth * 0.88)),
-              height: Math.min(220, Math.floor(minDim * 0.65)),
+              width: Math.min(360, Math.floor(viewfinderWidth * 0.9)),
+              height: Math.min(240, Math.floor(minDim * 0.7)),
             };
           },
           aspectRatio: 1.333333,
           videoConstraints: {
-            facingMode: 'environment',
+            facingMode: { ideal: 'environment' },
             width: { ideal: 1920, min: 1280 },
             height: { ideal: 1080, min: 720 },
             focusMode: 'continuous',
-            advanced: [{ focusMode: 'continuous' }],
+            advanced: [{ focusMode: 'continuous' }, { pointsOfInterest: [{ x: 0.5, y: 0.5 }] }],
           } as any,
         },
         (decodedText) => {
           handleFrameDecoded(decodedText);
         },
         () => {
-          // Ignore frames without barcodes
+          // Empty frame loop
         }
       );
 
-      // Probe Hardware Capabilities (Zoom, Torch, Focus, Exposure)
+      // Probe Hardware Capabilities Safely (Zoom, Torch, Focus, Exposure)
       try {
         const track = (scanner as any).getRunningTrack?.();
         if (track) {
           videoTrackRef.current = track;
           if (typeof track.getCapabilities === 'function') {
-            const caps = track.getCapabilities();
+            const caps = (track.getCapabilities() || {}) as any;
 
             // Torch support
-            if (caps.torch) {
+            if (caps?.torch) {
               setHasTorch(true);
             }
 
             // Hardware Zoom support
-            if (caps.zoom) {
+            if (caps?.zoom) {
               setHasHardwareZoom(true);
               setMinZoom(caps.zoom.min || 1);
               setMaxZoom(caps.zoom.max || 5);
-              setZoomLevel(track.getSettings?.().zoom || caps.zoom.min || 1);
+              const settingsZoom = (track.getSettings?.() as any)?.zoom;
+              setZoomLevel(settingsZoom || caps.zoom.min || 1);
             } else {
               setHasHardwareZoom(false);
+              setMinZoom(1);
+              setMaxZoom(4);
             }
 
             // Exposure support
-            if (caps.exposureCompensation) {
+            if (caps?.exposureCompensation) {
               setHasExposure(true);
               setMinExposure(caps.exposureCompensation.min || -2);
               setMaxExposure(caps.exposureCompensation.max || 2);
             }
 
-            // Set continuous autofocus if supported
-            if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+            // Apply Continuous Auto-Focus
+            if (caps?.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
               try {
                 await track.applyConstraints({
                   advanced: [{ focusMode: 'continuous' } as any],
@@ -309,8 +444,25 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
     } catch (err: any) {
       console.error('Scanner start error:', err);
-      setCameraError('امکان راه‌اندازی اسکنر دوربین وجود ندارد: ' + (err.message || ''));
+      let msg = 'امکان راه‌اندازی اسکنر دوربین وجود ندارد.';
+      const errName = err.name || '';
+      const errMsg = err.message || '';
+
+      if (errName === 'NotAllowedError' || errMsg.includes('Permission')) {
+        msg = 'دسترسی به دوربین توسط مرورگر مسدود شده است. لطفاً از نوار آدرس دسترسی دوربین را فعال کنید.';
+      } else if (errName === 'NotFoundError' || errMsg.includes('device not found')) {
+        msg = 'دوربینی روی این دستگاه یافت نشد یا لنز پشت در دسترس نیست.';
+      } else if (errName === 'NotReadableError' || errMsg.includes('busy') || errMsg.includes('in use')) {
+        msg = 'دوربین در حال حاضر توسط برنامه دیگری در حال استفاده است. لطفاً سایر برنامه‌ها را ببندید.';
+      } else if (errName === 'OverconstrainedError') {
+        msg = 'کیفیت درخواستی توسط لنز پشتیبانی نمی‌شود؛ در حال تلاش با کیفیت استاندارد...';
+      } else if (errMsg) {
+        msg += ' ' + errMsg;
+      }
+
+      setCameraError(msg);
       setIsScanning(false);
+      setEngineStatus('idle');
     }
   };
 
@@ -324,13 +476,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
 
       setCameras(devices);
-      // Prefer high-quality back/rear camera for barcodes
+      // Prefer high-quality back/rear/environment camera
       const backCamera = devices.find(
         (d) =>
           d.label.toLowerCase().includes('back') ||
           d.label.toLowerCase().includes('rear') ||
           d.label.toLowerCase().includes('environment') ||
-          d.label.toLowerCase().includes('0, facing back')
+          d.label.toLowerCase().includes('0, facing back') ||
+          d.label.toLowerCase().includes('عقب')
       );
       const chosenId = backCamera ? backCamera.id : devices[devices.length - 1].id;
       setSelectedCameraId(chosenId);
@@ -357,21 +510,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     return () => {
       stopScanner();
     };
-  }, [isOpen, activeTab]);
-
-  // Apply Hardware or Digital Zoom
-  const applyZoom = async (newZoom: number) => {
-    setZoomLevel(newZoom);
-    if (videoTrackRef.current && hasHardwareZoom) {
-      try {
-        await videoTrackRef.current.applyConstraints({
-          advanced: [{ zoom: newZoom } as any],
-        });
-      } catch (err) {
-        console.warn('Error applying hardware zoom:', err);
-      }
-    }
-  };
+  }, [isOpen, activeTab, stopScanner]);
 
   // Torch Toggle
   const toggleTorch = async () => {
@@ -410,14 +549,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       const y = (e.clientY - rect.top) / rect.height;
 
       const track = videoTrackRef.current;
-      const caps = track.getCapabilities?.() || {};
+      const caps = (typeof track.getCapabilities === 'function' ? track.getCapabilities() : {}) as any;
 
-      if (caps.pointsOfInterest) {
+      if (caps?.pointsOfInterest) {
         await track.applyConstraints({
           advanced: [{ pointsOfInterest: [{ x, y }] } as any],
         });
-      } else if (caps.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
-        // Re-trigger autofocus
+      } else if (caps?.focusMode && Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
         await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as any] });
       }
     } catch (_) {}
@@ -502,7 +640,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
         </div>
 
-        {/* Mode Tabs & Precision Status */}
+        {/* Mode Tabs & Features */}
         <div className="flex items-center justify-between px-5 py-2 bg-[#0A0A0B] border-b border-[#222225] text-xs">
           <div className="flex items-center gap-2">
             <button
@@ -537,6 +675,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Multi-scale Auto Tuning Indicator */}
+            <button
+              type="button"
+              onClick={() => setAutoScaleTuning(!autoScaleTuning)}
+              title="تغییر خودکار مقیاس و زوم برای بارکدهای ریز و درشت بدون حرکت دست"
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-colors flex items-center gap-1 cursor-pointer ${
+                autoScaleTuning
+                  ? 'bg-amber-500/15 text-[#C9A227] border-amber-500/30'
+                  : 'bg-[#1C1C20] text-[#8E9299] border-[#2D2D33]'
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>{autoScaleTuning ? 'مقیاس خودکار فعال' : 'زوم ثابت'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setHighPrecisionMode(!highPrecisionMode)}
@@ -565,27 +718,26 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           </div>
         </div>
 
-        {/* Viewport / Scanner */}
+        {/* Viewport / Scanner Area */}
         <div className="relative bg-black min-h-[290px] sm:min-h-[340px] flex items-center justify-center overflow-hidden">
           {activeTab === 'camera' ? (
             <>
-              {/* The Video Element Container */}
+              {/* Video Element Container */}
               <div
                 id={containerId}
                 onClick={handleTapToFocus}
                 style={{
                   transform: !hasHardwareZoom && zoomLevel > 1 ? `scale(${zoomLevel})` : undefined,
                   transformOrigin: 'center center',
-                  transition: 'transform 0.15s ease-out',
+                  transition: 'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
                 }}
                 className="w-full max-w-full overflow-hidden cursor-crosshair"
               />
 
-              {/* Guide Overlay & Reticle */}
+              {/* Guide Overlay & Multi-Scale Reticle */}
               {isScanning && !cameraError && (
                 <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
                   {fullFrameScan ? (
-                    /* Full-Frame Wide Viewfinder Guide for Long-distance and Flexible Scanning */
                     <div className="w-[94%] h-[82%] border border-dashed border-[#C9A227]/40 rounded-3xl relative flex flex-col items-center justify-between p-3">
                       {/* Corner Accents */}
                       <div className="absolute -top-1 -left-1 w-6 h-6 border-t-2 border-l-2 border-[#C9A227] rounded-tl-xl" />
@@ -593,30 +745,37 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       <div className="absolute -bottom-1 -left-1 w-6 h-6 border-b-2 border-l-2 border-[#C9A227] rounded-bl-xl" />
                       <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-2 border-r-2 border-[#C9A227] rounded-br-xl" />
 
-                      {/* Laser Line */}
-                      <div className="absolute top-1/2 -translate-y-1/2 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_10px_#ef4444] animate-pulse" />
+                      {/* Laser Beam */}
+                      <div className="absolute top-1/2 -translate-y-1/2 left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent shadow-[0_0_12px_#ef4444] animate-pulse" />
 
                       <div className="w-full flex items-center justify-between">
                         <span className="text-[10px] font-bold text-white/90 bg-black/75 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 flex items-center gap-1.5 shadow-sm">
                           <Target className="w-3.5 h-3.5 text-[#C9A227]" />
-                          اسکن آزاد تمام‌صفحه فعال است
+                          اسکن هوشمند تمام‌صفحه و چند-مقیاسی
                         </span>
-                        {zoomLevel > 1 && (
-                          <span className="text-[10px] font-mono text-[#C9A227] bg-black/85 px-2.5 py-0.5 rounded-full border border-[#C9A227]/30 font-black">
-                            {zoomLevel.toFixed(1)}x
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {engineStatus === 'tuning' && (
+                            <span className="text-[9px] font-bold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-500/40 animate-pulse flex items-center gap-1">
+                              <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                              تنظیم خودکار مقیاس
+                            </span>
+                          )}
+                          {zoomLevel > 1 && (
+                            <span className="text-[10px] font-mono text-[#C9A227] bg-black/85 px-2.5 py-0.5 rounded-full border border-[#C9A227]/30 font-black">
+                              {zoomLevel.toFixed(1)}x
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="text-center">
                         <span className="text-[10px] font-bold text-slate-200 bg-black/80 px-3 py-1 rounded-xl backdrop-blur-md border border-white/10">
-                          دوربین را با فاصله دور یا نزدیک بگیرید (بدون نیاز به کادربندی دقیق)
+                          گوشی را ثابت نگه دارید؛ سیستم خودکار بارکدهای ریز و درشت را تنظیم می‌کند
                         </span>
                       </div>
                     </div>
                   ) : (
-                    /* Strict Centered Box Mode */
-                    <div className="w-[78%] max-w-[340px] h-48 border-2 border-[#C9A227]/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] relative flex items-center justify-center">
+                    <div className="w-[82%] max-w-[340px] h-48 border-2 border-[#C9A227]/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] relative flex items-center justify-center">
                       <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-[#C9A227] rounded-tl-lg" />
                       <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-[#C9A227] rounded-tr-lg" />
                       <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-[#C9A227] rounded-bl-lg" />
@@ -655,7 +814,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 </div>
               )}
 
-              {/* Success Visual Ripple Overlay */}
+              {/* Success Visual Overlay */}
               {lastScannedCode && (
                 <div className="absolute inset-0 bg-emerald-950/85 backdrop-blur-xs flex flex-col items-center justify-center text-white gap-2 animate-in zoom-in-95 duration-150 z-20">
                   <CheckCircle2 className="w-14 h-14 text-emerald-400 animate-bounce" />
@@ -703,14 +862,14 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           )}
         </div>
 
-        {/* On-Screen Hardware Controls Bar (Zoom, Focus, Torch, Cameras) */}
+        {/* Controls Bar */}
         {activeTab === 'camera' && (
           <div className="px-5 py-2.5 bg-[#161619] border-t border-[#222225] flex flex-col gap-2.5">
             {/* Quick Zoom Presets, Mode Toggle & Torch */}
             <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
               {/* Distance Zoom Chips */}
               <div className="flex items-center gap-1">
-                <span className="text-[11px] font-bold text-[#8E9299] pl-1">فاصله/زوم:</span>
+                <span className="text-[11px] font-bold text-[#8E9299] pl-1">مقیاس/فاصله:</span>
                 {[
                   { z: 1, label: '1x نزدیک' },
                   { z: 1.5, label: '1.5x' },
@@ -720,9 +879,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 ].map(({ z, label }) => (
                   <button
                     key={z}
-                    onClick={() => applyZoom(z)}
+                    onClick={() => {
+                      setAutoScaleTuning(false); // Disable auto-tune if user manually clicks a zoom level
+                      applyZoom(z);
+                    }}
                     className={`px-2 py-1 rounded-lg text-[11px] font-mono font-bold transition-colors cursor-pointer ${
-                      Math.abs(zoomLevel - z) < 0.1
+                      Math.abs(zoomLevel - z) < 0.15
                         ? 'bg-[#C9A227] text-slate-950 shadow-xs font-black'
                         : 'bg-[#0A0A0B] text-[#8E9299] hover:text-[#E0E0E0] border border-[#222225]'
                     }`}
@@ -768,7 +930,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                       ? 'bg-[#C9A227] text-slate-950 border-[#C9A227]'
                       : 'bg-[#0A0A0B] text-[#8E9299] hover:text-[#E0E0E0] border-[#222225]'
                   }`}
-                  title="تنظیمات پیشرفته دوربین"
+                  title="تنظیمات پیشرفته لنز و نور"
                 >
                   <Sliders className="w-4 h-4" />
                 </button>
@@ -786,7 +948,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                     max={maxZoom}
                     step={0.1}
                     value={zoomLevel}
-                    onChange={(e) => applyZoom(parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      setAutoScaleTuning(false);
+                      applyZoom(parseFloat(e.target.value));
+                    }}
                     className="flex-1 accent-[#C9A227] cursor-pointer"
                   />
                   <ZoomIn className="w-4 h-4 text-[#8E9299] shrink-0" />
@@ -871,3 +1036,4 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     </div>
   );
 };
+

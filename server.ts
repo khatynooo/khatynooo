@@ -7,6 +7,21 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createServer as createViteServer } from 'vite';
+
+// Process-level unhandled rejection filter for benign network aborts
+process.on('unhandledRejection', (reason: any) => {
+  if (
+    !reason ||
+    reason.name === 'AbortError' ||
+    reason.message?.includes('aborted') ||
+    reason.message?.includes('Timeout') ||
+    (typeof reason === 'string' && reason.includes('AbortError'))
+  ) {
+    return;
+  }
+  console.warn('Unhandled server promise rejection:', reason?.message || reason);
+});
+
 import { db } from './server/db';
 import { initializeDatabase, isDbConnected, isPostgresReal, query } from './server/dbClient';
 import { sendToPasargadPos } from './server/posProtocol';

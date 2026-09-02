@@ -7,12 +7,56 @@
     <meta name="description" content="پلتفرم جامع فروش آنلاین لوازم‌تحریر و سیستم حسابداری، انبارداری، صندوق POS، تولید و خدمات کپی/پرینت یکپارچه" />
     <meta property="og:title" content="خطینو (Khatinoo)" />
     <meta property="og:description" content="پلتفرم جامع فروش آنلاین لوازم‌تحریر و سیستم حسابداری، انبارداری، صندوق POS، تولید و خدمات کپی/پرینت یکپارچه" />
+    <script>
+      // Early error, console filter, and unhandled rejection suppressor for iframe / AbortSignals
+      (function() {
+        var originalConsoleError = console.error;
+        console.error = function() {
+          var args = Array.prototype.slice.call(arguments);
+          var isAbort = args.some(function(arg) {
+            if (!arg) return false;
+            var str = (arg && (arg.message || arg.stack || arg.name || String(arg))) || '';
+            return str.includes('AbortError') || str.includes('signal is aborted') || str.includes('ResizeObserver');
+          });
+          if (isAbort) return;
+          originalConsoleError.apply(console, args);
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          var r = event.reason;
+          if (
+            !r ||
+            r === 'undefined' ||
+            r.name === 'AbortError' ||
+            (r.message && (r.message.includes('aborted') || r.message.includes('ServiceWorker') || r.message.includes('AbortError'))) ||
+            (typeof r === 'string' && (r.includes('AbortError') || r.includes('aborted')))
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          var msg = event.message || '';
+          if (
+            !event.error ||
+            msg === 'Script error.' ||
+            msg === 'undefined' ||
+            msg.includes('ResizeObserver') ||
+            msg.includes('AbortError') ||
+            msg.includes('aborted')
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/estedad-font@v5.4.1/dist/font-face.css" />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-    <script src="https://cdn.kavenegar.com/sdk/page.js?appId=c6484175-3b2c-4f80-98db-fa5b14619b9e" defer charset="utf-8"></script>
   </head>
   <body class="bg-[#0A0A0B] text-[#E0E0E0] antialiased selection:bg-[#C9A227]/30 selection:text-[#F3F4F6]">
     <div id="root"></div>

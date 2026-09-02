@@ -303,9 +303,11 @@ export interface Cheque {
   branchCode?: string;
   amount: number;
   dueDate: string;
-  issueDate: string;
-  drawerName: string;
-  contactNumber: string;
+  issueDate?: string;
+  drawerName?: string;
+  issuerName?: string;
+  customerName?: string;
+  contactNumber?: string;
   entityId?: string;
   entityName?: string;
   status: 'pending' | 'cleared' | 'bounced' | 'cancelled';

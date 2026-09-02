@@ -40,9 +40,9 @@ export const ChequesView: React.FC = () => {
     }
   }
 
-  const handleUpdateStatus = async (id: string, newStatus: any) => {
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
-      await api.updateChequeStatus(id, newStatus);
+      await api.updateChequeStatus(id, { status: newStatus });
       showToast('وضعیت چک با موفقیت تغییر کرد.', 'success');
       loadData();
     } catch (err: any) {
@@ -181,7 +181,9 @@ export const ChequesView: React.FC = () => {
                     <div className="font-mono font-bold text-slate-900">{c.chequeNumber}</div>
                     <div className="text-[10px] text-slate-400 font-mono">صیاد: {c.sayadId}</div>
                   </td>
-                  <td className="p-3.5 font-bold text-slate-800">{c.issuerName || c.customerName || '-'}</td>
+                  <td className="p-3.5 font-bold text-slate-800">
+                    {c.issuerName || c.drawerName || c.customerName || c.entityName || '-'}
+                  </td>
                   <td className="p-3.5 text-slate-600">{c.bankName}</td>
                   <td className="p-3.5 font-mono font-black text-slate-900">{formatToman(c.amount)}</td>
                   <td className="p-3.5 font-mono text-slate-600">{c.dueDate}</td>

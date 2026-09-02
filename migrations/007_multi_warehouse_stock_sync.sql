@@ -4,40 +4,17 @@
 -- ==============================================================================
 
 -- ۱. افزودن ستون warehouse_id به جداول فاکتورها و سفارشات در صورت عدم وجود (Additive)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'sales_invoices' AND column_name = 'warehouse_id'
-    ) THEN
-        ALTER TABLE sales_invoices ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
-        CREATE INDEX IF NOT EXISTS idx_sales_invoices_wh ON sales_invoices(warehouse_id);
-    END IF;
+ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central';
+CREATE INDEX IF NOT EXISTS idx_sales_invoices_wh ON sales_invoices(warehouse_id);
 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'purchase_invoices' AND column_name = 'warehouse_id'
-    ) THEN
-        ALTER TABLE purchase_invoices ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
-        CREATE INDEX IF NOT EXISTS idx_purchase_invoices_wh ON purchase_invoices(warehouse_id);
-    END IF;
+ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central';
+CREATE INDEX IF NOT EXISTS idx_purchase_invoices_wh ON purchase_invoices(warehouse_id);
 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'online_orders' AND column_name = 'warehouse_id'
-    ) THEN
-        ALTER TABLE online_orders ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_online';
-        CREATE INDEX IF NOT EXISTS idx_online_orders_wh ON online_orders(warehouse_id);
-    END IF;
+ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_online';
+CREATE INDEX IF NOT EXISTS idx_online_orders_wh ON online_orders(warehouse_id);
 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'production_runs' AND column_name = 'warehouse_id'
-    ) THEN
-        ALTER TABLE production_runs ADD COLUMN warehouse_id VARCHAR(64) REFERENCES warehouses(id) DEFAULT 'wh_central';
-        CREATE INDEX IF NOT EXISTS idx_production_runs_wh ON production_runs(warehouse_id);
-    END IF;
-END $$;
+ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central';
+CREATE INDEX IF NOT EXISTS idx_production_runs_wh ON production_runs(warehouse_id);
 
 -- ۲. تابع تریگر برای محاسبه و همگام‌سازی خودکار ستون products.stock بر اساس SUM(inventory_by_location.stock)
 CREATE OR REPLACE FUNCTION fn_sync_product_stock_from_inventory()

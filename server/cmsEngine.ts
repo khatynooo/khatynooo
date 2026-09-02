@@ -875,4 +875,48 @@ export const cmsEngine = {
     auditLogs.unshift(log);
     return log;
   },
+
+  // --- FULL BACKUP & RESTORE CMS DATA ---
+  getAllCmsData: () => ({
+    modules,
+    pageBlocks,
+    pageTemplates,
+    mediaItems,
+    smsConfig,
+    smsLogs,
+    coupons,
+    productReviews,
+    paymentGateways,
+    auditLogs,
+  }),
+
+  restoreCmsData: (data: any) => {
+    let restoredCount = 0;
+    if (data.mediaItems && Array.isArray(data.mediaItems)) {
+      mediaItems = data.mediaItems;
+      restoredCount += mediaItems.length;
+    }
+    if (data.pageBlocks && Array.isArray(data.pageBlocks)) {
+      pageBlocks = data.pageBlocks;
+    }
+    if (data.pageTemplates && Array.isArray(data.pageTemplates)) {
+      pageTemplates = data.pageTemplates;
+    }
+    if (data.modules && Array.isArray(data.modules)) {
+      modules = data.modules;
+    }
+    if (data.coupons && Array.isArray(data.coupons)) {
+      coupons = data.coupons;
+    }
+    if (data.productReviews && Array.isArray(data.productReviews)) {
+      productReviews = data.productReviews;
+    }
+    if (data.smsConfig) {
+      smsConfig = { ...smsConfig, ...data.smsConfig };
+    }
+    if (data.paymentGateways && Array.isArray(data.paymentGateways)) {
+      paymentGateways = data.paymentGateways;
+    }
+    return { success: true, restoredCmsItems: restoredCount };
+  },
 };

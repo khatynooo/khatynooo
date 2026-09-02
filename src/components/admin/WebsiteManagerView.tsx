@@ -42,11 +42,14 @@ import {
   Sliders,
   Settings2,
   MapPin,
+  HardDrive,
+  Database,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
 import { OnlineOrder, Banner, PaymentGatewayConfig, ShippingMethod, WebsiteSettings, HeaderMenuItem, CustomSymbol, CustomBadge, HeaderElement, HeaderElementType } from '../../types';
 import { useToast } from '../common/Toast';
+import { BackupRestoreSection } from './BackupRestoreSection';
 
 export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 'gateways' | 'shipping' | 'settings' }> = ({
   initialTab = 'orders',
@@ -65,7 +68,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
   const [trackingModalOrder, setTrackingModalOrder] = useState<OnlineOrder | null>(null);
   const [trackingCodeInput, setTrackingCodeInput] = useState('');
 
-  const [settingsSubTab, setSettingsSubTab] = useState<'appearance' | 'header' | 'branding' | 'contact'>('appearance');
+  const [settingsSubTab, setSettingsSubTab] = useState<'appearance' | 'header' | 'branding' | 'contact' | 'backup'>('appearance');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingEnamad, setIsUploadingEnamad] = useState(false);
   const [isUploadingSamandehi, setIsUploadingSamandehi] = useState(false);
@@ -884,6 +887,18 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 }`}
               >
                 اطلاعات تماس و فوتر
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('backup')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  settingsSubTab === 'backup'
+                    ? 'bg-[#1C1C20] text-[#C9A227] border border-[#C9A227]/40 shadow-xs'
+                    : 'text-[#8E9299] hover:text-[#E0E0E0]'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5 text-[#C9A227]" />
+                <span>پشتیبان‌گیری و دیتابیس SQL</span>
               </button>
             </div>
           </div>
@@ -2276,16 +2291,25 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
             </div>
           )}
 
+          {/* SUB-TAB 4: BACKUP & SQL RESTORE */}
+          {settingsSubTab === 'backup' && (
+            <div className="pt-2">
+              <BackupRestoreSection />
+            </div>
+          )}
+
           {/* Submit Action */}
-          <div className="pt-4 border-t border-[#222225] flex justify-end">
-            <button
-              type="submit"
-              className="bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black px-6 py-2.5 rounded-xl shadow-lg shadow-[#C9A227]/20 flex items-center gap-2 cursor-pointer text-xs"
-            >
-              <Save className="w-4 h-4 text-black" />
-              <span>ذخیره تغییرات وب‌سایت</span>
-            </button>
-          </div>
+          {settingsSubTab !== 'backup' && (
+            <div className="pt-4 border-t border-[#222225] flex justify-end">
+              <button
+                type="submit"
+                className="bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black px-6 py-2.5 rounded-xl shadow-lg shadow-[#C9A227]/20 flex items-center gap-2 cursor-pointer text-xs"
+              >
+                <Save className="w-4 h-4 text-black" />
+                <span>ذخیره تغییرات وب‌سایت</span>
+              </button>
+            </div>
+          )}
         </form>
       )}
 

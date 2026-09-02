@@ -919,5 +919,34 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
     }).then(handleResponse),
+
+  // ==========================================
+  // UNIFIED DATABASE & MEDIA BACKUP & RESTORE
+  // ==========================================
+  getBackupStats: () =>
+    fetch(`${API_BASE}/backup/stats`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  exportBackupUrl: (format: 'sql' | 'json' = 'sql') =>
+    `${API_BASE}/backup/export?format=${format}`,
+
+  exportBackupBlob: async (format: 'sql' | 'json' = 'sql'): Promise<Blob> => {
+    const res = await fetch(`${API_BASE}/backup/export?format=${format}`, {
+      headers: getAuthHeader(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'خطا در دریافت فایل پشتیبان');
+    }
+    return res.blob();
+  },
+
+  restoreBackup: (payload: { format?: 'sql' | 'json'; content?: string; data?: any }) =>
+    fetch(`${API_BASE}/backup/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(payload),
+    }).then(handleResponse),
 };
 

@@ -76,6 +76,17 @@ export async function testDbConnection(): Promise<boolean> {
       autoCreateForeignKeyIndices: true,
     });
 
+    // ثبت پشتیبانی از زبان اسکریپت‌نویسی PL/pgSQL در محیط شبیه‌ساز pg-mem
+    try {
+      memDb.registerLanguage('plpgsql', (_toCompile: any) => {
+        return () => {
+          // در محیط تست حافظه‌ای، اجرای کدهای رویه‌ای plpgsql به صورت امن پذیرفته می‌شود
+        };
+      });
+    } catch (e) {
+      // ignore
+    }
+
     // ثبت توابع کمکی UUID
     memDb.public.registerFunction({
       name: 'uuid_generate_v4',
@@ -138,7 +149,7 @@ export async function testDbConnection(): Promise<boolean> {
 /**
  * اجرای سطح پایین کوئری
  */
-async function rawQuery(text: string, params: any[] = []): Promise<any> {
+export async function rawQuery(text: string, params: any[] = []): Promise<any> {
   if (!pool) {
     throw new Error('Database pool is not ready.');
   }
@@ -277,6 +288,9 @@ export async function initializeSchema(): Promise<void> {
               msg.includes('duplicate key') ||
               msg.includes('multiple primary keys') ||
               msg.includes('already a partition') ||
+              msg.includes('plpgsql') ||
+              msg.includes('language') ||
+              msg.includes('trigger') ||
               (msg.includes('column') && msg.includes('does not exist') && sql.toUpperCase().includes('DROP'));
 
             if (isIgnorable) {

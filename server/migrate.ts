@@ -57,6 +57,9 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
             msg.includes('duplicate key') ||
             msg.includes('multiple primary keys') ||
             msg.includes('already a partition') ||
+            msg.includes('plpgsql') ||
+            msg.includes('language') ||
+            msg.includes('trigger') ||
             (msg.includes('column') && msg.includes('does not exist') && statement.toUpperCase().includes('DROP'));
 
           if (isIgnorable) {

@@ -28,6 +28,7 @@ import { sendToPasargadPos } from './server/posProtocol';
 import { searchTorobMarket, searchMultiSourceMarket, getTorobStationeryCategoryList, auditAllInventoryAgainstMarket, inspectTorobDirectUrl, SlidingWindowRateLimiter } from './server/torobService';
 import { askGeminiAssistant, analyzeProductMarketAndPricing, groundedWebMarketSearch } from './server/geminiService';
 import { cmsEngine } from './server/cmsEngine';
+import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, getBackupStats } from './server/backupService';
 import { UserRole } from './src/types';
 
 const marketRateLimiter = new SlidingWindowRateLimiter(60 * 1000, 60); // 60 requests per minute
@@ -1746,6 +1747,62 @@ app.get('/api/website/banners', async (req, res) => {
     res.json({ banners });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 11.4 UNIFIED DATABASE & MEDIA BACKUP & RESTORE
+// -------------------------------------------------------------
+app.get('/api/backup/stats', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const stats = await getBackupStats();
+    res.json(stats);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/backup/export', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const format = (req.query.format as string) || 'sql';
+    const now = new Date();
+    const dateStr = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    if (format === 'json') {
+      const jsonData = await generateJsonBackup();
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="khatinoo_backup_${dateStr}.json"`);
+      return res.send(JSON.stringify(jsonData, null, 2));
+    } else {
+      const sqlData = await generateSqlDump();
+      res.setHeader('Content-Type', 'application/sql; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="khatinoo_database_${dateStr}.sql"`);
+      return res.send(sqlData);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/backup/restore', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const { format, content, data } = req.body;
+    const backupContent = data !== undefined ? data : content;
+
+    if (!backupContent) {
+      return res.status(400).json({ error: 'محتوا یا فایل پشتیبان جهت بازگردانی ارسال نشده است.' });
+    }
+
+    if (format === 'json' || typeof backupContent === 'object') {
+      const result = await restoreFromJson(backupContent);
+      return res.json(result);
+    } else {
+      const result = await restoreFromSql(String(backupContent));
+      return res.json(result);
+    }
+  } catch (err: any) {
+    console.error('❌ [Restore Error]:', err);
+    res.status(500).json({ error: err.message || 'خطای غیرمنتظره در بازیابی اطلاعات' });
   }
 });
 

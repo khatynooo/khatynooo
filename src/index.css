@@ -152,3 +152,47 @@
     image-rendering: pixelated !important;
   }
 }
+
+/* Barcode Laser Aiming & Sweep Animations */
+@keyframes laser-sweep {
+  0% {
+    top: 8%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 8%;
+    opacity: 0.85;
+  }
+}
+
+.animate-laser-sweep {
+  animation: laser-sweep 2.2s ease-in-out infinite;
+}
+
+#pro-barcode-scanner-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 420px !important;
+  object-fit: cover !important;
+  border-radius: 1.25rem !important;
+}
+
+#pro-barcode-scanner-reader {
+  border: none !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: #000000 !important;
+}
+
+#pro-barcode-scanner-reader__scan_region {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+

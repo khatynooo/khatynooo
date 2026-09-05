@@ -20,8 +20,8 @@ export class DigikalaApiClient {
   private baseUrl: string;
 
   constructor(config?: ApiClientConfig) {
-    this.timeoutMs = config?.timeoutMs || 5000;
-    this.maxRetries = config?.maxRetries ?? 2;
+    this.timeoutMs = config?.timeoutMs || 3000;
+    this.maxRetries = config?.maxRetries ?? 1;
     this.cacheTtlMs = config?.cacheTtlMs || 30 * 60 * 1000;
     this.baseUrl = config?.proxyUrl || 'https://api.digikala.com';
   }
@@ -32,16 +32,15 @@ export class DigikalaApiClient {
   }
 
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    let timer: any;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(new Error('Digikala API request timed out'));
-      }, this.timeoutMs);
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, this.timeoutMs);
 
     try {
-      const fetchPromise = fetch(url, {
+      const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'User-Agent': this.getRandomUserAgent(),
           'Accept': 'application/json',
@@ -50,10 +49,9 @@ export class DigikalaApiClient {
         },
       });
 
-      const response = await Promise.race([fetchPromise, timeoutPromise]);
       return response;
     } catch (err: any) {
-      if (err.message?.includes('timed out') || err.message?.includes('aborted')) {
+      if (err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted')) {
         throw new Error('Digikala API request timed out');
       }
       throw err;
@@ -72,19 +70,14 @@ export class DigikalaApiClient {
       } catch (err: any) {
         attempt++;
         lastError = err;
-        const isAbort = err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted');
-        const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 200, 4000);
-
         if (attempt <= this.maxRetries) {
-          console.warn(
-            `⚠️ [DigikalaApiClient] تلاش ${attempt} از ${this.maxRetries} برای «${operationName}» ناموفق بود (${isAbort ? 'Timeout' : err.message}). تلاش مجدد پس از ${Math.round(delay)}ms...`
-          );
+          const delay = 600;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
 
-    console.warn(`⚠️ [DigikalaApiClient] فراخوانی «${operationName}» پس از ${this.maxRetries + 1} تلاش متوقف شد:`, lastError?.message || lastError);
+    console.warn(`⚠️ [DigikalaApiClient] فراخوانی «${operationName}» متوقف شد:`, lastError?.message || lastError);
     return null;
   }
 

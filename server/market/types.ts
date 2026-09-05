@@ -26,6 +26,7 @@ export interface PriceHistoryMetadata {
 }
 
 export interface MarketItemResult {
+  title?: string;
   productTitle: string;
   category: string;
   brand: string;

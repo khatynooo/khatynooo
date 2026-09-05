@@ -339,11 +339,12 @@ export const ProductsView: React.FC = () => {
       (filterAccountingOnly === 'accounting_only' && isOnlyAcc) ||
       (filterAccountingOnly === 'website_active' && !isOnlyAcc);
 
+    const cleanSearch = toEnglishDigits(searchQuery).trim().toLowerCase();
     const matchQ =
-      !searchQuery.trim() ||
+      !cleanSearch ||
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode?.includes(searchQuery);
+      p.code.toLowerCase().includes(cleanSearch) ||
+      toEnglishDigits(p.barcode || '').toLowerCase().includes(cleanSearch);
     return matchCat && matchChannel && matchQ;
   });
 

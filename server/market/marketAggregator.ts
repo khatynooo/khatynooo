@@ -234,6 +234,7 @@ export async function searchMultiSourceMarket(
   }
 
   return {
+    title,
     productTitle: title,
     category,
     brand,
@@ -887,9 +888,9 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
     return cachedAudit;
   }
 
-  // ۲. پردازش دسته‌ای کالاها برای استعلام زنده واقعی با رعایت نرخ مجاز (Rate-Limiting)
+  // ۲. پردازش دسته‌ای کالاها با تطبیق بهینه بنچمارک و استعلام وب با سرعت بالا
   const items: any[] = [];
-  const BATCH_SIZE = 3;
+  const BATCH_SIZE = 6;
 
   for (let i = 0; i < inventoryProducts.length; i += BATCH_SIZE) {
     const batch = inventoryProducts.slice(i, i + BATCH_SIZE);
@@ -910,50 +911,62 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
         let matchedBenchmarkTitle: string | undefined;
         let matchScore: number | undefined;
 
-        // الف) تلاش اول: استعلام زنده واقعی از ترب و دیجی‌کالا
-        try {
-          const [liveTorobResults, liveDigiResults] = await Promise.all([
-            torobApiClient.searchProducts(prod.name, 'popularity').catch(() => []),
-            digikalaApiClient.searchProducts(prod.name, 3).catch(() => []),
-          ]);
-
-          const topTrb = liveTorobResults?.find((t) => t.price && t.price > 1000);
-          const topDigi = liveDigiResults?.find(
-            (d) => (d.default_variant?.price?.selling_price || 0) > 10000
-          );
-
-          if (topTrb || topDigi) {
-            isLive = true;
-            if (topTrb && topTrb.price) {
-              floor = topTrb.price;
-              matchedBenchmarkTitle = topTrb.name1 || topTrb.name2;
-            } else if (topDigi) {
-              floor = Math.round((topDigi.default_variant?.price?.selling_price || 0) / 10);
-              matchedBenchmarkTitle = topDigi.title_fa;
-            }
-
-            if (topDigi && topDigi.default_variant?.price?.selling_price) {
-              digi = Math.round(topDigi.default_variant.price.selling_price / 10);
-            } else {
-              digi = Math.round(floor * 1.08);
-            }
-
-            avg = Math.round((floor + digi) / 2);
-            matchScore = 0.95;
-          }
-        } catch (e) {
-          // در صورت بروز خطای شبکه یا ریت‌لیمیت به کاتالوگ بنچمارک سوئیچ می‌شود
+        // الف) بررسی سریع کاتالوگ بنچمارک بازار تحریر
+        const benchmarkMatch = findBestStationeryMatch(prod.name, stationeryMarketBenchmarkCatalog, 0.60);
+        if (benchmarkMatch && benchmarkMatch.item) {
+          floor = benchmarkMatch.item.minPrice;
+          digi = benchmarkMatch.item.sellers?.find((s) => s.storeName.includes('دیجی‌کالا'))?.price || benchmarkMatch.item.avgPrice;
+          avg = benchmarkMatch.item.avgPrice;
+          matchedBenchmarkTitle = benchmarkMatch.item.title;
+          matchScore = benchmarkMatch.score;
         }
 
-        // ب) تلاش دوم: در صورت عدم دریافت نتیجه زنده، تطبیق با کاتالوگ بنچمارک استاتیک
-        if (!isLive) {
-          const match = findBestStationeryMatch(prod.name, stationeryMarketBenchmarkCatalog, 0.52);
-          if (match && match.item) {
-            floor = match.item.minPrice;
-            digi = match.item.sellers?.find((s) => s.storeName.includes('دیجی‌کالا'))?.price || match.item.avgPrice;
-            avg = match.item.avgPrice;
-            matchedBenchmarkTitle = match.item.title;
-            matchScore = match.score;
+        // ب) در صورت نیاز به استعلام زنده برای اقلامی که بنچمارک ندارند یا استعلام لحظه‌ای
+        if (!floor) {
+          try {
+            const [liveTorobResults, liveDigiResults] = await Promise.all([
+              torobApiClient.searchProducts(prod.name, 'popularity').catch(() => []),
+              digikalaApiClient.searchProducts(prod.name, 3).catch(() => []),
+            ]);
+
+            const topTrb = liveTorobResults?.find((t) => t.price && t.price > 1000);
+            const topDigi = liveDigiResults?.find(
+              (d) => (d.default_variant?.price?.selling_price || 0) > 10000
+            );
+
+            if (topTrb || topDigi) {
+              isLive = true;
+              if (topTrb && topTrb.price) {
+                floor = topTrb.price;
+                matchedBenchmarkTitle = topTrb.name1 || topTrb.name2;
+              } else if (topDigi) {
+                floor = Math.round((topDigi.default_variant?.price?.selling_price || 0) / 10);
+                matchedBenchmarkTitle = topDigi.title_fa;
+              }
+
+              if (topDigi && topDigi.default_variant?.price?.selling_price) {
+                digi = Math.round(topDigi.default_variant.price.selling_price / 10);
+              } else {
+                digi = Math.round(floor * 1.08);
+              }
+
+              avg = Math.round((floor + digi) / 2);
+              matchScore = 0.95;
+            }
+          } catch (e) {
+            // سوئیچ خودکار در صورت عدم دسترسی
+          }
+        }
+
+        // ج) اگر هنوز یافت نشد، تطبیق منعطف‌تر با بنچمارک با آستانه 0.45
+        if (!floor) {
+          const looseMatch = findBestStationeryMatch(prod.name, stationeryMarketBenchmarkCatalog, 0.45);
+          if (looseMatch && looseMatch.item) {
+            floor = looseMatch.item.minPrice;
+            digi = looseMatch.item.avgPrice;
+            avg = looseMatch.item.avgPrice;
+            matchedBenchmarkTitle = looseMatch.item.title;
+            matchScore = looseMatch.score;
           }
         }
 

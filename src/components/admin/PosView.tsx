@@ -24,23 +24,44 @@ import {
   ScanLine,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber, toEnglishDigits } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, findProductByBarcodeOrCode } from '../../lib/utils';
 import { Product, Customer, PriceTier, Warehouse, ServicePreset } from '../../types';
 import { useToast } from '../common/Toast';
 import { ReceiptModal } from './ReceiptModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 
+const DEFAULT_WALKIN_CUSTOMER: Customer = {
+  id: 'cst_walkin',
+  name: 'مشتری نقدی حضوری',
+  mobile: '09000000000',
+  balance: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+const DEFAULT_WAREHOUSE: Warehouse = {
+  id: 'wh_central',
+  name: 'انبار مرکزی',
+  code: 'WH-CENTRAL',
+  type: 'central_warehouse',
+  isDefault: true,
+  isActive: true,
+  createdAt: new Date().toISOString(),
+};
+
 export const PosView: React.FC = () => {
   const { showToast } = useToast();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<ServicePreset[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([DEFAULT_WALKIN_CUSTOMER]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([DEFAULT_WAREHOUSE]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('wh_central');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('cst_walkin');
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(DEFAULT_WALKIN_CUSTOMER);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   // Filter between all items, products only, and services only
   const [itemTypeFilter, setItemTypeFilter] = useState<'all' | 'products' | 'services'>('all');
@@ -94,14 +115,12 @@ export const PosView: React.FC = () => {
   // Hardware USB / Bluetooth Barcode Reader Listener
   useHardwareBarcodeScanner({
     onScan: (scannedCode) => {
-      const clean = toEnglishDigits(scannedCode).trim();
-      const match = products.find(
-        (p) => (p.barcode && toEnglishDigits(p.barcode) === clean) || p.code.toLowerCase() === clean.toLowerCase()
-      );
+      const match = findProductByBarcodeOrCode<Product>(products, scannedCode);
       if (match) {
         addToPosCart(match);
         showToast(`«${match.name}» با اسکنر سخت‌افزاری اضافه شد.`, 'success');
       } else {
+        const clean = toEnglishDigits(scannedCode).trim();
         showToast(`کالایی با بارکد «${clean}» یافت نشد.`, 'error');
       }
     },
@@ -114,35 +133,56 @@ export const PosView: React.FC = () => {
   }, []);
 
   async function loadData() {
+    setIsLoadingData(true);
     try {
       const [prodRes, custRes, whRes, srvRes] = await Promise.all([
-        api.getProducts(),
-        api.getCustomers(),
+        api.getProducts().catch((e) => {
+          console.warn('POS: getProducts error, using fallback:', e);
+          return { products: [] };
+        }),
+        api.getCustomers().catch((e) => {
+          console.warn('POS: getCustomers error, using fallback:', e);
+          return { customers: [] };
+        }),
         api.getWarehouses().catch(() => ({ warehouses: [] })),
         api.getServices().catch(() => ({ services: [] })),
       ]);
-      setProducts(prodRes.products || []);
-      setCustomers(custRes.customers || []);
-      setServices(srvRes.services || srvRes.presets || []);
-      
-      const whList: Warehouse[] = whRes.warehouses || [];
-      setWarehouses(whList);
-      if (whList.length > 0 && !selectedWarehouseId) {
-        const def = whList.find((w) => w.isDefault) || whList[0];
-        setSelectedWarehouseId(def.id);
-      }
 
-      const walkin = custRes.customers?.find((c: Customer) => c.id === 'cst_walkin');
-      setSelectedCustomer(walkin || custRes.customers?.[0] || null);
-    } catch (err) {
-      console.error(err);
+      const loadedProducts = prodRes.products || [];
+      setProducts(loadedProducts);
+
+      const rawCustList: Customer[] = custRes.customers || [];
+      const hasWalkin = rawCustList.some((c) => c.id === 'cst_walkin');
+      const custList: Customer[] = hasWalkin ? rawCustList : [DEFAULT_WALKIN_CUSTOMER, ...rawCustList];
+      setCustomers(custList);
+
+      setSelectedCustomer((prev) => {
+        if (prev && custList.some((c) => c.id === prev.id)) return prev;
+        return custList.find((c) => c.id === 'cst_walkin') || custList[0] || DEFAULT_WALKIN_CUSTOMER;
+      });
+
+      const rawWhList: Warehouse[] = whRes.warehouses || [];
+      const whList: Warehouse[] = rawWhList.length > 0 ? rawWhList : [DEFAULT_WAREHOUSE];
+      setWarehouses(whList);
+
+      setSelectedWarehouseId((prev) => {
+        if (prev && whList.some((w) => w.id === prev)) return prev;
+        const def = whList.find((w) => w.isDefault) || whList[0];
+        return def?.id || 'wh_central';
+      });
+
+      setServices(srvRes.services || srvRes.presets || []);
+    } catch (err: any) {
+      console.error('POS loadData caught error:', err);
+    } finally {
+      setIsLoadingData(false);
     }
   }
 
   const handleCustomerChange = (id: string) => {
     setSelectedCustomerId(id);
     const found = customers.find((c) => c.id === id);
-    setSelectedCustomer(found || null);
+    setSelectedCustomer(found || (id === 'cst_walkin' ? DEFAULT_WALKIN_CUSTOMER : null));
   };
 
   const getPriceByTier = (product: Product, tier: PriceTier): number => {
@@ -216,8 +256,7 @@ export const PosView: React.FC = () => {
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!barcodeInput.trim()) return;
-    const code = toEnglishDigits(barcodeInput.trim());
-    const match = products.find((p) => (p.barcode && toEnglishDigits(p.barcode) === code) || p.code.toLowerCase() === code.toLowerCase());
+    const match = findProductByBarcodeOrCode<Product>(products, barcodeInput);
     if (match) {
       addToPosCart(match);
       showToast(`«${match.name}» اضافه شد.`, 'success');
@@ -274,126 +313,131 @@ export const PosView: React.FC = () => {
       showToast('سبد اقلام خالی است.', 'warning');
       return;
     }
+    if (isCheckingOut) return;
+    setIsCheckingOut(true);
 
-    if (paymentMethod === 'pos_pasargad') {
-      // Trigger Pasargad Terminal Flow with animated step-by-step
-      setIsPosProcessing(true);
-      setPosStep('connecting');
+    const activeCust = selectedCustomer || customers.find((c) => c.id === selectedCustomerId) || DEFAULT_WALKIN_CUSTOMER;
+    const checkoutPayloadItems = cartItems.map((i) => ({
+      productId: i.product.id,
+      productName: i.product.name,
+      code: i.product.code,
+      barcode: i.product.barcode,
+      unit: i.unit,
+      quantity: i.quantity,
+      buyPrice: i.product.buyPrice,
+      salePrice: i.selectedPrice,
+      discount: i.discount,
+      priceTier: i.priceTier,
+      total: i.selectedPrice * i.quantity - i.discount,
+      isService: Boolean(i.product.isService || i.product.id.startsWith('srv_')),
+    }));
 
-      try {
-        // Send transaction in Rials (1 Toman = 10 Rials)
-        const amountRials = finalAmount * 10;
-        const terminalPromise = api.sendPosTransaction({ amountRials });
+    try {
+      if (paymentMethod === 'pos_pasargad') {
+        // Trigger Pasargad Terminal Flow with animated step-by-step
+        setIsPosProcessing(true);
+        setPosStep('connecting');
 
-        setTimeout(() => setPosStep('swipe_card'), 800);
-        setTimeout(() => setPosStep('pin_entry'), 1800);
+        try {
+          // Send transaction in Rials (1 Toman = 10 Rials)
+          const amountRials = finalAmount * 10;
+          const terminalPromise = api.sendPosTransaction({ amountRials });
 
-        const posRes = await terminalPromise;
+          setTimeout(() => setPosStep('swipe_card'), 800);
+          setTimeout(() => setPosStep('pin_entry'), 1800);
 
-        if (posRes.status === 'approved') {
-          setPosStep('approved');
-          setPosHexLog({
-            request: posRes.rawRequestHex,
-            response: posRes.rawResponseHex,
-            rrn: posRes.rrn,
-            ref: posRes.refNumber,
-          });
+          const posRes = await terminalPromise;
 
-          // Finalize checkout in Database
+          if (posRes.status === 'approved') {
+            setPosStep('approved');
+            setPosHexLog({
+              request: posRes.rawRequestHex,
+              response: posRes.rawResponseHex,
+              rrn: posRes.rrn,
+              ref: posRes.refNumber,
+            });
+
+            // Finalize checkout in Database
+            const checkoutRes = await api.posCheckout({
+              customerId: activeCust.id,
+              customerName: activeCust.name || 'مشتری نقدی حضوری',
+              customerMobile: activeCust.mobile,
+              items: checkoutPayloadItems,
+              discount: overallDiscount,
+              paymentMethod: 'pos_pasargad',
+              paidAmount: finalAmount,
+              posResult: posRes,
+              warehouseId: selectedWarehouseId || 'wh_central',
+            });
+
+            if (checkoutRes.success) {
+              setCompletedInvoice(checkoutRes.invoice);
+              setTimeout(() => {
+                setIsPosProcessing(false);
+                setShowReceiptModal(true);
+                setCartItems([]);
+                setOverallDiscount(0);
+                loadData(); // reload product stocks
+                showToast('تراکنش کارتخوان تایید و فاکتور فروش صادر شد.', 'success');
+              }, 1200);
+            } else {
+              setPosStep('failed');
+              showToast(checkoutRes.message || 'خطا در ثبت فاکتور', 'error');
+            }
+          } else {
+            setPosStep('failed');
+            showToast(posRes.message || 'تراکنش توسط کارتخوان لغو شد یا ناموفق بود.', 'error');
+          }
+        } catch (err: any) {
+          setPosStep('failed');
+          showToast(err.message || 'خطا در ارتباط با کارتخوان', 'error');
+        }
+      } else {
+        // Cash / Credit / Cheque checkout
+        try {
           const checkoutRes = await api.posCheckout({
-            customerId: selectedCustomer?.id,
-            customerName: selectedCustomer?.name || 'مشتری نقدی حضوری',
-            customerMobile: selectedCustomer?.mobile,
-            items: cartItems.map((i) => ({
-              productId: i.product.id,
-              productName: i.product.name,
-              code: i.product.code,
-              barcode: i.product.barcode,
-              unit: i.unit,
-              quantity: i.quantity,
-              buyPrice: i.product.buyPrice,
-              salePrice: i.selectedPrice,
-              discount: i.discount,
-              priceTier: i.priceTier,
-              total: i.selectedPrice * i.quantity - i.discount,
-            })),
+            customerId: activeCust.id,
+            customerName: activeCust.name || 'مشتری نقدی حضوری',
+            customerMobile: activeCust.mobile,
+            items: checkoutPayloadItems,
             discount: overallDiscount,
-            paymentMethod: 'pos_pasargad',
-            paidAmount: finalAmount,
-            posResult: posRes,
-            warehouseId: selectedWarehouseId,
+            paymentMethod,
+            paidAmount: paymentMethod === 'credit' ? 0 : finalAmount,
+            chequeAmount: paymentMethod === 'cheque' ? finalAmount : 0,
+            chequeInfo:
+              paymentMethod === 'cheque'
+                ? { chequeNumber, sayadId, dueDate: chequeDueDate, bankName }
+                : undefined,
+            warehouseId: selectedWarehouseId || 'wh_central',
           });
 
           if (checkoutRes.success) {
             setCompletedInvoice(checkoutRes.invoice);
-            setTimeout(() => {
-              setIsPosProcessing(false);
-              setShowReceiptModal(true);
-              setCartItems([]);
-              setOverallDiscount(0);
-              loadData(); // reload product stocks
-              showToast('تراکنش کارتخوان تایید و فاکتور فروش صادر شد.', 'success');
-            }, 1200);
+            setShowReceiptModal(true);
+            setCartItems([]);
+            setOverallDiscount(0);
+            loadData();
+            showToast('فاکتور با موفقیت ثبت گردید.', 'success');
+          } else {
+            showToast(checkoutRes.message || 'خطا در ثبت فاکتور فروش', 'error');
           }
-        } else {
-          setPosStep('failed');
+        } catch (err: any) {
+          showToast(err.message || 'خطا در ثبت فاکتور', 'error');
         }
-      } catch (err: any) {
-        setPosStep('failed');
-        showToast(err.message || 'خطا در ارتباط با کارتخوان', 'error');
       }
-    } else {
-      // Cash / Credit / Cheque checkout
-      try {
-        const checkoutRes = await api.posCheckout({
-          customerId: selectedCustomer?.id,
-          customerName: selectedCustomer?.name || 'مشتری نقدی حضوری',
-          customerMobile: selectedCustomer?.mobile,
-          items: cartItems.map((i) => ({
-            productId: i.product.id,
-            productName: i.product.name,
-            code: i.product.code,
-            barcode: i.product.barcode,
-            unit: i.unit,
-            quantity: i.quantity,
-            buyPrice: i.product.buyPrice,
-            salePrice: i.selectedPrice,
-            discount: i.discount,
-            priceTier: i.priceTier,
-            total: i.selectedPrice * i.quantity - i.discount,
-          })),
-          discount: overallDiscount,
-          paymentMethod,
-          paidAmount: paymentMethod === 'credit' ? 0 : finalAmount,
-          chequeAmount: paymentMethod === 'cheque' ? finalAmount : 0,
-          chequeInfo:
-            paymentMethod === 'cheque'
-              ? { chequeNumber, sayadId, dueDate: chequeDueDate, bankName }
-              : undefined,
-          warehouseId: selectedWarehouseId,
-        });
-
-        if (checkoutRes.success) {
-          setCompletedInvoice(checkoutRes.invoice);
-          setShowReceiptModal(true);
-          setCartItems([]);
-          setOverallDiscount(0);
-          loadData();
-          showToast('فاکتور با موفقیت ثبت گردید.', 'success');
-        }
-      } catch (err: any) {
-        showToast(err.message || 'خطا در ثبت فاکتور', 'error');
-      }
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
   // Combined Goods & Services for POS
-  const filteredProducts = searchQuery.trim()
+  const cleanSearch = toEnglishDigits(searchQuery).trim().toLowerCase();
+  const filteredProducts = cleanSearch
     ? products.filter(
         (p) =>
           p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.barcode.includes(searchQuery)
+          p.code.toLowerCase().includes(cleanSearch) ||
+          toEnglishDigits(p.barcode || '').toLowerCase().includes(cleanSearch)
       )
     : [];
 
@@ -905,16 +949,21 @@ export const PosView: React.FC = () => {
 
             <button
               onClick={handleExecuteCheckout}
-              disabled={cartItems.length === 0}
+              disabled={cartItems.length === 0 || isCheckingOut}
               className={`w-full py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
-                cartItems.length === 0
+                cartItems.length === 0 || isCheckingOut
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   : paymentMethod === 'pos_pasargad'
                   ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white shadow-emerald-600/30'
                   : 'bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white shadow-indigo-600/30'
               }`}
             >
-              {paymentMethod === 'pos_pasargad' ? (
+              {isCheckingOut ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+                  <span>در حال پردازش و ثبت فاکتور...</span>
+                </>
+              ) : paymentMethod === 'pos_pasargad' ? (
                 <>
                   <CreditCard className="w-5 h-5" />
                   <span>ارسال مبلغ به کارتخوان پاسارگاد ({formatToman(finalAmount)})</span>
@@ -1077,14 +1126,13 @@ export const PosView: React.FC = () => {
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScan={(scannedCode) => {
-          const match = products.find(
-            (p) => p.barcode === scannedCode || p.code.toLowerCase() === scannedCode.toLowerCase()
-          );
+          const match = findProductByBarcodeOrCode<Product>(products, scannedCode);
           if (match) {
             addToPosCart(match);
             showToast(`«${match.name}» به فاکتور اضافه شد.`, 'success');
           } else {
-            showToast(`کالایی با بارکد «${scannedCode}» پیدا نشد.`, 'error');
+            const clean = toEnglishDigits(scannedCode).trim();
+            showToast(`کالایی با بارکد «${clean}» پیدا نشد.`, 'error');
           }
         }}
         title="اسکن سریع بارکد در صندوق فروش"

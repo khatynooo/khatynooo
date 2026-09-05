@@ -22,8 +22,8 @@ export class TorobApiClient {
   private baseUrl: string;
 
   constructor(config?: ApiClientConfig) {
-    this.timeoutMs = config?.timeoutMs || 5000;
-    this.maxRetries = config?.maxRetries ?? 2;
+    this.timeoutMs = config?.timeoutMs || 3000;
+    this.maxRetries = config?.maxRetries ?? 1;
     this.cacheTtlMs = config?.cacheTtlMs || 30 * 60 * 1000; // ۳۰ دقیقه کش
     this.baseUrl = config?.proxyUrl || process.env.TOROB_PROXY_URL || 'https://api.torob.com';
   }
@@ -34,19 +34,18 @@ export class TorobApiClient {
   }
 
   /**
-   * اجرای درخواست HTTP با قابلیت Timeout خودکار توسط Promise.race
+   * اجرای درخواست HTTP با قابلیت Timeout واقعی توسط AbortController
    */
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    let timer: any;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(new Error('Torob API request timed out'));
-      }, this.timeoutMs);
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, this.timeoutMs);
 
     try {
-      const fetchPromise = fetch(url, {
+      const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'User-Agent': this.getRandomUserAgent(),
           'Accept': 'application/json',
@@ -57,10 +56,9 @@ export class TorobApiClient {
         },
       });
 
-      const response = await Promise.race([fetchPromise, timeoutPromise]);
       return response;
     } catch (err: any) {
-      if (err.message?.includes('timed out') || err.message?.includes('aborted')) {
+      if (err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted')) {
         throw new Error('Torob API request timed out');
       }
       throw err;
@@ -85,18 +83,14 @@ export class TorobApiClient {
         const isAbort = err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted');
         const isBotChallenge = err.message?.includes('HTTP 490') || err.message?.includes('HTTP 403');
         
-        // در صورت تشخیص ربات (490/403) تکرار درخواست تاثیری ندارد و بلافاصله متوقف می‌شود
+        // در صورت تشخیص ربات (490/403) یا ارور ریت لیمیت بلافاصله متوقف می‌شود
         if (isBotChallenge) {
           console.warn(`⚠️ [TorobApiClient] وب‌سرویس ترب به دلیل حفاظت ضدربات (HTTP 490/403) پاسخ نداد. سیستم به کاتالوگ بنچمارک و منابع جایگزین سوئیچ می‌کند.`);
           return null;
         }
 
-        const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 200, 4000);
-
         if (attempt <= this.maxRetries) {
-          console.warn(
-            `⚠️ [TorobApiClient] تلاش ${attempt} از ${this.maxRetries} برای «${operationName}» ناموفق بود (${isAbort ? 'Timeout' : err.message}). تلاش مجدد پس از ${Math.round(delay)}ms...`
-          );
+          const delay = 600;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }

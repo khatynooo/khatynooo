@@ -1,4 +1,5 @@
 import React from 'react';
+import { toEnglishDigits } from '../../lib/utils';
 
 interface CurrencyInputProps {
   id?: string;
@@ -11,13 +12,6 @@ interface CurrencyInputProps {
   className?: string;
   helperText?: string;
   showRialConversion?: boolean;
-}
-
-// تبدیل ارقام فارسی یا عربی به انگلیسی
-function toEnglishDigits(str: string): string {
-  return str
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632));
 }
 
 // فرمت سه‌رقم‌سه‌رقم

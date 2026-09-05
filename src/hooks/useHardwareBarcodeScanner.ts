@@ -8,8 +8,10 @@ interface ScannerOptions {
 }
 
 /**
- * هوک جامع گوش دادن به دستگاه‌های بارکدخوان فیزیکی (USB و بی‌سیم/بلوتوث)
- * سازگار با ارسال مستقیم تابع یا آبجکت آپشن‌ها، همراه با تبدیل خودکار اعداد فارسی به انگلیسی
+ * هوک گوش دادن به دستگاه‌های بارکدخوان سخت‌افزاری (USB، بی‌سیم، دانگل و بلوتوث)
+ * - عملکرد فوق‌سریع و $O(1)$ بدون تأثیر بر عملکرد پردازنده
+ * - تفکیک هوشمند تایپ سریع اسکنر بارکد (زیر ۸۰ میلی‌ثانیه بین کلیدها) از تایپ دست کاربر
+ * - تبدیل خودکار ارقام فارسی/عربی به انگلیسی استاندارد
  */
 export function useHardwareBarcodeScanner(
   callbackOrOptions: ScannerCallback | ScannerOptions,
@@ -39,12 +41,12 @@ export function useHardwareBarcodeScanner(
           activeEl.tagName === 'TEXTAREA' ||
           (activeEl as HTMLElement).isContentEditable);
 
-      const currentTime = Date.now();
+      const currentTime = performance.now();
       const timeDiff = currentTime - lastKeyTimeRef.current;
       lastKeyTimeRef.current = currentTime;
 
-      // اگر فاصله دو کلید بیشتر از ۸۰ میلی‌ثانیه باشد، بافر را پاک می‌کنیم چون تایپ کند دست انسان است
-      if (timeDiff > 80 && bufferRef.current.length > 0) {
+      // اسکنرهای سخت‌افزاری کاراکترها را با فاصله کمتر از ۵۰-۸۰ میلی‌ثانیه ارسال می‌کنند
+      if (timeDiff > 90 && bufferRef.current.length > 0) {
         bufferRef.current = '';
       }
 
@@ -63,16 +65,16 @@ export function useHardwareBarcodeScanner(
         return;
       }
 
-      // تنها کاراکترهای تک‌حرفی قابل چاپ (اعداد و حروف)
+      // تنها کاراکترهای تک‌حرفی قابل چاپ
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         bufferRef.current += e.key;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      bufferRef.current = '';
     };
   }, [onScan, isEnabled]);
 }
-

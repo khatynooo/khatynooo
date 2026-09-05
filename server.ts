@@ -31,11 +31,39 @@ import { cmsEngine } from './server/cmsEngine';
 import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, getBackupStats } from './server/backupService';
 import { UserRole } from './src/types';
 
-const marketRateLimiter = new SlidingWindowRateLimiter(60 * 1000, 60); // 60 requests per minute
+export interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    username: string;
+    role: UserRole;
+    fullName: string;
+  };
+}
+
+export function getClientIp(req: Request): string {
+  if (!req) return '127.0.0.1';
+  try {
+    const forwarded = req.get ? req.get('x-forwarded-for') : req.headers?.['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      const first = forwarded.split(',')[0].trim();
+      if (first) return first.replace(/^::ffff:/, '');
+    } else if (Array.isArray(forwarded) && forwarded.length > 0) {
+      const first = forwarded[0]?.split(',')[0]?.trim();
+      if (first) return first.replace(/^::ffff:/, '');
+    }
+  } catch {
+    // Ignore header lookup error
+  }
+  const ip = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+  return String(ip).replace(/^::ffff:/, '');
+}
+
+const marketRateLimiter = new SlidingWindowRateLimiter(60 * 1000, 180); // 180 requests per minute
 
 function torobRateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
-  const authUser = (req as AuthRequest).user;
-  const clientKey = authUser?.id ? `usr_${authUser.id}` : (req.ip || req.socket.remoteAddress || 'client');
+  const authUser = (req as AuthRequest)?.user;
+  const clientIp = getClientIp(req);
+  const clientKey = authUser?.id ? `usr_${authUser.id}` : `ip_${clientIp}`;
   const check = marketRateLimiter.check(clientKey);
   if (!check.allowed) {
     return res.status(429).json({
@@ -124,17 +152,8 @@ app.get('/kvn-push-sw.js', (req, res) => {
 // -------------------------------------------------------------
 // AUTH MIDDLEWARE
 // -------------------------------------------------------------
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    username: string;
-    role: UserRole;
-    fullName: string;
-  };
-}
-
 function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
+  const authHeader = req.get ? req.get('authorization') : req.headers?.['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
@@ -148,6 +167,21 @@ function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) 
   } catch (err) {
     return res.status(403).json({ error: 'توکن دسترسی منقضی شده یا نامعتبر است.' });
   }
+}
+
+function optionalAuthenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
+  const authHeader = req.get ? req.get('authorization') : req.headers?.['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      req.user = decoded;
+    } catch (err) {
+      // Ignore token decode error for optional auth fallback
+    }
+  }
+  next();
 }
 
 function requireRole(allowedRoles: UserRole[]) {
@@ -170,7 +204,7 @@ interface CustomerAuthRequest extends Request {
 }
 
 async function authenticateCustomerToken(req: CustomerAuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
+  const authHeader = req.get ? req.get('authorization') : req.headers?.['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
@@ -418,7 +452,7 @@ app.delete('/api/products/:id', authenticateToken, requireRole(['admin', 'site_m
 // -------------------------------------------------------------
 // 3.1 MULTI-WAREHOUSE & INVENTORY MANAGEMENT (مدیریت چند انباره)
 // -------------------------------------------------------------
-app.get('/api/warehouses', authenticateToken, async (req, res) => {
+app.get('/api/warehouses', optionalAuthenticateToken, async (req, res) => {
   try {
     const warehouses = await db.getWarehouses();
     res.json({ warehouses });
@@ -647,7 +681,7 @@ app.put('/api/pos/config', authenticateToken, requireRole(['admin', 'chief_accou
   }
 });
 
-app.post('/api/pos/send-transaction', authenticateToken, async (req, res) => {
+app.post('/api/pos/send-transaction', optionalAuthenticateToken, async (req, res) => {
   const { amountRials, invoiceNumber } = req.body;
   if (!amountRials || amountRials <= 0) {
     return res.status(400).json({ error: 'مبلغ تراکنش نامعتبر است.' });
@@ -665,7 +699,7 @@ app.post('/api/pos/send-transaction', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/api/pos/checkout', authenticateToken, async (req: AuthRequest, res) => {
+app.post('/api/pos/checkout', optionalAuthenticateToken, async (req: AuthRequest, res) => {
   const {
     customerId,
     customerName,
@@ -852,7 +886,7 @@ app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, re
 // -------------------------------------------------------------
 // 6. CUSTOMERS & SUPPLIERS (SQL-Backed)
 // -------------------------------------------------------------
-app.get('/api/customers', authenticateToken, async (req, res) => {
+app.get('/api/customers', optionalAuthenticateToken, async (req, res) => {
   try {
     const customers = await db.getCustomers();
     res.json({ customers });
@@ -1326,7 +1360,7 @@ app.post('/api/production/runs', authenticateToken, requireRole(['admin', 'chief
 // -------------------------------------------------------------
 // 10. TOROB & MULTI-SOURCE MARKET INTELLIGENCE & GEMINI AI
 // -------------------------------------------------------------
-app.get('/api/torob/search', authenticateToken, torobRateLimitMiddleware, async (req, res) => {
+app.get('/api/torob/search', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
   try {
     const { query: q } = req.query;
     const results = await searchTorobMarket(q as string);
@@ -1336,7 +1370,7 @@ app.get('/api/torob/search', authenticateToken, torobRateLimitMiddleware, async 
   }
 });
 
-app.post('/api/torob/intel', authenticateToken, torobRateLimitMiddleware, async (req, res) => {
+app.post('/api/torob/intel', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
   try {
     const { query: q, context } = req.body;
     const result = await searchMultiSourceMarket(q, context);
@@ -1346,7 +1380,7 @@ app.post('/api/torob/intel', authenticateToken, torobRateLimitMiddleware, async 
   }
 });
 
-app.get('/api/torob/multi-market', authenticateToken, torobRateLimitMiddleware, async (req, res) => {
+app.get('/api/torob/multi-market', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
   try {
     const { query: q, buyPrice, salePrice } = req.query;
     const result = await searchMultiSourceMarket(q as string, {
@@ -1360,7 +1394,7 @@ app.get('/api/torob/multi-market', authenticateToken, torobRateLimitMiddleware, 
 });
 
 // لیست قیمت جامع دسته‌بندی لوازم تحریر ترب (کد ۱۱۰) با کراس‌مچ انبار و چند قیمتی
-app.get('/api/torob/category-110', authenticateToken, torobRateLimitMiddleware, async (req, res) => {
+app.get('/api/torob/category-110', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
   try {
     const { subCategory, sort, query: q } = req.query;
     const invProducts = await db.getProducts();
@@ -1639,7 +1673,7 @@ app.post('/api/torob/batch-reprice', authenticateToken, requireRole(['admin', 's
 });
 
 // تحلیل مستقیم لینک کالا در ترب
-app.post('/api/torob/direct-url', authenticateToken, torobRateLimitMiddleware, async (req, res) => {
+app.post('/api/torob/direct-url', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'آدرس لینک ترب الزامی است.' });

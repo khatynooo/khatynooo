@@ -6,8 +6,9 @@
 export const BANNED_NON_STATIONERY_KEYWORDS = [
   'کفش', 'کتونی', 'کتانی', 'پوشاک', 'لباس', 'پیراهن', 'شلوار', 'تیشرت', 'کاپشن', 'پالتو',
   'صندل', 'بوت', 'نیم بوت', 'اسنیکرز', 'پوتین', 'جوراب', 'کفش مردانه', 'کفش زنانه',
-  'ساعت مچی', 'گوشی موبایل', 'لپ تاپ', 'هدفون', 'هندزفری', 'عطر', 'ادکلن', 'مانتو',
-  'روسری', 'شال', 'کیف مجلسی', 'کفش چرم', 'لباس مجلسی', 'پاپوش'
+  'ساعت مچی', 'گوشی موبایل', 'گوشی', 'موبایل', 'آیفون', 'iphone', 'سامسونگ', 'لپ تاپ',
+  'لپ‌تاپ', 'هدفون', 'هندزفری', 'عطر', 'ادکلن', 'مانتو', 'روسری', 'شال', 'کیف مجلسی',
+  'کفش چرم', 'لباس مجلسی', 'پاپوش', 'تلویزیون', 'یخچال', 'کولر'
 ];
 
 // بانک تصاویر دسته‌بندی‌شده و مطمئن نوشت‌افزار
@@ -202,29 +203,31 @@ export function resolveStationeryMultiImages(
     isGenericStockPhoto = true;
   }
 
-  // ۴. افزودن تصاویر مرتبط دسته‌ای جهت ایجاد گالری کامل چندتصویره برای کالا
-  const titleLower = (title || '').toLowerCase();
-  if (titleLower.includes('کاغذ') || titleLower.includes('a4') || titleLower.includes('کپی')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.paperDoubleA);
-    imagesSet.add(STATIONERY_IMAGE_BANK.paperCopyMax);
-  } else if (titleLower.includes('خودکار') || titleLower.includes('روان نویس') || titleLower.includes('پنتر') || titleLower.includes('بیک')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.penPanterSemiGel);
-    imagesSet.add(STATIONERY_IMAGE_BANK.penBicCrystal);
-  } else if (titleLower.includes('مداد رنگی') || titleLower.includes('فابر') || titleLower.includes('آریا')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsFaber);
-    imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsArya);
-  } else if (titleLower.includes('ماژیک') || titleLower.includes('هایلایتر') || titleLower.includes('استابیلو')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.highlighterStabilo);
-    imagesSet.add(STATIONERY_IMAGE_BANK.markerSnowmanWb);
-  } else if (titleLower.includes('اتود') || titleLower.includes('مداد نوکی') || titleLower.includes('فابر')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.pencilFaberGrip);
-    imagesSet.add(STATIONERY_IMAGE_BANK.pencilZebraDrafix);
-  } else if (titleLower.includes('چسب') || titleLower.includes('غلط گیر')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.correctionPanterTape);
-    imagesSet.add(STATIONERY_IMAGE_BANK.glueCancoStick);
-  } else if (titleLower.includes('دفتر') || titleLower.includes('کلاسور') || titleLower.includes('پاپکو')) {
-    imagesSet.add(STATIONERY_IMAGE_BANK.notebookPapco);
-    imagesSet.add(STATIONERY_IMAGE_BANK.binderPapcoOffice);
+  // ۴. فقط اگر هیچ تصویر واقعی‌ای (از ترب/دیجی‌کالا) پیدا نشد، از تصاویر نمونه‌ی دسته‌ای برای پرکردن گالری استفاده کن
+  if (isGenericStockPhoto) {
+    const titleLower = (title || '').toLowerCase();
+    if (titleLower.includes('کاغذ') || titleLower.includes('a4') || titleLower.includes('کپی')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.paperDoubleA);
+      imagesSet.add(STATIONERY_IMAGE_BANK.paperCopyMax);
+    } else if (titleLower.includes('خودکار') || titleLower.includes('روان نویس') || titleLower.includes('پنتر') || titleLower.includes('بیک')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.penPanterSemiGel);
+      imagesSet.add(STATIONERY_IMAGE_BANK.penBicCrystal);
+    } else if (titleLower.includes('مداد رنگی') || titleLower.includes('فابر') || titleLower.includes('آریا')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsFaber);
+      imagesSet.add(STATIONERY_IMAGE_BANK.coloredPencilsArya);
+    } else if (titleLower.includes('ماژیک') || titleLower.includes('هایلایتر') || titleLower.includes('استابیلو')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.highlighterStabilo);
+      imagesSet.add(STATIONERY_IMAGE_BANK.markerSnowmanWb);
+    } else if (titleLower.includes('اتود') || titleLower.includes('مداد نوکی') || titleLower.includes('فابر')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.pencilFaberGrip);
+      imagesSet.add(STATIONERY_IMAGE_BANK.pencilZebraDrafix);
+    } else if (titleLower.includes('چسب') || titleLower.includes('غلط گیر')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.correctionPanterTape);
+      imagesSet.add(STATIONERY_IMAGE_BANK.glueCancoStick);
+    } else if (titleLower.includes('دفتر') || titleLower.includes('کلاسور') || titleLower.includes('پاپکو')) {
+      imagesSet.add(STATIONERY_IMAGE_BANK.notebookPapco);
+      imagesSet.add(STATIONERY_IMAGE_BANK.binderPapcoOffice);
+    }
   }
 
   const galleryList = Array.from(imagesSet);

@@ -100,6 +100,39 @@ export const api = {
       body: JSON.stringify(cat),
     }).then(handleResponse),
 
+  updateCategory: (id: string, cat: any) =>
+    fetch(`${API_BASE}/categories/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(cat),
+    }).then(handleResponse),
+
+  deleteCategory: (id: string) =>
+    fetch(`${API_BASE}/categories/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  createSubcategory: (categoryId: string, data: any) =>
+    fetch(`${API_BASE}/categories/${categoryId}/subcategories`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  updateSubcategory: (id: string, data: any) =>
+    fetch(`${API_BASE}/subcategories/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  deleteSubcategory: (id: string) =>
+    fetch(`${API_BASE}/subcategories/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
   getUnits: () => fetch(`${API_BASE}/units`).then(handleResponse),
 
   createUnit: (unit: any) =>
@@ -107,6 +140,19 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(unit),
+    }).then(handleResponse),
+
+  updateUnit: (id: string, unit: any) =>
+    fetch(`${API_BASE}/units/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(unit),
+    }).then(handleResponse),
+
+  deleteUnit: (id: string) =>
+    fetch(`${API_BASE}/units/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
     }).then(handleResponse),
 
   // POS & Pasargad
@@ -437,6 +483,16 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ url }),
+    }).then(handleResponse),
+
+  getDigikalaCandidates: (query: string) =>
+    fetch(`${API_BASE}/torob/digikala-candidates?query=${encodeURIComponent(query)}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  compareSources: (query: string, limit: number = 6, refresh: boolean = false) =>
+    fetch(`${API_BASE}/torob/compare-sources?query=${encodeURIComponent(query)}&limit=${limit}${refresh ? '&refresh=true' : ''}`, {
+      headers: getAuthHeader(),
     }).then(handleResponse),
 
   askAiAssistant: (

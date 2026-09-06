@@ -10,6 +10,9 @@ export * from './market/imageResolver';
 export * from './market/priceHistoryStore';
 export * from './market/torobApiClient';
 export * from './market/digikalaApiClient';
+export * from './market/emallsApiClient';
+export * from './market/tahrir20ApiClient';
+export * from './market/majdmarketApiClient';
 export * from './market/benchmarkCatalog';
 export * from './market/marketAggregator';
 

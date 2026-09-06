@@ -22,14 +22,17 @@ import {
   FileText,
   Warehouse as WarehouseIcon,
   ScanLine,
+  Camera,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, findProductByBarcodeOrCode } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, findProductByBarcodeOrCode, getUnitBreakdownLabel } from '../../lib/utils';
 import { Product, Customer, PriceTier, Warehouse, ServicePreset } from '../../types';
 import { useToast } from '../common/Toast';
 import { ReceiptModal } from './ReceiptModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
+import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { BoxScanQuantityModal } from './BoxScanQuantityModal';
 
 const DEFAULT_WALKIN_CUSTOMER: Customer = {
   id: 'cst_walkin',
@@ -75,6 +78,7 @@ export const PosView: React.FC = () => {
       priceTier: PriceTier;
       unit: string;
       discount: number;
+      boxScans?: Array<{ boxCount: number; unitsPerBox: number }>;
     }>
   >([]);
 
@@ -110,22 +114,10 @@ export const PosView: React.FC = () => {
   // Camera Barcode Scanner Modal (Supports high-speed continuous scan)
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
 
-  const barcodeRef = useRef<HTMLInputElement>(null);
+  // Box Scan or Unit Quantity Modal
+  const [quantityModal, setQuantityModal] = useState<{ product: Product; mode: 'box' | 'unit' } | null>(null);
 
-  // Hardware USB / Bluetooth Barcode Reader Listener
-  useHardwareBarcodeScanner({
-    onScan: (scannedCode) => {
-      const match = findProductByBarcodeOrCode<Product>(products, scannedCode);
-      if (match) {
-        addToPosCart(match);
-        showToast(`«${match.name}» با اسکنر سخت‌افزاری اضافه شد.`, 'success');
-      } else {
-        const clean = toEnglishDigits(scannedCode).trim();
-        showToast(`کالایی با بارکد «${clean}» یافت نشد.`, 'error');
-      }
-    },
-    enabled: true,
-  });
+  const barcodeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
@@ -226,14 +218,22 @@ export const PosView: React.FC = () => {
     addToPosCart(serviceProduct);
   };
 
-  const addToPosCart = (product: Product) => {
+  const addToPosCart = (
+    product: Product,
+    qty: number = 1,
+    boxInfo?: { boxCount: number; unitsPerBox: number }
+  ) => {
     const unitPrice = getPriceByTier(product, activeTier);
     setCartItems((prev) => {
       const existing = prev.find((item) => item.product.id === product.id);
       if (existing) {
         return prev.map((item) =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? {
+                ...item,
+                quantity: item.quantity + qty,
+                boxScans: boxInfo ? [...(item.boxScans || []), boxInfo] : item.boxScans,
+              }
             : item
         );
       }
@@ -241,11 +241,12 @@ export const PosView: React.FC = () => {
         ...prev,
         {
           product,
-          quantity: 1,
+          quantity: qty,
           selectedPrice: unitPrice,
           priceTier: activeTier,
           unit: product.unit,
           discount: 0,
+          boxScans: boxInfo ? [boxInfo] : undefined,
         },
       ];
     });
@@ -253,18 +254,51 @@ export const PosView: React.FC = () => {
     setSearchQuery('');
   };
 
-  const handleBarcodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!barcodeInput.trim()) return;
-    const match = findProductByBarcodeOrCode<Product>(products, barcodeInput);
-    if (match) {
-      addToPosCart(match);
-      showToast(`«${match.name}» اضافه شد.`, 'success');
+  const processBarcodeScan = (scannedCode: string, successPrefix?: string) => {
+    const clean = toEnglishDigits(scannedCode).trim();
+    if (!clean) return;
+
+    const match = findProductByBarcodeOrCode<Product>(products, clean);
+    if (!match) {
+      showToast(`کالایی با بارکد «${clean}» یافت نشد.`, 'error');
+      setBarcodeInput('');
+      return;
+    }
+
+    const cleanedQuery = clean;
+    const cleanedBoxBarcode = toEnglishDigits((match as any).boxBarcode || '').trim();
+    const isBoxBarcodeScan = Boolean(cleanedBoxBarcode) && cleanedBoxBarcode === cleanedQuery;
+
+    if (isBoxBarcodeScan) {
+      const factor = Number(match.conversionFactor || 0);
+      if (!factor || factor < 2) {
+        showToast(
+          `برای کالای «${match.name}» ضریب تبدیل (تعداد داخل جعبه) تنظیم نشده است. لطفاً از بخش «کالاها» مقدار «ضریب تبدیل» و «واحد فرعی» را برای این کالا مشخص کنید.`,
+          'error'
+        );
+        setBarcodeInput('');
+        return;
+      }
+      setQuantityModal({ product: match, mode: 'box' });
     } else {
-      showToast('کالایی با این بارکد یافت نشد.', 'error');
+      setQuantityModal({ product: match, mode: 'unit' });
     }
     setBarcodeInput('');
   };
+
+  const handleBarcodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!barcodeInput.trim()) return;
+    processBarcodeScan(barcodeInput);
+  };
+
+  // Hardware USB / Bluetooth Barcode Reader Listener
+  useHardwareBarcodeScanner({
+    onScan: (scannedCode) => {
+      processBarcodeScan(scannedCode, 'با اسکنر سخت‌افزاری اضافه شد.');
+    },
+    enabled: true,
+  });
 
   const updateItemQty = (productId: string, delta: number) => {
     setCartItems((prev) =>
@@ -273,6 +307,21 @@ export const PosView: React.FC = () => {
           if (item.product.id === productId) {
             const newQty = item.quantity + delta;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as any
+    );
+  };
+
+  const setItemQtyDirect = (productId: string, rawValue: string) => {
+    const parsed = Math.floor(Number(toEnglishDigits(rawValue)) || 0);
+    setCartItems((prev) =>
+      prev
+        .map((item) => {
+          if (item.product.id === productId) {
+            const newQty = parsed > 0 ? parsed : 1; // حداقل ۱
+            return { ...item, quantity: newQty };
           }
           return item;
         })
@@ -323,6 +372,8 @@ export const PosView: React.FC = () => {
       code: i.product.code,
       barcode: i.product.barcode,
       unit: i.unit,
+      subUnit: i.product.subUnit || undefined,
+      conversionFactor: i.product.conversionFactor || undefined,
       quantity: i.quantity,
       buyPrice: i.product.buyPrice,
       salePrice: i.selectedPrice,
@@ -455,23 +506,43 @@ export const PosView: React.FC = () => {
       {/* Top Bar: Barcode Input + Warehouse Selector + 5 Price Tier Selector */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         {/* Fast Barcode Input */}
-        <form onSubmit={handleBarcodeSubmit} className="flex-1 flex gap-2">
-          <div className="relative flex-1">
+        <form onSubmit={handleBarcodeSubmit} className="flex-1 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
             <input
               ref={barcodeRef}
               type="text"
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="بارکدخوان فعال است... (بارکد کالا را اسکن کنید یا کد دستی بزنید)"
+              placeholder="بارکد کالا را اسکن کنید یا کد دستی بزنید..."
               className="w-full bg-slate-50 border-2 border-indigo-200 focus:border-indigo-600 focus:bg-white rounded-xl pr-10 pl-4 py-2.5 text-sm font-mono text-slate-900 outline-none transition-all"
             />
             <Barcode className="w-5 h-5 text-indigo-600 absolute right-3 top-3" />
           </div>
+
+          <DirectPhoneScannerButton
+            onScan={(scannedCode) => {
+              processBarcodeScan(scannedCode, 'به فاکتور فروش اضافه شد.');
+            }}
+            label="دوربین گوشی"
+            variant="gold"
+            title="فعال‌سازی مستقیم دوربین گوشی برای اسکن بارکد و ثبت آنی در فاکتور"
+          />
+
+          <button
+            type="button"
+            onClick={() => setIsCameraScannerOpen(true)}
+            title="اسکنر زنده با خط لیزر قرمز"
+            className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center gap-1.5 cursor-pointer border border-slate-200 transition-colors shadow-xs"
+          >
+            <Camera className="w-4 h-4 text-indigo-600" />
+            <span className="hidden sm:inline">اسکنر زنده</span>
+          </button>
+
           <button
             type="submit"
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs cursor-pointer"
           >
-            ثبت بارکد
+            ثبت دستی
           </button>
         </form>
 
@@ -615,7 +686,7 @@ export const PosView: React.FC = () => {
                     filteredProducts.map((p) => (
                       <button
                         key={`p_${p.id}`}
-                        onClick={() => addToPosCart(p)}
+                        onClick={() => setQuantityModal({ product: p, mode: 'unit' })}
                         className="p-2 bg-white hover:bg-indigo-50 hover:border-indigo-300 rounded-xl border border-slate-200 text-right text-xs transition-colors flex flex-col justify-between cursor-pointer"
                       >
                         <div className="flex items-start justify-between gap-1">
@@ -660,7 +731,7 @@ export const PosView: React.FC = () => {
                     products.slice(0, itemTypeFilter === 'products' ? 12 : 6).map((p) => (
                       <button
                         key={`p_quick_${p.id}`}
-                        onClick={() => addToPosCart(p)}
+                        onClick={() => setQuantityModal({ product: p, mode: 'unit' })}
                         className="p-2 bg-white hover:bg-indigo-50 hover:border-indigo-300 rounded-xl border border-slate-200 text-right text-xs transition-colors flex flex-col justify-between cursor-pointer"
                       >
                         <div className="flex items-start justify-between gap-1">
@@ -754,7 +825,13 @@ export const PosView: React.FC = () => {
                             >
                               -
                             </button>
-                            <span className="w-6 text-center font-bold">{toPersianDigits(item.quantity)}</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={(e) => setItemQtyDirect(item.product.id, e.target.value)}
+                              className="w-10 text-center font-bold bg-transparent outline-none border-0 p-0"
+                            />
                             <button
                               onClick={() => updateItemQty(item.product.id, 1)}
                               className="w-5 h-5 rounded bg-white font-bold text-xs flex items-center justify-center shadow-xs cursor-pointer"
@@ -762,6 +839,26 @@ export const PosView: React.FC = () => {
                               +
                             </button>
                           </div>
+
+                          {item.boxScans && item.boxScans.length > 0 && (
+                            <div className="text-[9px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-amber-200/50">
+                              📦 {item.boxScans.map((b) => `${toPersianDigits(b.boxCount)} جعبه × ${toPersianDigits(b.unitsPerBox)}`).join(' + ')}
+                            </div>
+                          )}
+
+                          {(() => {
+                            const breakdown = getUnitBreakdownLabel(
+                              item.quantity,
+                              item.product.conversionFactor,
+                              item.product.unit,
+                              item.product.subUnit
+                            );
+                            return breakdown ? (
+                              <div className="text-[9px] text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-indigo-200/50">
+                                {breakdown}
+                              </div>
+                            ) : null;
+                          })()}
                         </td>
                         <td className="p-3 font-bold text-slate-800">{formatToman(item.selectedPrice)}</td>
                         <td className="p-3 font-black text-indigo-700">
@@ -1126,17 +1223,35 @@ export const PosView: React.FC = () => {
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScan={(scannedCode) => {
-          const match = findProductByBarcodeOrCode<Product>(products, scannedCode);
-          if (match) {
-            addToPosCart(match);
-            showToast(`«${match.name}» به فاکتور اضافه شد.`, 'success');
-          } else {
-            const clean = toEnglishDigits(scannedCode).trim();
-            showToast(`کالایی با بارکد «${clean}» پیدا نشد.`, 'error');
-          }
+          processBarcodeScan(scannedCode, 'به فاکتور اضافه شد.');
         }}
         title="اسکن سریع بارکد در صندوق فروش"
       />
+
+      {/* Box Scan or Unit Quantity Modal */}
+      {quantityModal && (
+        <BoxScanQuantityModal
+          product={quantityModal.product}
+          mode={quantityModal.mode}
+          onCancel={() => setQuantityModal(null)}
+          onConfirmBox={(boxCount, extraUnits) => {
+            const factor = Number(quantityModal.product.conversionFactor || 1);
+            const totalUnits = boxCount * factor + extraUnits;
+            addToPosCart(quantityModal.product, totalUnits, { boxCount, unitsPerBox: factor });
+            const extraText = extraUnits > 0 ? ` و ${toPersianDigits(extraUnits)} عدد اضافه` : '';
+            showToast(
+              `${toPersianDigits(boxCount)} جعبه${extraText} (${toPersianDigits(totalUnits)} ${quantityModal.product.subUnit || 'عدد'}) از «${quantityModal.product.name}» اضافه شد.`,
+              'success'
+            );
+            setQuantityModal(null);
+          }}
+          onConfirmUnit={(qty) => {
+            addToPosCart(quantityModal.product, qty);
+            showToast(`${toPersianDigits(qty)} عدد از «${quantityModal.product.name}» اضافه شد.`, 'success');
+            setQuantityModal(null);
+          }}
+        />
+      )}
     </div>
   );
 };

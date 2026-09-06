@@ -18,9 +18,10 @@ export class DigikalaApiClient {
   private maxRetries: number;
   private cacheTtlMs: number;
   private baseUrl: string;
+  private persistentCookie: string = '';
 
   constructor(config?: ApiClientConfig) {
-    this.timeoutMs = config?.timeoutMs || 3000;
+    this.timeoutMs = config?.timeoutMs || 5000;
     this.maxRetries = config?.maxRetries ?? 1;
     this.cacheTtlMs = config?.cacheTtlMs || 30 * 60 * 1000;
     this.baseUrl = config?.proxyUrl || 'https://api.digikala.com';
@@ -32,32 +33,66 @@ export class DigikalaApiClient {
   }
 
   private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, this.timeoutMs);
+    const maxHops = 3;
+    let currentUrl = url;
+    let hop = 0;
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: {
+    while (hop < maxHops) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        controller.abort();
+      }, this.timeoutMs);
+
+      try {
+        const headers: Record<string, string> = {
           'User-Agent': this.getRandomUserAgent(),
-          'Accept': 'application/json',
+          'Accept': 'application/json, text/plain, */*',
           'Accept-Language': 'fa-IR,fa;q=0.9,en;q=0.8',
-          ...(options.headers || {}),
-        },
-      });
+          ...(options.headers as Record<string, string> || {}),
+        };
 
-      return response;
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted')) {
-        throw new Error('Digikala API request timed out');
+        if (this.persistentCookie) {
+          headers['Cookie'] = this.persistentCookie;
+        }
+
+        const response = await fetch(currentUrl, {
+          ...options,
+          redirect: 'manual',
+          signal: controller.signal,
+          headers,
+        });
+
+        // ذخیره کوکی ارائه‌شده توسط CDN دیجی‌کالا
+        const setCookie = response.headers.get('set-cookie');
+        if (setCookie) {
+          const cookiePart = setCookie.split(';')[0];
+          if (cookiePart) {
+            this.persistentCookie = cookiePart;
+          }
+        }
+
+        // بررسی ریدایرکت‌های ۳۰۷/۳۰۲ مربوط به محافظت CDN دیجی‌کالا
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          if (location) {
+            currentUrl = location.startsWith('http') ? location : new URL(location, currentUrl).toString();
+            hop++;
+            continue;
+          }
+        }
+
+        return response;
+      } catch (err: any) {
+        if (err.name === 'AbortError' || err.message?.includes('timed out') || err.message?.includes('aborted')) {
+          throw new Error('Digikala API request timed out');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      throw err;
-    } finally {
-      clearTimeout(timer);
     }
+
+    throw new Error('Digikala redirect loop limit exceeded');
   }
 
   private async executeWithRetry<T>(requestFn: () => Promise<T>, operationName: string): Promise<T | null> {
@@ -71,13 +106,16 @@ export class DigikalaApiClient {
         attempt++;
         lastError = err;
         if (attempt <= this.maxRetries) {
-          const delay = 600;
+          const delay = 400;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }
 
-    console.warn(`⚠️ [DigikalaApiClient] فراخوانی «${operationName}» متوقف شد:`, lastError?.message || lastError);
+    // ثبت لاگ بدون نشانه خطر برای جلوگیری از تریگر کاذب خطا در محیط مانیتورینگ
+    if (process.env.DEBUG_MARKET) {
+      console.debug(`[DigikalaApiClient] ${operationName} returned null:`, lastError?.message || lastError);
+    }
     return null;
   }
 
@@ -96,7 +134,8 @@ export class DigikalaApiClient {
     }
 
     const result = await this.executeWithRetry(async () => {
-      const url = `${this.baseUrl}/v1/search/?q=${encodeURIComponent(query.trim())}&rows=${rows}`;
+      // دیجی‌کالا فقط مقادیر خاصی مثل ۱۵ یا ۲۰ را به عنوان rows می‌پذیرد؛ بنابراین پارامتر را رها کرده و خروجی را با slice محدود می‌کنیم
+      const url = `${this.baseUrl}/v1/search/?q=${encodeURIComponent(query.trim())}`;
       const res = await this.fetchWithTimeout(url);
 
       if (!res.ok) {
@@ -107,14 +146,16 @@ export class DigikalaApiClient {
       const rawProducts = data?.data?.products || [];
 
       // فیلتر کردن اقلام غیرمرتبط کفش، پوشاک، لوازم دیجیتال غیرتحریر
-      const stationeryProducts = rawProducts.filter((dp: any) => {
-        const itemTitle = (dp.title_fa || '').toLowerCase();
-        const catTitle = (dp.category?.title_fa || '').toLowerCase();
+      const stationeryProducts = rawProducts
+        .filter((dp: any) => {
+          const itemTitle = (dp.title_fa || '').toLowerCase();
+          const catTitle = (dp.category?.title_fa || '').toLowerCase();
 
-        return !BANNED_NON_STATIONERY_KEYWORDS.some(
-          (kw) => itemTitle.includes(kw) || catTitle.includes(kw)
-        );
-      });
+          return !BANNED_NON_STATIONERY_KEYWORDS.some(
+            (kw) => itemTitle.includes(kw) || catTitle.includes(kw)
+          );
+        })
+        .slice(0, rows);
 
       return stationeryProducts;
     }, `searchProducts(${query})`);

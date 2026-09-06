@@ -3,14 +3,17 @@
 // ==============================================================================
 
 import { TorobSellerInfo, TorobProductInfo } from '../../src/types';
-import { MarketItemResult, TorobStationeryCategoryItem } from './types';
+import { MarketItemResult, TorobStationeryCategoryItem, SourceOfferItem, MultiSourceCompareResult } from './types';
 import { torobApiClient } from './torobApiClient';
 import { digikalaApiClient } from './digikalaApiClient';
+import { emallsApiClient } from './emallsApiClient';
+import { tahrir20ApiClient } from './tahrir20ApiClient';
+import { majdmarketApiClient } from './majdmarketApiClient';
 import { stationeryMarketBenchmarkCatalog } from './benchmarkCatalog';
 import { findBestStationeryMatch, normalizePersianText } from './textMatcher';
 import { resolveStationerySafeImage, resolveStationerySafeImageWithMeta, resolveStationeryMultiImages } from './imageResolver';
 import { getProductPriceHistory, recordPriceSnapshot } from './priceHistoryStore';
-import { categoryPriceListCache, torobSearchCache, inventoryAuditCache } from './cache';
+import { categoryPriceListCache, torobSearchCache, inventoryAuditCache, multiSourceCompareCache } from './cache';
 
 /**
  * جستجو و تحلیل زنده هوش بازار از چندین منبع (ترب، دیجی‌کالا، تایم تحریر، کاتالوگ بنچمارک)
@@ -35,7 +38,9 @@ export async function searchMultiSourceMarket(
   // لینک‌های صفحات مرجع
   const torobSearchUrl = `https://torob.com/search/?query=${encodeURIComponent(q)}`;
   const digiSearchUrl = `https://www.digikala.com/search/?q=${encodeURIComponent(q)}`;
-  const emallsSearchUrl = `https://emalls.ir/Search/?query=${encodeURIComponent(q)}`;
+  const emallsSearchUrl = `https://emalls.ir/لیست-قیمت~skey~${encodeURIComponent(q)}`;
+  const majdmarketUrl = `https://majdmarket.com/products?search=${encodeURIComponent(q)}`;
+  const tahrir20Url = `https://tahrir20.com/?s=${encodeURIComponent(q)}&post_type=product`;
   const timetahrireUrl = `https://timetahrire.com/?s=${encodeURIComponent(q)}`;
 
   let digikalaExactUrl = digiSearchUrl;
@@ -260,6 +265,8 @@ export async function searchMultiSourceMarket(
     torobUrl: torobExactUrl,
     digikalaUrl: digikalaExactUrl,
     emallsUrl: emallsSearchUrl,
+    majdmarketUrl,
+    tahrir20Url,
     timetahrireUrl,
     sources: {
       torob: {
@@ -1122,18 +1129,221 @@ export async function inspectTorobDirectUrl(rawUrl: string): Promise<MarketItemR
 
   searchWord = searchWord.replace(/لیست قیمت/g, '').replace(/قیمت/g, '').replace(/خرید/g, '').trim() || 'لوازم تحریر';
 
-  // اگر random_key مستقیم استخراج شد، واکشی از طریق torobApiClient
+  // در صورت استخراج random_key، جزئیات دقیق و واقعی همین محصول را از ترب بگیر
+  let detailData: any = null;
   if (extractedRandomKey) {
-    const detailData = await torobApiClient.getProductDetails(extractedRandomKey);
+    detailData = await torobApiClient.getProductDetails(extractedRandomKey);
     if (detailData && (detailData.name1 || detailData.name2)) {
       searchWord = detailData.name1 || detailData.name2;
     }
   }
 
   const result = await searchMultiSourceMarket(searchWord);
+
+  // اگر جزئیات واقعیِ ترب برای همین محصول در دست داریم، عکس‌ها و قیمت را با داده‌ی واقعی (نه حدسی) جایگزین کن
+  if (detailData) {
+    const realGallery: string[] = [];
+    if (typeof detailData.image_url === 'string') realGallery.push(detailData.image_url);
+    if (Array.isArray(detailData.images)) {
+      for (const im of detailData.images) {
+        if (typeof im === 'string') realGallery.push(im);
+        else if (im?.url) realGallery.push(im.url);
+      }
+    }
+    if (Array.isArray(detailData.more_images)) {
+      for (const im of detailData.more_images) {
+        if (typeof im === 'string') realGallery.push(im);
+        else if (im?.url) realGallery.push(im.url);
+      }
+    }
+    const uniqueReal = Array.from(new Set(realGallery.filter((u) => typeof u === 'string' && u.startsWith('http'))));
+
+    if (uniqueReal.length > 0) {
+      result.image = uniqueReal[0];
+      result.gallery = uniqueReal;
+      result.extraImages = uniqueReal;
+      result.isGenericStockPhoto = false;
+    }
+
+    if (detailData.price && detailData.price > 1000) {
+      result.torobPrice = detailData.price;
+      result.minPrice = Math.min(result.minPrice || detailData.price, detailData.price);
+      result.suggestedShop2Price = detailData.price;
+    }
+
+    if (Array.isArray(detailData.shops) || Array.isArray(detailData.prices)) {
+      const shopList = detailData.shops || detailData.prices || [];
+      const realSellers = shopList
+        .filter((s: any) => s && (s.price || s.selling_price))
+        .slice(0, 10)
+        .map((s: any) => ({
+          storeName: s.shop_text || s.shop_name || s.title || 'فروشگاه ترب',
+          city: s.city || 'ارسال سراسری',
+          score: s.rating || 4.5,
+          price: s.price || s.selling_price,
+          inStock: true,
+          lastUpdated: 'هم‌اکنون (استعلام مستقیم ترب)',
+          updatedRecently: true,
+          warranty: s.warranty || 'خرید امن ترب',
+          shopUrl: s.web_url || cleaned,
+        }));
+      if (realSellers.length > 0) {
+        result.sellers = realSellers;
+      }
+    }
+  }
+
   if (cleaned.startsWith('http')) {
     result.torobUrl = cleaned;
     result.sourceLink = cleaned;
   }
   return result;
 }
+
+/**
+ * برگرداندن چند کاندید دیجی‌کالا (نه فقط بهترین حدس) تا کاربر خودش تطبیق درست را انتخاب کند
+ */
+export async function searchDigikalaCandidates(query: string, limit = 8): Promise<Array<{
+  id: string;
+  title: string;
+  price: number;
+  image: string;
+  url: string;
+  seller?: string;
+}>> {
+  if (!query || !query.trim()) return [];
+  const raw = await digikalaApiClient.searchProducts(query.trim(), limit).catch(() => []);
+  return (raw || [])
+    .filter((d: any) => d?.default_variant?.price?.selling_price)
+    .slice(0, limit)
+    .map((d: any) => ({
+      id: String(d.id),
+      title: d.title_fa || d.title_en || query,
+      price: Math.round((d.default_variant.price.selling_price || 0) / 10),
+      image: d.images?.main?.url?.[0] || '',
+      url: `https://www.digikala.com/product/dkp-${d.id}`,
+      seller: d.default_variant?.seller?.title || 'دیجی‌کالا',
+    }));
+}
+
+/**
+ * مقایسهٔ چندمنبعی (ترب، دیجی‌کالا، ایمالز، مجدمارکت، تحریر۲۰) برای یک کلمهٔ جستجو
+ * برای هر منبع تا limit آیتم بازمی‌گرداند تا مدیر سیستم خودش مقایسه و انتخاب کند.
+ */
+export async function compareAcrossSources(
+  query: string,
+  limit = 6,
+  bypassCache = false
+): Promise<MultiSourceCompareResult> {
+  const q = (query || '').trim();
+  if (!q) {
+    return {
+      query: '',
+      torob: [],
+      digikala: [],
+      emalls: [],
+      majdmarket: [],
+      tahrir20: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  const cacheKey = `compare_${q.toLowerCase()}_${limit}`;
+  if (!bypassCache) {
+    const cached = multiSourceCompareCache.get<MultiSourceCompareResult>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  // اجرای موازی همهٔ ۵ منبع با Promise.allSettled تا خطای یک منبع بقیه را متوقف نکند
+  const [torobSettled, digiSettled, emallsSettled, majdmarketSettled, tahrir20Settled] = await Promise.allSettled([
+    torobApiClient.searchProducts(q, 'popularity').catch(() => []),
+    digikalaApiClient.searchProducts(q, limit).catch(() => []),
+    emallsApiClient.searchProducts(q, limit).catch(() => []),
+    majdmarketApiClient.searchProducts(q, limit).catch(() => []),
+    tahrir20ApiClient.searchProducts(q, limit).catch(() => []),
+  ]);
+
+  const torobRaw = torobSettled.status === 'fulfilled' ? torobSettled.value : [];
+  const digiRaw = digiSettled.status === 'fulfilled' ? digiSettled.value : [];
+  const emallsRaw = emallsSettled.status === 'fulfilled' ? emallsSettled.value : [];
+  const majdmarketRaw = majdmarketSettled.status === 'fulfilled' ? majdmarketSettled.value : [];
+  const tahrir20Raw = tahrir20Settled.status === 'fulfilled' ? tahrir20Settled.value : [];
+
+  // --- ترب: برای هر کاندید برتر، جزئیات کامل را بگیر تا همهٔ عکس‌ها استخراج شود ---
+  const torobTop = (torobRaw || []).slice(0, limit);
+  const torobItems: SourceOfferItem[] = await Promise.all(
+    torobTop.map(async (t: any) => {
+      const baseImages = [t.image_url].filter(Boolean);
+      let allImages = baseImages;
+      try {
+        if (t.random_key) {
+          const detail = await torobApiClient.getProductDetails(t.random_key, t.search_id);
+          const detailImages: string[] =
+            detail?.images || detail?.more_images || detail?.product?.images || detail?.gallery || [];
+          if (Array.isArray(detailImages) && detailImages.length > 0) {
+            allImages = Array.from(new Set([...baseImages, ...detailImages.filter((u: any) => typeof u === 'string')]));
+          }
+        }
+      } catch {
+        // در صورت خطا فقط از عکس شاخص استفاده می‌شود
+      }
+
+      return {
+        id: String(t.random_key || t.name1),
+        source: 'torob' as const,
+        title: t.name1 || t.name2 || q,
+        price: Number(t.price) || 0,
+        seller: t.shop_text || 'فروشگاه برگزیده ترب',
+        url: t.random_key ? `https://torob.com/p/${t.random_key}/` : `https://torob.com/search/?query=${encodeURIComponent(q)}`,
+        image: allImages[0] || '',
+        images: allImages,
+        randomKey: t.random_key,
+        searchId: t.search_id,
+      };
+    })
+  );
+
+  // --- دیجی‌کالا ---
+  const digikalaItems: SourceOfferItem[] = (digiRaw || []).slice(0, limit).map((d: any) => {
+    const mainImgs: string[] = d.images?.main?.url || [];
+    const listImgs: string[] = (d.images?.list || []).flatMap((i: any) => i?.url || []);
+    const images = Array.from(new Set([...mainImgs, ...listImgs].filter(Boolean)));
+    return {
+      id: String(d.id),
+      source: 'digikala' as const,
+      title: d.title_fa || q,
+      price: Math.round((d.default_variant?.price?.selling_price || 0) / 10),
+      seller: d.default_variant?.seller?.title || 'دیجی‌کالا',
+      url: `https://www.digikala.com/product/dkp-${d.id}`,
+      image: images[0] || '',
+      images,
+      rating: d.rating?.rate,
+      inStock: d.default_variant?.status === 'in_stock',
+    };
+  });
+
+  // --- ایمالز ---
+  const emallsItems: SourceOfferItem[] = (emallsRaw || []).slice(0, limit);
+
+  // --- مجدمارکت ---
+  const majdmarketItems: SourceOfferItem[] = (majdmarketRaw || []).slice(0, limit);
+
+  // --- تحریر۲۰ ---
+  const tahrir20Items: SourceOfferItem[] = (tahrir20Raw || []).slice(0, limit);
+
+  const result: MultiSourceCompareResult = {
+    query: q,
+    torob: torobItems,
+    digikala: digikalaItems,
+    emalls: emallsItems,
+    majdmarket: majdmarketItems,
+    tahrir20: tahrir20Items,
+    generatedAt: new Date().toISOString(),
+  };
+
+  multiSourceCompareCache.set(cacheKey, result, 5 * 60 * 1000);
+  return result;
+}
+

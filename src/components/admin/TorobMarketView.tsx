@@ -22,11 +22,13 @@ import {
   CheckCircle2,
   Sparkles,
   Bot,
+  Scale,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits } from '../../lib/utils';
 import { Product } from '../../types';
 import { useToast } from '../common/Toast';
+import { SourceCompareModal } from './SourceCompareModal';
 
 const TOROB_CATEGORY_110_URL =
   'https://torob.com/price-list/110/%D9%84%D9%88%D8%A7%D8%B2%D9%85-%D8%AA%D8%AD%D8%B1%DB%8C%D8%B1-stationery-lavazem-tahrir-%D9%84%DB%8C%D8%B3%D8%AA-%D9%82%DB%8C%D9%85%D8%AA/';
@@ -115,6 +117,35 @@ export const TorobMarketView: React.FC = () => {
   const [importStock, setImportStock] = useState<number>(20);
   const [importAllImages, setImportAllImages] = useState<string[]>([]);
   const [isSubmittingImportModal, setIsSubmittingImportModal] = useState<boolean>(false);
+
+  // Digikala Candidate Matching Modal
+  const [digikalaModalTarget, setDigikalaModalTarget] = useState<any | null>(null);
+  const [digikalaCandidates, setDigikalaCandidates] = useState<Array<{
+    id: string;
+    title: string;
+    price: number;
+    image: string;
+    url: string;
+    seller?: string;
+  }>>([]);
+  const [isLoadingDigikalaCandidates, setIsLoadingDigikalaCandidates] = useState(false);
+  const [digikalaCustomQuery, setDigikalaCustomQuery] = useState('');
+
+  // Multi-Source Compare Modal State (Torob, Digikala, Emalls, Timetahrire)
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [compareModalTarget, setCompareModalTarget] = useState<any | null>(null);
+  const [compareModalQuery, setCompareModalQuery] = useState('');
+
+  const handleOpenMultiSourceCompare = (itemOrQuery: any) => {
+    if (typeof itemOrQuery === 'string') {
+      setCompareModalQuery(itemOrQuery);
+      setCompareModalTarget(null);
+    } else if (itemOrQuery) {
+      setCompareModalTarget(itemOrQuery);
+      setCompareModalQuery(itemOrQuery.title || '');
+    }
+    setShowCompareModal(true);
+  };
 
   const subCategoriesList = [
     { key: 'all', label: 'همه اقلام دسته‌بندی ۱۱۰' },
@@ -284,6 +315,10 @@ export const TorobMarketView: React.FC = () => {
           category: res.category || 'لوازم تحریر',
           brand: res.brand || 'استاندارد',
           image: res.image,
+          gallery: res.gallery || (res.image ? [res.image] : []),
+          extraImages: res.extraImages || res.gallery || [],
+          isGenericStockPhoto: res.isGenericStockPhoto,
+          isLiveScraped: res.isLiveScraped ?? true,
           minPrice: res.minPrice || res.torobPrice,
           maxPrice: res.maxPrice || Math.round((res.minPrice || res.torobPrice) * 1.3),
           avgPrice: res.avgPrice || res.minPrice,
@@ -303,6 +338,94 @@ export const TorobMarketView: React.FC = () => {
     } finally {
       setIsScrapingUrl(false);
     }
+  };
+
+  // Digikala Candidate Matching Handlers
+  const handleOpenDigikalaCandidates = async (item: any) => {
+    setDigikalaModalTarget(item);
+    setDigikalaCustomQuery(item.title || '');
+    setIsLoadingDigikalaCandidates(true);
+    setDigikalaCandidates([]);
+    try {
+      const res = await api.getDigikalaCandidates(item.title);
+      setDigikalaCandidates(res.candidates || []);
+    } catch (err: any) {
+      showToast(err.message || 'خطا در دریافت نتایج دیجی‌کالا', 'error');
+    } finally {
+      setIsLoadingDigikalaCandidates(false);
+    }
+  };
+
+  const handleSearchCustomDigikala = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!digikalaCustomQuery.trim()) return;
+    setIsLoadingDigikalaCandidates(true);
+    try {
+      const res = await api.getDigikalaCandidates(digikalaCustomQuery.trim());
+      setDigikalaCandidates(res.candidates || []);
+    } catch (err: any) {
+      showToast(err.message || 'خطا در دریافت نتایج دیجی‌کالا', 'error');
+    } finally {
+      setIsLoadingDigikalaCandidates(false);
+    }
+  };
+
+  const handleSelectDigikalaCandidate = (candidate: {
+    id: string;
+    title: string;
+    price: number;
+    image: string;
+    url: string;
+    seller?: string;
+  }) => {
+    if (!digikalaModalTarget) return;
+
+    // Update selectedSellerItem if active
+    if (selectedSellerItem) {
+      setSelectedSellerItem((prev: any) => {
+        if (!prev) return prev;
+        const newSellers = prev.sellers ? [...prev.sellers] : [];
+        const existingDigiIdx = newSellers.findIndex((s: any) => s.storeName && s.storeName.includes('دیجی‌کالا'));
+        const digiSellerObj = {
+          storeName: `دیجی‌کالا (${candidate.seller || 'فروشنده برگزیده'})`,
+          city: 'ارسال از انبار دیجی‌کالا',
+          score: 4.8,
+          price: candidate.price,
+          inStock: true,
+          lastUpdated: 'انتخاب دستی کاربر',
+          updatedRecently: true,
+          warranty: 'ضمانت اصالت و سلامت فیزیکی دیجی‌کالا',
+          shopUrl: candidate.url,
+        };
+        if (existingDigiIdx >= 0) {
+          newSellers[existingDigiIdx] = digiSellerObj;
+        } else {
+          newSellers.unshift(digiSellerObj);
+        }
+
+        return {
+          ...prev,
+          digikalaPrice: candidate.price,
+          sellers: newSellers,
+        };
+      });
+    }
+
+    // Also update in categoryItems list if present
+    setCategoryItems((prev) =>
+      prev.map((p) => {
+        if (p.id === digikalaModalTarget.id || p.title === digikalaModalTarget.title) {
+          return {
+            ...p,
+            digikalaPrice: candidate.price,
+          };
+        }
+        return p;
+      })
+    );
+
+    showToast(`تطبیق دیجی‌کالا با «${candidate.title}» تنظیم شد.`, 'success');
+    setDigikalaModalTarget(null);
   };
 
   // Run Grounding with Google Search
@@ -462,6 +585,16 @@ export const TorobMarketView: React.FC = () => {
             <span>مشاهده صفحه دسته‌بندی ۱۱۰ ترب</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
+
+          <button
+            id="btn-open-multi-source-compare"
+            onClick={() => handleOpenMultiSourceCompare(catSearchQuery || 'خودکار پنتر')}
+            className="inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-950/70 via-blue-950/70 to-emerald-950/70 hover:from-purple-900 hover:to-emerald-900 text-[#C9A227] border border-[#C9A227]/40 hover:border-[#C9A227] px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+            title="مقایسه زنده کالا در ۵ منبع بازار (ترب، دیجی‌کالا، ایمالز، مجدمارکت، تحریر۲۰)"
+          >
+            <Scale className="w-4 h-4 text-[#C9A227]" />
+            <span>مقایسه ۵ منبع بازار</span>
+          </button>
 
           <button
             id="btn-refresh-cat110"
@@ -836,7 +969,20 @@ export const TorobMarketView: React.FC = () => {
                         </div>
 
                         <div className="flex items-center justify-between border-t border-[#222225] pt-1.5">
-                          <span className="text-[#8E9299] text-[11px]">دیجی‌کالا:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[#8E9299] text-[11px]">دیجی‌کالا:</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDigikalaCandidates(item);
+                              }}
+                              className="text-[10px] text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                              title="انتخاب دستی محصول معادل در دیجی‌کالا"
+                            >
+                              تغییر تطبیق
+                            </button>
+                          </div>
                           <span className="font-mono font-bold text-rose-300 text-xs">
                             {formatToman(item.digikalaPrice || item.avgPrice)}
                           </span>
@@ -860,6 +1006,17 @@ export const TorobMarketView: React.FC = () => {
                       >
                         <Store className="w-3.5 h-3.5" />
                         <span>مشاهده عکس و لیست فروشندگان ({toPersianDigits(item.sellersCount)})</span>
+                      </button>
+
+                      {/* Multi-Source Compare Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMultiSourceCompare(item)}
+                        className="w-full bg-gradient-to-r from-purple-950/60 via-blue-950/60 to-emerald-950/60 hover:from-purple-900/80 hover:to-emerald-900/80 text-[#C9A227] border border-[#C9A227]/30 hover:border-[#C9A227] px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        title="مقایسه زنده کالا در ترب، دیجی‌کالا، ایمالز، مجدمارکت و تحریر۲۰"
+                      >
+                        <Scale className="w-3.5 h-3.5 text-[#C9A227]" />
+                        <span>مقایسه ۵ منبع بازار</span>
                       </button>
 
                       <div className="flex items-center gap-2">
@@ -998,6 +1155,16 @@ export const TorobMarketView: React.FC = () => {
                           {/* 7. Operations */}
                           <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-2">
+                              {/* 5-Source Compare */}
+                              <button
+                                onClick={() => handleOpenMultiSourceCompare(item)}
+                                className="bg-gradient-to-r from-purple-950/60 via-blue-950/60 to-emerald-950/60 hover:from-purple-900/80 hover:to-emerald-900/80 text-[#C9A227] hover:text-white border border-[#C9A227]/40 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="مقایسه ۵ منبع بازار (ترب، دیجی‌کالا، ایمالز، مجدمارکت، تحریر۲۰)"
+                              >
+                                <Scale className="w-3 h-3 text-[#C9A227]" />
+                                <span>۵ منبع</span>
+                              </button>
+
                               {/* Export to accounting */}
                               <button
                                 onClick={() => handleExportItemToAccounting(item, undefined, 'csv')}
@@ -1250,7 +1417,17 @@ export const TorobMarketView: React.FC = () => {
                       </div>
 
                       <div className="bg-[#161619] p-2.5 rounded-xl border border-[#2D2D33]">
-                        <div className="text-[10px] text-[#8E9299]">قیمت دیجی‌کالا:</div>
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] text-[#8E9299]">قیمت دیجی‌کالا:</div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDigikalaCandidates(selectedSellerItem)}
+                            className="text-[10px] text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                            title="انتخاب دستی محصول معادل در دیجی‌کالا"
+                          >
+                            تغییر تطبیق
+                          </button>
+                        </div>
                         <div className="font-mono font-bold text-rose-300 text-sm mt-0.5">
                           {formatToman(selectedSellerItem.digikalaPrice || selectedSellerItem.avgPrice)}
                         </div>
@@ -1263,7 +1440,50 @@ export const TorobMarketView: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Multi-source comparison prices if applied */}
+                    {(selectedSellerItem.emallsPrice || selectedSellerItem.majdmarketPrice || selectedSellerItem.tahrir20Price) && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-[#222225] text-xs">
+                        {selectedSellerItem.emallsPrice ? (
+                          <div className="bg-[#161619] p-2 rounded-xl border border-blue-500/30">
+                            <div className="text-[10px] text-blue-300">قیمت ایمالز:</div>
+                            <div className="font-mono font-bold text-blue-400 text-sm mt-0.5">
+                              {formatToman(selectedSellerItem.emallsPrice)}
+                            </div>
+                          </div>
+                        ) : null}
+                        {selectedSellerItem.majdmarketPrice ? (
+                          <div className="bg-[#161619] p-2 rounded-xl border border-amber-500/30">
+                            <div className="text-[10px] text-amber-300">قیمت مجدمارکت:</div>
+                            <div className="font-mono font-bold text-amber-400 text-sm mt-0.5">
+                              {formatToman(selectedSellerItem.majdmarketPrice)}
+                            </div>
+                          </div>
+                        ) : null}
+                        {selectedSellerItem.tahrir20Price ? (
+                          <div className="bg-[#161619] p-2 rounded-xl border border-emerald-500/30">
+                            <div className="text-[10px] text-emerald-300">قیمت تحریر۲۰:</div>
+                            <div className="font-mono font-bold text-emerald-400 text-sm mt-0.5">
+                              {formatToman(selectedSellerItem.tahrir20Price)}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Multi-Source Compare Banner */}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenMultiSourceCompare(selectedSellerItem)}
+                    className="w-full bg-gradient-to-r from-purple-950/80 via-blue-950/80 to-emerald-950/80 hover:from-purple-900 hover:to-emerald-900 border border-[#C9A227]/40 hover:border-[#C9A227] text-[#F3F4F6] p-3 rounded-2xl flex items-center justify-between text-xs font-bold transition-all shadow-md active:scale-98 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Scale className="w-4 h-4 text-[#C9A227]" />
+                      <span>رصد و مقایسه چندمنبعی این کالا (ترب، دیجی‌کالا، ایمالز، مجدمارکت، تحریر۲۰)</span>
+                    </div>
+                    <span className="text-[11px] text-[#C9A227] font-normal">بررسی کاندیداها و تراز قیمت ←</span>
+                  </button>
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1699,6 +1919,159 @@ export const TorobMarketView: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
+      {/* MODAL: MANUAL DIGIKALA MATCH SELECTION */}
+      {/* ========================================================================= */}
+      {digikalaModalTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto animate-in fade-in"
+          onClick={() => !isLoadingDigikalaCandidates && setDigikalaModalTarget(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl bg-[#141417] border border-rose-500/30 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-[#E0E0E0]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-[#222225] bg-[#1A1A20] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-[#F3F4F6]">
+                    انتخاب دستی تطبیق با دیجی‌کالا
+                  </h3>
+                  <p className="text-[11px] text-[#8E9299] line-clamp-1 mt-0.5">
+                    کالای مبدأ ترب: {digikalaModalTarget.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDigikalaModalTarget(null)}
+                className="text-[#8E9299] hover:text-white p-2 rounded-xl hover:bg-[#222226] cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Bar for refining query */}
+            <div className="p-4 border-b border-[#222225] bg-[#111113]">
+              <form onSubmit={handleSearchCustomDigikala} className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={digikalaCustomQuery}
+                    onChange={(e) => setDigikalaCustomQuery(e.target.value)}
+                    placeholder="جستجو در دیجی‌کالا (نام دقیق، مدل، کد)..."
+                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-rose-500 rounded-xl px-3 py-2 text-xs text-white placeholder-[#555] outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoadingDigikalaCandidates}
+                  className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>جستجو</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Content / Candidates list */}
+            <div className="p-4 max-h-[55vh] overflow-y-auto space-y-2">
+              {isLoadingDigikalaCandidates ? (
+                <div className="py-12 text-center space-y-3">
+                  <RefreshCw className="w-8 h-8 text-rose-400 animate-spin mx-auto" />
+                  <p className="text-xs text-[#8E9299]">در حال جستجو و استخراج محصولات متناظر از دیجی‌کالا...</p>
+                </div>
+              ) : digikalaCandidates.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <Store className="w-8 h-8 text-[#555] mx-auto" />
+                  <p className="text-xs text-[#8E9299]">هیچ نتیجه‌ای در دیجی‌کالا برای این عبارت یافت نشد.</p>
+                  <p className="text-[11px] text-[#666]">می‌توانید با نام ساده‌تر یا مدل انگلیسی در کادر بالا مجدداً جستجو کنید.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="text-[11px] text-[#8E9299] px-1 pb-1">
+                    کدام‌یک از محصولات زیر در دیجی‌کالا دقیقاً همان کالای مورد نظر شماست؟
+                  </div>
+                  {digikalaCandidates.map((c) => (
+                    <div
+                      key={c.id}
+                      className="bg-[#161619] hover:bg-[#1C1C22] border border-[#2D2D33] hover:border-rose-500/50 rounded-2xl p-3 flex items-center justify-between gap-3 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {c.image ? (
+                          <img
+                            src={c.image}
+                            alt={c.title}
+                            referrerPolicy="no-referrer"
+                            className="w-12 h-12 object-contain rounded-xl bg-white/5 border border-[#2D2D33] p-1 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-white/5 border border-[#2D2D33] flex items-center justify-center text-xs text-[#666] shrink-0">
+                            بدون عکس
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1 text-right">
+                          <h4 className="text-xs font-bold text-[#F3F4F6] line-clamp-1 leading-relaxed">
+                            {c.title}
+                          </h4>
+                          <div className="flex items-center gap-2 mt-1 text-[11px]">
+                            <span className="text-[#8E9299]">{c.seller || 'دیجی‌کالا'}</span>
+                            <span className="text-[#444]">•</span>
+                            <span className="font-mono font-bold text-rose-300">
+                              {formatToman(c.price)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {c.url && (
+                          <a
+                            href={c.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 rounded-xl bg-[#222226] text-[#8E9299] hover:text-white border border-[#333] transition-colors"
+                            title="مشاهده صفحه محصول در دیجی‌کالا"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDigikalaCandidate(c)}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-md"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>انتخاب این کالا</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 sm:p-4 border-t border-[#222225] bg-[#1A1A20] flex items-center justify-between">
+              <span className="text-[11px] text-[#8E9299]">
+                {digikalaCandidates.length > 0 ? `${toPersianDigits(digikalaCandidates.length)} کاندید یافت شد` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDigikalaModalTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs text-[#8E9299] hover:text-white hover:bg-[#222226] cursor-pointer"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MODAL: STORAGE DESTINATION & MULTI-IMAGE INVENTORY IMPORT CONFIGURATION */}
       {/* ========================================================================= */}
       {importModalItem && (
@@ -1962,6 +2335,44 @@ export const TorobMarketView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: MULTI-SOURCE MARKET COMPARISON (TOROB, DIGIKALA, EMALLS, MAJDMARKET, TAHRIR20) */}
+      {/* ========================================================================= */}
+      <SourceCompareModal
+        isOpen={showCompareModal}
+        onClose={() => setShowCompareModal(false)}
+        initialQuery={compareModalQuery}
+        targetItem={compareModalTarget}
+        onImportSuccess={() => {
+          loadCategory110(selectedSubCat, catSort, catSearchQuery);
+        }}
+        onApplyToSellerItem={(updates) => {
+          if (selectedSellerItem) {
+            setSelectedSellerItem((prev: any) => {
+              if (!prev) return prev;
+              const mergedSellers = updates.sellers && updates.sellers.length > 0
+                ? [...updates.sellers, ...(prev.sellers || [])]
+                : prev.sellers;
+              const mergedGallery = updates.gallery && updates.gallery.length > 0
+                ? Array.from(new Set([...updates.gallery, ...(prev.gallery || [])]))
+                : prev.gallery;
+
+              return {
+                ...prev,
+                digikalaPrice: updates.digikalaPrice || prev.digikalaPrice,
+                emallsPrice: updates.emallsPrice,
+                majdmarketPrice: updates.majdmarketPrice,
+                tahrir20Price: updates.tahrir20Price,
+                timetahrirePrice: updates.timetahrirePrice,
+                sellers: mergedSellers,
+                gallery: mergedGallery,
+                extraImages: mergedGallery,
+              };
+            });
+          }
+        }}
+      />
     </div>
   );
 };

@@ -54,6 +54,8 @@ export interface MarketItemResult {
   torobUrl?: string;
   digikalaUrl?: string;
   emallsUrl?: string;
+  majdmarketUrl?: string;
+  tahrir20Url?: string;
   timetahrireUrl?: string;
   sources: {
     torob: { count: number; minPrice: number; topSeller?: string; url?: string };
@@ -94,6 +96,8 @@ export interface TorobStationeryCategoryItem {
   torobUrl: string;
   digikalaUrl?: string;
   emallsUrl?: string;
+  majdmarketUrl?: string;
+  tahrir20Url?: string;
   timetahrireUrl?: string;
   specs: Record<string, string>;
   multiTierPricing: {
@@ -127,4 +131,30 @@ export interface ApiClientConfig {
   maxRetries?: number;
   cacheTtlMs?: number;
   proxyUrl?: string;
+}
+
+export interface SourceOfferItem {
+  id: string;
+  source: 'torob' | 'digikala' | 'emalls' | 'majdmarket' | 'tahrir20' | 'timetahrire';
+  title: string;
+  price: number; // تومان
+  seller?: string;
+  url: string;
+  image: string;      // تصویر شاخص
+  images: string[];   // همهٔ تصاویر موجود
+  randomKey?: string;  // فقط برای ترب
+  searchId?: string;   // فقط برای ترب
+  rating?: number;
+  inStock?: boolean;
+}
+
+export interface MultiSourceCompareResult {
+  query: string;
+  torob: SourceOfferItem[];
+  digikala: SourceOfferItem[];
+  emalls: SourceOfferItem[];
+  majdmarket: SourceOfferItem[];
+  tahrir20: SourceOfferItem[];
+  timetahrire?: SourceOfferItem[];
+  generatedAt: string;
 }

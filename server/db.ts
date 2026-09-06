@@ -55,6 +55,7 @@ function formatProduct(row: any): Product {
     name: row.name,
     code: row.code,
     barcode: row.barcode || '',
+    boxBarcode: row.box_barcode || '',
     categoryId: row.category_id || '',
     categoryName: row.category_name || row.categoryName || '',
     subCategoryId: row.sub_category_id || '',
@@ -447,7 +448,7 @@ export const db = {
       name: c.name,
       icon: c.icon || 'Tag',
       sortOrder: c.sort_order || 0,
-      subCategories: subs.filter((s: any) => s.category_id === c.id).map((s: any) => ({ id: s.id, name: s.name, description: s.description })),
+      subcategories: subs.filter((s: any) => s.category_id === c.id).map((s: any) => ({ id: s.id, name: s.name, description: s.description })),
     }));
   },
 
@@ -502,6 +503,19 @@ export const db = {
     );
   },
 
+  async updateSubCategory(id: string, data: { name?: string; description?: string }): Promise<void> {
+    await query(
+      `UPDATE sub_categories
+       SET name = COALESCE($1, name), description = COALESCE($2, description)
+       WHERE id = $3`,
+      [data.name, data.description, id]
+    );
+  },
+
+  async deleteSubCategory(id: string): Promise<void> {
+    await query('DELETE FROM sub_categories WHERE id = $1', [id]);
+  },
+
   async getUnits(): Promise<UnitDefinition[]> {
     const res = await query('SELECT * FROM unit_definitions ORDER BY id ASC');
     return res.rows.map((u: any) => ({
@@ -527,6 +541,20 @@ export const db = {
       conversionFactor: data.conversionFactor || 1,
       description: data.description,
     };
+  },
+
+  async updateUnit(id: string, data: { name?: string; subUnit?: string; conversionFactor?: number; description?: string }): Promise<void> {
+    await query(
+      `UPDATE unit_definitions
+       SET name = COALESCE($1, name), sub_unit = COALESCE($2, sub_unit),
+           conversion_factor = COALESCE($3, conversion_factor), description = COALESCE($4, description)
+       WHERE id = $5`,
+      [data.name, data.subUnit, data.conversionFactor, data.description, id]
+    );
+  },
+
+  async deleteUnit(id: string): Promise<void> {
+    await query('DELETE FROM unit_definitions WHERE id = $1', [id]);
   },
 
   // ============================================================================
@@ -594,19 +622,20 @@ export const db = {
 
       await client.query(
         `INSERT INTO products (
-          id, name, code, barcode, category_id, sub_category_id, unit, sub_unit, conversion_factor,
+          id, name, code, barcode, box_barcode, category_id, sub_category_id, unit, sub_unit, conversion_factor,
           buy_price, sale_price, price_shop1, price_shop2, price_shop3, wholesale_price, min_allowed_price,
           stock, min_stock_alert, description, image_url, gallery, extra_images, show_on_website, only_accounting, is_special_offer, is_featured, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10, $11, $12, $13, $14, $15, $16,
-          $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+          $11, $12, $13, $14, $15, $16, $17,
+          $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW(), NOW()
         )`,
         [
           id,
           p.name || 'کالای جدید',
           code,
           barcode,
+          p.boxBarcode || null,
           validCatId,
           validSubCatId,
           p.unit || 'عدد',
@@ -713,8 +742,11 @@ export const db = {
           only_accounting = COALESCE($21, only_accounting),
           is_special_offer = COALESCE($22, is_special_offer),
           is_featured = COALESCE($23, is_featured),
+          box_barcode = COALESCE($24, box_barcode),
+          sub_unit = COALESCE($25, sub_unit),
+          conversion_factor = COALESCE($26, conversion_factor),
           updated_at = NOW()
-         WHERE id = $24`,
+         WHERE id = $27`,
         [
           updates.name,
           updates.code,
@@ -739,6 +771,9 @@ export const db = {
           updates.onlyAccounting !== undefined ? Boolean(updates.onlyAccounting) : ((updates as any).only_accounting !== undefined ? Boolean((updates as any).only_accounting) : null),
           updates.isSpecialOffer,
           updates.featured !== undefined ? updates.featured : (updates as any).isFeatured,
+          updates.boxBarcode,
+          updates.subUnit !== undefined ? (updates.subUnit || null) : null,
+          updates.conversionFactor !== undefined ? Number(updates.conversionFactor) || null : null,
           id,
         ]
       );

@@ -164,6 +164,11 @@ export class SlidingWindowRateLimiter {
 // ایجاد نمونه‌های مشترک کش
 export const torobSearchCache = new MemoryCache<any>(30, 500); // ۳۰ دقیقه کش نتایج جستجوی ترب
 export const digikalaSearchCache = new MemoryCache<any>(30, 500); // ۳۰ دقیقه کش دیجی‌کالا
+export const emallsSearchCache = new MemoryCache<any>(30, 500); // ۳۰ دقیقه کش ایمالز
+export const majdmarketSearchCache = new MemoryCache<any>(30, 500); // ۳۰ دقیقه کش مجدمارکت
+export const tahrir20SearchCache = new MemoryCache<any>(30, 500); // ۳۰ دقیقه کش تحریر۲۰
+export const timetahrireSearchCache = tahrir20SearchCache; // سازگاری با کدهای قبلی
+export const multiSourceCompareCache = new MemoryCache<any>(5, 200); // ۵ دقیقه کش مقایسه چندمنبعی
 export const categoryPriceListCache = new MemoryCache<any>(60, 50); // ۶۰ دقیقه کش دسته‌بندی ۱۱۰
 export const priceHistoryCache = new MemoryCache<any>(120, 1000); // ۲ ساعت کش تاریخچه قیمت
 export const inventoryAuditCache = new MemoryCache<any>(60, 20); // ۶۰ دقیقه کش نتایج دیده‌بان و اسکن انبار

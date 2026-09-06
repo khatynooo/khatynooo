@@ -73,6 +73,7 @@ export interface Product {
   name: string;
   code: string;
   barcode: string;
+  boxBarcode?: string;
   categoryId: string;
   categoryName: string;
   subCategoryId?: string;
@@ -189,6 +190,8 @@ export interface InvoiceItem {
   subCategoryName?: string;
   barcode: string;
   unit: string;
+  subUnit?: string;
+  conversionFactor?: number;
   quantity: number;
   buyPrice: number;
   unitPrice: number;
@@ -751,6 +754,8 @@ export interface TorobStationeryCategoryItem {
   torobUrl: string;
   digikalaUrl?: string;
   emallsUrl?: string;
+  majdmarketUrl?: string;
+  tahrir20Url?: string;
   timetahrireUrl?: string;
   specs: Record<string, string>;
   multiTierPricing: {

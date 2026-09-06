@@ -175,6 +175,15 @@ export function findProductByBarcodeOrCode<T extends Record<string, any>>(
     }
   }
 
+  // ۱.۵ تطابق مستقیم با بارکد جعبه/کارتن (در صورت وجود این فیلد روی کالا)
+  for (const p of products) {
+    if (!p) continue;
+    const pBoxBarcode = toEnglishDigits((p as any).boxBarcode || '').trim();
+    if (pBoxBarcode && pBoxBarcode === query) {
+      return p;
+    }
+  }
+
   // ۲. اولویت دوم: تطابق مستقیم کد کالا (Product Code)
   for (const p of products) {
     if (!p) continue;
@@ -287,6 +296,33 @@ export function formatPersianDate(dateInput: string | Date | undefined | null): 
   } catch {
     return String(dateInput);
   }
+}
+
+/**
+ * محاسبه‌ی متن تفکیک تعداد بر اساس واحد اصلی/فرعی کالا
+ * مثال: quantity=25, conversionFactor=12, mainUnit='جین', subUnit='عدد' → "۲ جین و ۱ عدد"
+ * اگر ضریب تبدیل معتبر نباشد یا هنوز به یک واحد اصلی کامل نرسیده باشد، null برمی‌گرداند.
+ */
+export function getUnitBreakdownLabel(
+  quantity: number,
+  conversionFactor?: number | null,
+  mainUnit?: string | null,
+  subUnit?: string | null
+): string | null {
+  const factor = Number(conversionFactor || 0);
+  if (!factor || factor < 2 || !subUnit || !mainUnit) return null;
+
+  const qty = Math.max(0, Math.floor(Number(quantity) || 0));
+  const mainCount = Math.floor(qty / factor);
+  const remainder = qty % factor;
+
+  if (mainCount <= 0) return null; // کمتر از یک واحد اصلی کامل → نیازی به تفکیک نیست
+
+  const parts: string[] = [`${toPersianDigits(mainCount)} ${mainUnit}`];
+  if (remainder > 0) {
+    parts.push(`${toPersianDigits(remainder)} ${subUnit}`);
+  }
+  return parts.join(' و ');
 }
 
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Printer, CheckCircle2, Share2, Barcode, Phone, MapPin } from 'lucide-react';
-import { formatToman, toPersianDigits, formatNumber } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, getUnitBreakdownLabel } from '../../lib/utils';
 import { SalesInvoice } from '../../types';
 
 interface ReceiptModalProps {
@@ -106,13 +106,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, inv
                 <span>تعداد × فی</span>
                 <span>مبلغ</span>
               </div>
-              {invoice.items.map((it, idx) => (
-                <div key={idx} className="flex justify-between text-[11px] leading-tight">
-                  <span className="truncate max-w-[120px] font-sans">{it.productName}</span>
-                  <span>{toPersianDigits(it.quantity)} × {formatNumber(it.unitPrice)}</span>
-                  <span className="font-bold">{formatNumber(it.total)}</span>
-                </div>
-              ))}
+              {invoice.items.map((it, idx) => {
+                const breakdown = getUnitBreakdownLabel(it.quantity, (it as any).conversionFactor, it.unit, (it as any).subUnit);
+                return (
+                  <div key={idx} className="text-[11px] leading-tight">
+                    <div className="flex justify-between">
+                      <span className="truncate max-w-[120px] font-sans">{it.productName}</span>
+                      <span>{toPersianDigits(it.quantity)} × {formatNumber(it.unitPrice)}</span>
+                      <span className="font-bold">{formatNumber(it.total)}</span>
+                    </div>
+                    {breakdown && (
+                      <div className="text-[9px] text-slate-500 text-left font-sans">({breakdown})</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Financial Summary */}

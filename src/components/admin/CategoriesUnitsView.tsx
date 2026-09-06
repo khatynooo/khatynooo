@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Layers, Plus, Tag, Scale, Check, X, Edit2 } from 'lucide-react';
+import { Layers, Plus, Tag, Scale, Check, X, Edit2, Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toPersianDigits } from '../../lib/utils';
-import { Category, UnitDefinition } from '../../types';
+import { Category, UnitDefinition, SubCategory } from '../../types';
 import { useToast } from '../common/Toast';
 
 export const CategoriesUnitsView: React.FC = () => {
@@ -12,14 +12,18 @@ export const CategoriesUnitsView: React.FC = () => {
   const [units, setUnits] = useState<UnitDefinition[]>([]);
 
   const [showCatModal, setShowCatModal] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [catName, setCatName] = useState('');
   const [subCatInput, setSubCatInput] = useState('');
 
   const [showUnitModal, setShowUnitModal] = useState(false);
+  const [editingUnitId, setEditingUnitId] = useState<string | null>(null);
   const [unitName, setUnitName] = useState('');
   const [subUnitName, setSubUnitName] = useState('');
   const [conversionFactor, setConversionFactor] = useState<number>(12);
   const [unitDesc, setUnitDesc] = useState('');
+
+  const [subCatModal, setSubCatModal] = useState<{ categoryId: string; subCategoryId?: string; name: string } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -38,51 +42,157 @@ export const CategoriesUnitsView: React.FC = () => {
     }
   }
 
-  const handleCreateCategory = async (e: React.FormEvent) => {
+  const openCreateCategoryModal = () => {
+    setEditingCategoryId(null);
+    setCatName('');
+    setSubCatInput('');
+    setShowCatModal(true);
+  };
+
+  const openEditCategoryModal = (cat: Category) => {
+    setEditingCategoryId(cat.id);
+    setCatName(cat.name);
+    setSubCatInput('');
+    setShowCatModal(true);
+  };
+
+  const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catName.trim()) return;
     try {
-      const subcategories = subCatInput
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      await api.createCategory({ name: catName.trim(), subcategories });
-      showToast('دسته‌بندی جدید با موفقیت ایجاد شد.', 'success');
+      if (editingCategoryId) {
+        await api.updateCategory(editingCategoryId, { name: catName.trim() });
+        showToast('دسته‌بندی با موفقیت ویرایش شد.', 'success');
+      } else {
+        const subcategories = subCatInput
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        await api.createCategory({ name: catName.trim(), subcategories });
+        showToast('دسته‌بندی جدید با موفقیت ایجاد شد.', 'success');
+      }
       setShowCatModal(false);
+      setEditingCategoryId(null);
       setCatName('');
       setSubCatInput('');
       loadData();
     } catch (err: any) {
-      showToast(err.message || 'خطا در ایجاد دسته‌بندی', 'error');
+      showToast(err.message || 'خطا در ذخیره دسته‌بندی', 'error');
     }
   };
 
-  const handleCreateUnit = async (e: React.FormEvent) => {
+  const handleDeleteCategory = async (cat: Category) => {
+    if (!confirm(`آیا از حذف دسته‌بندی «${cat.name}» و تمام زیردسته‌های آن اطمینان دارید؟ کالاهای این دسته بدون دسته‌بندی باقی می‌مانند.`)) return;
+    try {
+      await api.deleteCategory(cat.id);
+      showToast('دسته‌بندی با موفقیت حذف شد.', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف دسته‌بندی', 'error');
+    }
+  };
+
+  const openAddSubcategoryModal = (categoryId: string) => {
+    setSubCatModal({ categoryId, name: '' });
+  };
+
+  const openEditSubcategoryModal = (categoryId: string, sub: SubCategory) => {
+    setSubCatModal({ categoryId, subCategoryId: sub.id, name: sub.name });
+  };
+
+  const handleSaveSubcategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subCatModal || !subCatModal.name.trim()) return;
+    try {
+      if (subCatModal.subCategoryId) {
+        await api.updateSubcategory(subCatModal.subCategoryId, { name: subCatModal.name.trim() });
+        showToast('زیردسته با موفقیت ویرایش شد.', 'success');
+      } else {
+        await api.createSubcategory(subCatModal.categoryId, { name: subCatModal.name.trim() });
+        showToast('زیردسته جدید اضافه شد.', 'success');
+      }
+      setSubCatModal(null);
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ذخیره زیردسته', 'error');
+    }
+  };
+
+  const handleDeleteSubcategory = async (sub: SubCategory) => {
+    if (!confirm(`آیا از حذف زیردسته «${sub.name}» اطمینان دارید؟`)) return;
+    try {
+      await api.deleteSubcategory(sub.id);
+      showToast('زیردسته با موفقیت حذف شد.', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف زیردسته', 'error');
+    }
+  };
+
+  const openCreateUnitModal = () => {
+    setEditingUnitId(null);
+    setUnitName('');
+    setSubUnitName('');
+    setConversionFactor(12);
+    setUnitDesc('');
+    setShowUnitModal(true);
+  };
+
+  const openEditUnitModal = (u: UnitDefinition) => {
+    setEditingUnitId(u.id);
+    setUnitName(u.name);
+    setSubUnitName(u.subUnit);
+    setConversionFactor(u.conversionFactor);
+    setUnitDesc(u.description || '');
+    setShowUnitModal(true);
+  };
+
+  const handleSaveUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!unitName || !subUnitName) return;
     try {
-      await api.createUnit({
-        name: unitName,
-        subUnit: subUnitName,
-        conversionFactor,
-        description: unitDesc,
-      });
-      showToast('واحد شمارش و ضریب تبدیل جدید ثبت شد.', 'success');
+      if (editingUnitId) {
+        await api.updateUnit(editingUnitId, {
+          name: unitName,
+          subUnit: subUnitName,
+          conversionFactor,
+          description: unitDesc,
+        });
+        showToast('واحد شمارش با موفقیت ویرایش شد.', 'success');
+      } else {
+        await api.createUnit({
+          name: unitName,
+          subUnit: subUnitName,
+          conversionFactor,
+          description: unitDesc,
+        });
+        showToast('واحد شمارش و ضریب تبدیل جدید ثبت شد.', 'success');
+      }
       setShowUnitModal(false);
+      setEditingUnitId(null);
       setUnitName('');
       setSubUnitName('');
       setConversionFactor(12);
       setUnitDesc('');
       loadData();
     } catch (err: any) {
-      showToast(err.message || 'خطا در ثبت واحد', 'error');
+      showToast(err.message || 'خطا در ذخیره واحد', 'error');
+    }
+  };
+
+  const handleDeleteUnit = async (u: UnitDefinition) => {
+    if (!confirm(`آیا از حذف واحد «${u.name}» اطمینان دارید؟`)) return;
+    try {
+      await api.deleteUnit(u.id);
+      showToast('واحد با موفقیت حذف شد.', 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف واحد', 'error');
     }
   };
 
   return (
     <div className="space-y-6 text-[#E0E0E0]">
-      {/* Categories Section */}
       <div className="bg-[#111113] rounded-3xl p-6 border border-[#222225] shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
@@ -94,7 +204,7 @@ export const CategoriesUnitsView: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowCatModal(true)}
+            onClick={openCreateCategoryModal}
             className="bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black text-xs px-4 py-2 rounded-xl transition-all shadow-lg shadow-[#C9A227]/20 flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4 text-black" />
@@ -107,18 +217,61 @@ export const CategoriesUnitsView: React.FC = () => {
             <div key={cat.id} className="p-4 rounded-2xl border border-[#2D2D33] bg-[#161619] space-y-2">
               <div className="flex items-center justify-between font-bold text-sm text-[#F3F4F6]">
                 <span>{cat.name}</span>
-                <span className="text-[10px] bg-[#C9A227]/10 text-[#C9A227] border border-[#C9A227]/30 px-2.5 py-0.5 rounded-full font-mono">
-                  {toPersianDigits(cat.productCount)} کالا
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] bg-[#C9A227]/10 text-[#C9A227] border border-[#C9A227]/30 px-2.5 py-0.5 rounded-full font-mono">
+                    {toPersianDigits(cat.productCount || 0)} کالا
+                  </span>
+                  <button
+                    onClick={() => openEditCategoryModal(cat)}
+                    title="ویرایش دسته‌بندی"
+                    className="p-1 rounded-lg text-[#8E9299] hover:text-[#C9A227] hover:bg-[#111113] cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCategory(cat)}
+                    title="حذف دسته‌بندی"
+                    className="p-1 rounded-lg text-[#8E9299] hover:text-rose-400 hover:bg-[#111113] cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               <div className="text-xs text-[#8E9299]">
-                <div className="font-semibold text-[#8E9299] text-[11px] mb-1">زیردسته‌ها:</div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-[#8E9299] text-[11px]">زیردسته‌ها:</span>
+                  <button
+                    onClick={() => openAddSubcategoryModal(cat.id)}
+                    title="افزودن زیردسته"
+                    className="text-[10px] text-[#C9A227] hover:underline cursor-pointer flex items-center gap-0.5"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>افزودن</span>
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {cat.subcategories && cat.subcategories.length > 0 ? (
                     cat.subcategories.map((sub) => (
-                      <span key={sub.id} className="bg-[#111113] border border-[#2D2D33] px-2 py-0.5 rounded-lg text-[#E0E0E0]">
-                        {sub.name}
+                      <span
+                        key={sub.id}
+                        className="bg-[#111113] border border-[#2D2D33] px-2 py-0.5 rounded-lg text-[#E0E0E0] flex items-center gap-1"
+                      >
+                        <span>{sub.name}</span>
+                        <button
+                          onClick={() => openEditSubcategoryModal(cat.id, sub)}
+                          title="ویرایش زیردسته"
+                          className="text-[#8E9299] hover:text-[#C9A227] cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubcategory(sub)}
+                          title="حذف زیردسته"
+                          className="text-[#8E9299] hover:text-rose-400 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
                       </span>
                     ))
                   ) : (
@@ -131,7 +284,6 @@ export const CategoriesUnitsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Units & Conversion Factors Section */}
       <div className="bg-[#111113] rounded-3xl p-6 border border-[#222225] shadow-xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
@@ -143,7 +295,7 @@ export const CategoriesUnitsView: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowUnitModal(true)}
+            onClick={openCreateUnitModal}
             className="bg-[#1C1C20] hover:bg-[#25252B] text-[#E0E0E0] border border-[#2D2D33] font-bold text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
           >
             <Plus className="w-4 h-4 text-[#C9A227]" />
@@ -156,9 +308,25 @@ export const CategoriesUnitsView: React.FC = () => {
             <div key={u.id} className="p-4 rounded-2xl border border-[#2D2D33] bg-[#161619] space-y-2">
               <div className="flex items-center justify-between font-bold text-sm text-[#F3F4F6]">
                 <span>{u.name}</span>
-                <span className="text-xs text-[#C9A227] font-mono font-bold bg-[#111113] border border-[#C9A227]/30 px-2 py-0.5 rounded-lg">
-                  ۱ {u.name} = {toPersianDigits(u.conversionFactor)} {u.subUnit}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-[#C9A227] font-mono font-bold bg-[#111113] border border-[#C9A227]/30 px-2 py-0.5 rounded-lg">
+                    ۱ {u.name} = {toPersianDigits(u.conversionFactor)} {u.subUnit}
+                  </span>
+                  <button
+                    onClick={() => openEditUnitModal(u)}
+                    title="ویرایش واحد"
+                    className="p-1 rounded-lg text-[#8E9299] hover:text-[#C9A227] hover:bg-[#111113] cursor-pointer"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteUnit(u)}
+                    title="حذف واحد"
+                    className="p-1 rounded-lg text-[#8E9299] hover:text-rose-400 hover:bg-[#111113] cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
               {u.description && <p className="text-xs text-[#8E9299]">{u.description}</p>}
             </div>
@@ -166,18 +334,19 @@ export const CategoriesUnitsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Category Modal */}
       {showCatModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
           <div className="bg-[#111113] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#2D2D33] space-y-4">
             <div className="flex justify-between items-center pb-2 border-b border-[#222225]">
-              <h4 className="font-black text-[#F3F4F6] text-sm">افزودن دسته‌بندی جدید</h4>
+              <h4 className="font-black text-[#F3F4F6] text-sm">
+                {editingCategoryId ? 'ویرایش دسته‌بندی' : 'افزودن دسته‌بندی جدید'}
+              </h4>
               <button onClick={() => setShowCatModal(false)} className="text-[#8E9299] hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateCategory} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveCategory} className="space-y-3 text-xs">
               <div>
                 <label className="font-bold text-[#8E9299] block mb-1">نام دسته اصلی:</label>
                 <input
@@ -190,23 +359,25 @@ export const CategoriesUnitsView: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="font-bold text-[#8E9299] block mb-1">زیردسته‌ها (با کاما جدا کنید):</label>
-                <input
-                  type="text"
-                  value={subCatInput}
-                  onChange={(e) => setSubCatInput(e.target.value)}
-                  placeholder="خودکار, روان‌نویس, ماژیک, مداد"
-                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0]"
-                />
-              </div>
+              {!editingCategoryId && (
+                <div>
+                  <label className="font-bold text-[#8E9299] block mb-1">زیردسته‌ها (با کاما جدا کنید):</label>
+                  <input
+                    type="text"
+                    value={subCatInput}
+                    onChange={(e) => setSubCatInput(e.target.value)}
+                    placeholder="خودکار, روان‌نویس, ماژیک, مداد"
+                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0]"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
                   className="flex-1 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl shadow-xs cursor-pointer"
                 >
-                  ایجاد دسته‌بندی
+                  {editingCategoryId ? 'ذخیره تغییرات' : 'ایجاد دسته‌بندی'}
                 </button>
                 <button
                   type="button"
@@ -221,18 +392,64 @@ export const CategoriesUnitsView: React.FC = () => {
         </div>
       )}
 
-      {/* Unit Modal */}
+      {subCatModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <div className="bg-[#111113] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#2D2D33] space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-[#222225]">
+              <h4 className="font-black text-[#F3F4F6] text-sm">
+                {subCatModal.subCategoryId ? 'ویرایش زیردسته' : 'افزودن زیردسته جدید'}
+              </h4>
+              <button onClick={() => setSubCatModal(null)} className="text-[#8E9299] hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSubcategory} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[#8E9299] block mb-1">نام زیردسته:</label>
+                <input
+                  type="text"
+                  required
+                  value={subCatModal.name}
+                  onChange={(e) => setSubCatModal({ ...subCatModal, name: e.target.value })}
+                  placeholder="مثال: خودکار و روان‌نویس"
+                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none font-bold text-[#E0E0E0]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl shadow-xs cursor-pointer"
+                >
+                  {subCatModal.subCategoryId ? 'ذخیره تغییرات' : 'افزودن زیردسته'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubCatModal(null)}
+                  className="px-4 bg-[#1C1C20] hover:bg-[#25252B] text-[#E0E0E0] font-bold rounded-xl cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showUnitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
           <div className="bg-[#111113] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#2D2D33] space-y-4">
             <div className="flex justify-between items-center pb-2 border-b border-[#222225]">
-              <h4 className="font-black text-[#F3F4F6] text-sm">تعریف واحد شمارش و ضریب تبدیل</h4>
+              <h4 className="font-black text-[#F3F4F6] text-sm">
+                {editingUnitId ? 'ویرایش واحد شمارش' : 'تعریف واحد شمارش و ضریب تبدیل'}
+              </h4>
               <button onClick={() => setShowUnitModal(false)} className="text-[#8E9299] hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateUnit} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveUnit} className="space-y-3 text-xs">
               <div>
                 <label className="font-bold text-[#8E9299] block mb-1">واحد کلان (عمده):</label>
                 <input
@@ -285,7 +502,7 @@ export const CategoriesUnitsView: React.FC = () => {
                   type="submit"
                   className="flex-1 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl shadow-xs cursor-pointer"
                 >
-                  ثبت واحد
+                  {editingUnitId ? 'ذخیره تغییرات' : 'ثبت واحد'}
                 </button>
                 <button
                   type="button"

@@ -23,8 +23,10 @@ import {
   Layers,
   SunMedium,
   Compass,
+  Smartphone,
 } from 'lucide-react';
 import { toEnglishDigits, toPersianDigits } from '../../lib/utils';
+import { decodeBarcodeFromImage, getNativeBarcodeDetector } from '../../lib/nativeBarcodeScanner';
 import {
   analyzeFrameGlare,
   applyAdaptiveLocalThreshold,
@@ -107,7 +109,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   // Active tab: 'camera' | 'file'
   const [activeTab, setActiveTab] = useState<'camera' | 'file'>('camera');
   const [fileScanning, setFileScanning] = useState(false);
+  const [isPhoneDecoding, setIsPhoneDecoding] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const phoneCameraInputRef = useRef<HTMLInputElement | null>(null);
   const manualInputRef = useRef<HTMLInputElement | null>(null);
 
   // Scanner & Video References
@@ -123,28 +127,17 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const consecutiveMissesRef = useRef<number>(0);
   const progressivePassIndexRef = useRef<number>(0);
 
-  // Initialize Native BarcodeDetector if available in browser
+  // Initialize Native BarcodeDetector safely with browser supported formats
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
-      try {
-        const formats = [
-          'ean_13',
-          'ean_8',
-          'upc_a',
-          'upc_e',
-          'code_128',
-          'code_39',
-          'code_93',
-          'itf',
-          'codabar',
-          'qr_code',
-          'data_matrix',
-        ];
-        nativeBarcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats });
-      } catch (e) {
-        nativeBarcodeDetectorRef.current = null;
+    let active = true;
+    getNativeBarcodeDetector().then((detector) => {
+      if (active) {
+        nativeBarcodeDetectorRef.current = detector;
       }
-    }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Audio Synthesizer for POS Beep
@@ -325,11 +318,10 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       scannerInstanceRef.current = scanner;
 
       const scanConfig = {
-        fps: 22,
+        fps: 24,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // A wide rectangular scan window aligned with the red laser line
-          const width = Math.min(Math.floor(viewfinderWidth * 0.94), 480);
-          const height = Math.min(Math.floor(viewfinderHeight * 0.65), 240);
+          const width = Math.max(200, Math.floor(Math.min(viewfinderWidth * 0.92, 480)));
+          const height = Math.max(90, Math.floor(Math.min(viewfinderHeight * 0.42, 190)));
           return { width, height };
         },
         videoConstraints: {
@@ -459,6 +451,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
           }
 
           consecutiveMissesRef.current += 1;
+
+          // 90° Rotation check for vertical barcodes in portrait phone orientation
+          if (consecutiveMissesRef.current % 4 === 0) {
+            if (!processCanvas) {
+              processCanvas = document.createElement('canvas');
+              processCtx = processCanvas.getContext('2d', { willReadFrequently: true });
+            }
+            const vW = video.videoWidth;
+            const vH = video.videoHeight;
+            const rotW = Math.min(640, vW);
+            const rotH = Math.min(640, vH);
+            processCanvas.width = rotH;
+            processCanvas.height = rotW;
+            if (processCtx) {
+              processCtx.translate(rotH / 2, rotW / 2);
+              processCtx.rotate(Math.PI / 2);
+              processCtx.drawImage(video, -rotW / 2, -rotH / 2, rotW, rotH);
+              const rotCodes = await detector.detect(processCanvas);
+              if (rotCodes && rotCodes.length > 0 && rotCodes[0].rawValue) {
+                handleFrameDecoded(rotCodes[0].rawValue, rotCodes[0].format);
+                isDetecting = false;
+                animationFrameIdRef.current = requestAnimationFrame(runAuxCycle);
+                return;
+              }
+            }
+          }
 
           // Cylindrical / Dewarping pass for curved pens or shiny surfaces
           if (curvedSurfaceMode && consecutiveMissesRef.current >= 8) {
@@ -688,6 +706,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     } catch (_) {}
   };
 
+  // Handle direct phone native camera capture
+  const handlePhoneCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsPhoneDecoding(true);
+    setCameraError(null);
+    try {
+      const result = await decodeBarcodeFromImage(file);
+      if (result.success && result.barcode) {
+        const clean = toEnglishDigits(result.barcode).replace(/[\r\n\t]/g, '').trim();
+        handleSuccessfulScan(clean);
+      } else {
+        setCameraError(
+          'بارکدی در عکس تشخیص داده نشد. لطفاً در نور مناسب، بدون لرزش و از فاصله ۱۰ تا ۱۵ سانتی‌متری عکس بگیرید.'
+        );
+      }
+    } catch (err: any) {
+      console.error('Phone camera decode error:', err);
+      setCameraError('خطا در پردازش تصویر دوربین گوشی.');
+    } finally {
+      setIsPhoneDecoding(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   // Decode from file/image
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -696,19 +740,16 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setFileScanning(true);
     setCameraError(null);
     try {
-      const html5QrCode = new Html5Qrcode('file-scanner-temp');
-      const result = await html5QrCode.scanFileV2(file, true);
-      if (result && result.decodedText) {
-        const clean = toEnglishDigits(result.decodedText).replace(/[\r\n\t]/g, '').trim();
-        if (clean.length >= 2) {
-          handleSuccessfulScan(clean);
-        } else {
-          setCameraError('بارکد معتبری در تصویر یافت نشد.');
-        }
+      const result = await decodeBarcodeFromImage(file);
+      if (result.success && result.barcode) {
+        const clean = toEnglishDigits(result.barcode).replace(/[\r\n\t]/g, '').trim();
+        handleSuccessfulScan(clean);
+      } else {
+        setCameraError('بارکد معتبری در تصویر انتخابی یافت نشد یا تصویر تار است.');
       }
     } catch (err: any) {
       console.error('File scan error:', err);
-      setCameraError('بارکدی در تصویر ارسالی یافت نشد یا تصویر تار است.');
+      setCameraError('خطا در پردازش فایل تصویر.');
     } finally {
       setFileScanning(false);
       if (e.target) e.target.value = '';
@@ -772,6 +813,57 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Hidden Direct Phone Native Camera Input */}
+        <input
+          ref={phoneCameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhoneCameraCapture}
+          className="hidden"
+        />
+
+        {/* Featured Action Banner: Direct Phone Native Camera Scanner */}
+        <div className="p-3 bg-gradient-to-r from-amber-500/20 via-[#C9A227]/25 to-amber-500/20 border-b border-[#C9A227]/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-right w-full sm:w-auto">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-[#C9A227] text-slate-950 flex items-center justify-center shrink-0 shadow-md">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs sm:text-sm font-black text-amber-200">
+                  اسکن مستقیم با دوربین اصلی خود گوشی
+                </h4>
+                <span className="px-1.5 py-0.5 rounded-md bg-[#C9A227] text-slate-950 text-[10px] font-black">
+                  پیشنهادی برای موبایل
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-300/80">
+                اپلیکیشن دوربین گوشی را با فوکوس لیزری و کیفیت بالا باز کرده، کد را می‌خواند و جایگزاری می‌کند
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => phoneCameraInputRef.current?.click()}
+            disabled={isPhoneDecoding}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-[#C9A227] hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95 shrink-0"
+          >
+            {isPhoneDecoding ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                <span>در حال خوانش و جایگزاری...</span>
+              </>
+            ) : (
+              <>
+                <Camera className="w-4 h-4 text-slate-950" />
+                <span>عکس و اسکن با دوربین گوشی</span>
+              </>
+            )}
+          </button>
         </div>
 
         {/* Mode Tabs & Features Toolbar */}

@@ -25,7 +25,7 @@ process.on('unhandledRejection', (reason: any) => {
 import { db } from './server/db';
 import { initializeDatabase, isDbConnected, isPostgresReal, query } from './server/dbClient';
 import { sendToPasargadPos } from './server/posProtocol';
-import { searchTorobMarket, searchMultiSourceMarket, getTorobStationeryCategoryList, auditAllInventoryAgainstMarket, inspectTorobDirectUrl, SlidingWindowRateLimiter } from './server/torobService';
+import { searchTorobMarket, searchMultiSourceMarket, getTorobStationeryCategoryList, auditAllInventoryAgainstMarket, inspectTorobDirectUrl, searchDigikalaCandidates, compareAcrossSources, SlidingWindowRateLimiter } from './server/torobService';
 import { askGeminiAssistant, analyzeProductMarketAndPricing, groundedWebMarketSearch } from './server/geminiService';
 import { cmsEngine } from './server/cmsEngine';
 import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, getBackupStats } from './server/backupService';
@@ -626,12 +626,61 @@ app.get('/api/categories', async (req, res) => {
 });
 
 app.post('/api/categories', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
-  const { name, icon, sortOrder } = req.body;
+  const { name, icon, sortOrder, subcategories } = req.body;
   if (!name) return res.status(400).json({ error: 'نام دسته الزامی است.' });
 
   try {
-    const category = await db.createCategory({ name, icon, sortOrder });
+    const category = await db.createCategory({ name, icon, sortOrder, subcategories });
     res.json({ category, message: 'دسته‌بندی جدید ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/categories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  const { name, icon, sortOrder } = req.body;
+  try {
+    await db.updateCategory(req.params.id, { name, icon, sortOrder });
+    res.json({ message: 'دسته‌بندی با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/categories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    await db.deleteCategory(req.params.id);
+    res.json({ message: 'دسته‌بندی با موفقیت حذف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/categories/:categoryId/subcategories', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: 'نام زیردسته الزامی است.' });
+  try {
+    await db.createSubCategory({ categoryId: req.params.categoryId, name, description });
+    res.json({ message: 'زیردسته جدید اضافه شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/subcategories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  const { name, description } = req.body;
+  try {
+    await db.updateSubCategory(req.params.id, { name, description });
+    res.json({ message: 'زیردسته با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/subcategories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    await db.deleteSubCategory(req.params.id);
+    res.json({ message: 'زیردسته با موفقیت حذف شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -655,6 +704,25 @@ app.post('/api/units', authenticateToken, requireRole(['admin', 'site_manager', 
   try {
     const unit = await db.createUnit({ name, subUnit, conversionFactor, description });
     res.json({ unit, message: 'واحد جدید با ضریب تبدیل تعریف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/units/:id', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req, res) => {
+  const { name, subUnit, conversionFactor, description } = req.body;
+  try {
+    await db.updateUnit(req.params.id, { name, subUnit, conversionFactor, description });
+    res.json({ message: 'واحد با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/units/:id', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req, res) => {
+  try {
+    await db.deleteUnit(req.params.id);
+    res.json({ message: 'واحد با موفقیت حذف شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1390,6 +1458,32 @@ app.get('/api/torob/multi-market', optionalAuthenticateToken, torobRateLimitMidd
     res.json({ result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/torob/digikala-candidates', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
+  try {
+    const { query: q } = req.query;
+    const candidates = await searchDigikalaCandidates(q as string, 8);
+    res.json({ candidates });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// مقایسه چندمنبعی قیمت و مشخصات کالا (ترب، دیجی‌کالا، ایمالز، تایم‌تحریر)
+app.get('/api/torob/compare-sources', optionalAuthenticateToken, torobRateLimitMiddleware, async (req, res) => {
+  try {
+    const { query: q, limit, refresh } = req.query;
+    if (!q || !String(q).trim()) {
+      return res.status(400).json({ error: 'پارامتر جستجو (query) الزامی است.' });
+    }
+    const bypassCache = refresh === 'true' || refresh === '1';
+    const result = await compareAcrossSources(String(q).trim(), Number(limit) || 6, bypassCache);
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ [Compare Sources Error]:', err);
+    res.status(500).json({ error: err.message || 'خطا در مقایسه چندمنبعی' });
   }
 });
 

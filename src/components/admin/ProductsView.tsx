@@ -33,13 +33,15 @@ import {
   Info,
   ShieldCheck,
   RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum } from '../../lib/utils';
-import { Product, Category, SubCategory } from '../../types';
+import { Product, Category, SubCategory, UnitDefinition } from '../../types';
 import { useToast } from '../common/Toast';
 import { BarcodePrintModal } from './BarcodePrintModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
+import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { CurrencyInput } from '../common/CurrencyInput';
 import { ProductGalleryManager } from '../common/ProductGalleryManager';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
@@ -51,6 +53,7 @@ export const ProductsView: React.FC = () => {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [unitDefs, setUnitDefs] = useState<UnitDefinition[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCat, setSelectedCat] = useState<string>('all');
   const [filterAccountingOnly, setFilterAccountingOnly] = useState<string>('all');
@@ -58,7 +61,7 @@ export const ProductsView: React.FC = () => {
 
   // Barcode Scanner Modal
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scannerTargetField, setScannerTargetField] = useState<'search' | 'formBarcode'>('search');
+  const [scannerTargetField, setScannerTargetField] = useState<'search' | 'formBarcode' | 'formBoxBarcode'>('search');
 
   // Create / Edit Modal
   const [showModal, setShowModal] = useState(false);
@@ -69,6 +72,7 @@ export const ProductsView: React.FC = () => {
     name: '',
     code: '',
     barcode: '',
+    boxBarcode: '',
     categoryId: '',
     subCategoryId: '',
     unit: 'عدد',
@@ -120,12 +124,14 @@ export const ProductsView: React.FC = () => {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [prodRes, catRes] = await Promise.all([
+      const [prodRes, catRes, unitRes] = await Promise.all([
         api.getProducts().catch(() => ({ products: [] })),
         api.getCategories().catch(() => ({ categories: [] })),
+        api.getUnits().catch(() => ({ units: [] })),
       ]);
       setProducts(prodRes.products || []);
       setCategories(catRes.categories || []);
+      setUnitDefs(unitRes.units || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -154,6 +160,7 @@ export const ProductsView: React.FC = () => {
       name: '',
       code: `KHAT-${Math.floor(1000 + Math.random() * 9000)}`,
       barcode: generateValidEan13(),
+      boxBarcode: '',
       categoryId: categories[0]?.id || '',
       subCategoryId: '',
       unit: 'عدد',
@@ -200,6 +207,7 @@ export const ProductsView: React.FC = () => {
       name: p.name,
       code: p.code,
       barcode: p.barcode || '',
+      boxBarcode: (p as any).boxBarcode || '',
       categoryId: p.categoryId,
       subCategoryId: p.subCategoryId || '',
       unit: p.unit,
@@ -247,6 +255,9 @@ export const ProductsView: React.FC = () => {
     if (scannerTargetField === 'formBarcode') {
       setFormData((prev) => ({ ...prev, barcode: clean }));
       showToast(`بارکد «${clean}» با موفقیت در فرم کالا درج شد.`, 'success');
+    } else if (scannerTargetField === 'formBoxBarcode') {
+      setFormData((prev) => ({ ...prev, boxBarcode: clean }));
+      showToast(`بارکد جعبه «${clean}» با موفقیت در فرم کالا درج شد.`, 'success');
     } else {
       setSearchQuery(clean);
       showToast(`بارکد «${clean}» با دوربین اسکن و جستجو شد.`, 'success');
@@ -273,6 +284,7 @@ export const ProductsView: React.FC = () => {
       const payload = {
         ...formData,
         barcode: toEnglishDigits(formData.barcode).trim(),
+        boxBarcode: toEnglishDigits(formData.boxBarcode).trim(),
         gallery: allGallery,
         extraImages: formData.extraImages,
         categoryId: formData.categoryId && formData.categoryId !== 'all' && formData.categoryId !== 'none' ? formData.categoryId : undefined,
@@ -344,7 +356,8 @@ export const ProductsView: React.FC = () => {
       !cleanSearch ||
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.code.toLowerCase().includes(cleanSearch) ||
-      toEnglishDigits(p.barcode || '').toLowerCase().includes(cleanSearch);
+      toEnglishDigits(p.barcode || '').toLowerCase().includes(cleanSearch) ||
+      toEnglishDigits((p as any).boxBarcode || '').toLowerCase().includes(cleanSearch);
     return matchCat && matchChannel && matchQ;
   });
 
@@ -376,20 +389,32 @@ export const ProductsView: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="جستجو در نام، کد، یا اسکن بارکد..."
-              className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl pr-9 pl-12 py-2 text-xs text-[#E0E0E0] outline-none"
+              className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl pr-9 pl-24 py-2 text-xs text-[#E0E0E0] outline-none"
             />
             <Search className="w-4 h-4 text-[#8E9299] absolute right-3 top-2.5" />
-            <button
-              type="button"
-              onClick={() => {
-                setScannerTargetField('search');
-                setIsScannerOpen(true);
-              }}
-              title="اسکن بارکد کالا با دوربین ضدخطا"
-              className="absolute left-1.5 top-1.5 p-1 rounded-lg bg-[#222226] hover:bg-[#C9A227] text-[#C9A227] hover:text-black transition-colors cursor-pointer"
-            >
-              <Camera className="w-4 h-4" />
-            </button>
+            <div className="absolute left-1.5 top-1 flex items-center gap-1">
+              <DirectPhoneScannerButton
+                onScan={(scannedCode) => {
+                  const clean = toEnglishDigits(scannedCode).trim();
+                  setSearchQuery(clean);
+                  showToast(`بارکد «${clean}» با دوربین گوشی خوانده و جستجو شد.`, 'success');
+                }}
+                label=""
+                variant="compact"
+                title="اسکن مستقیم با دوربین گوشی"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setScannerTargetField('search');
+                  setIsScannerOpen(true);
+                }}
+                title="اسکنر زنده با خط لیزر قرمز"
+                className="p-1.5 rounded-lg bg-[#222226] hover:bg-[#C9A227] text-[#C9A227] hover:text-black transition-colors cursor-pointer"
+              >
+                <ScanLine className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Category Filter */}
@@ -574,6 +599,7 @@ export const ProductsView: React.FC = () => {
                           <div>
                             <div className="font-mono text-[11px] font-bold text-[#8E9299]">{p.code}</div>
                             {p.barcode && <div className="font-mono text-[10px] text-stone-500">{p.barcode}</div>}
+                            {(p as any).boxBarcode && <div className="font-mono text-[10px] text-stone-500">📦 {(p as any).boxBarcode}</div>}
                           </div>
                         </div>
                       </td>
@@ -831,21 +857,31 @@ export const ProductsView: React.FC = () => {
                           type="text"
                           value={formData.barcode}
                           onChange={(e) => setFormData({ ...formData, barcode: toEnglishDigits(e.target.value) })}
-                          placeholder="اسکن با دوربین یا تایپ بارکد..."
-                          className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 pl-20 font-mono outline-none text-[#E0E0E0] font-bold"
+                          placeholder="اسکن با دوربین گوشی یا تایپ بارکد..."
+                          className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 pl-44 font-mono outline-none text-[#E0E0E0] font-bold"
                         />
-                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
+                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1.5">
+                          <DirectPhoneScannerButton
+                            onScan={(scannedCode) => {
+                              const clean = toEnglishDigits(scannedCode).trim();
+                              setFormData((prev) => ({ ...prev, barcode: clean }));
+                              showToast(`بارکد «${clean}» با دوربین گوشی خوانده و جایگزاری شد.`, 'success');
+                            }}
+                            label="دوربین گوشی"
+                            variant="gold"
+                            title="فعال‌سازی مستقیم دوربین گوشی برای خواندن بارکد و جایگزاری در کادر"
+                          />
                           <button
                             type="button"
                             onClick={() => {
                               setScannerTargetField('formBarcode');
                               setIsScannerOpen(true);
                             }}
-                            title="اسکن بارکد با دوربین گوشی یا وب‌کم"
-                            className="px-2.5 py-1 rounded-lg bg-[#222226] hover:bg-[#C9A227] text-[#C9A227] hover:text-black font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                            title="اسکنر زنده با خط لیزر قرمز"
+                            className="px-2 py-1.5 rounded-xl bg-[#222226] hover:bg-[#C9A227] text-[#C9A227] hover:text-black font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
                           >
-                            <Camera className="w-3.5 h-3.5" />
-                            <span>اسکن</span>
+                            <ScanLine className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">اسکنر زنده</span>
                           </button>
                         </div>
                       </div>
@@ -864,6 +900,50 @@ export const ProductsView: React.FC = () => {
                           )}
                         </div>
                       )}
+                    </div>
+
+                    {/* Box/Carton Barcode (Optional Secondary Barcode) */}
+                    <div>
+                      <label className="font-bold text-[#8E9299] block mb-1 flex items-center gap-1.5">
+                        <Boxes className="w-3.5 h-3.5 text-[#C9A227]" />
+                        بارکد جعبه/کارتن (اختیاری):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={formData.boxBarcode}
+                          onChange={(e) => setFormData({ ...formData, boxBarcode: toEnglishDigits(e.target.value) })}
+                          placeholder="در صورتی که جعبه یا کارتن این کالا بارکد جداگانه دارد، اینجا اسکن یا تایپ کنید..."
+                          className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 pl-44 font-mono outline-none text-[#E0E0E0] font-bold"
+                        />
+                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1.5">
+                          <DirectPhoneScannerButton
+                            onScan={(scannedCode) => {
+                              const clean = toEnglishDigits(scannedCode).trim();
+                              setFormData((prev) => ({ ...prev, boxBarcode: clean }));
+                              showToast(`بارکد جعبه «${clean}» با دوربین گوشی خوانده و جایگزاری شد.`, 'success');
+                            }}
+                            label="دوربین گوشی"
+                            variant="gold"
+                            title="فعال‌سازی مستقیم دوربین گوشی برای خواندن بارکد جعبه و جایگزاری در کادر"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScannerTargetField('formBoxBarcode');
+                              setIsScannerOpen(true);
+                            }}
+                            title="اسکنر زنده با خط لیزر قرمز"
+                            className="px-2 py-1.5 rounded-xl bg-[#222226] hover:bg-[#C9A227] text-[#C9A227] hover:text-black font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <ScanLine className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">اسکنر زنده</span>
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-[10px] text-[#8E9299]">
+                        اگر جعبه یا کارتن این کالا بارکد مجزایی از خود جنس داخلش دارد (مثلاً برای انبارگردانی عمده)، آن را اینجا ثبت کنید. هر دو بارکد در صندوق و انبار، همین یک کالا را پیدا می‌کنند.
+                      </p>
                     </div>
 
                     {/* Main Category */}
@@ -903,29 +983,58 @@ export const ProductsView: React.FC = () => {
                       </select>
                     </div>
 
-                    {/* Primary Unit */}
+                    {/* Primary Unit — now a select */}
                     <div>
                       <label className="font-bold text-[#8E9299] block mb-1">واحد سنجش اصلی:</label>
-                      <input
-                        type="text"
+                      <select
                         value={formData.unit}
-                        onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                        placeholder="مثال: عدد، بسته، جلد، کارتن"
-                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0] font-bold"
-                      />
+                        onChange={(e) => {
+                          const selectedName = e.target.value;
+                          const matchedDef = unitDefs.find((u) => u.name === selectedName);
+                          setFormData((prev) => ({
+                            ...prev,
+                            unit: selectedName,
+                            subUnit: matchedDef ? matchedDef.subUnit : prev.subUnit,
+                            conversionFactor: matchedDef ? matchedDef.conversionFactor : prev.conversionFactor,
+                          }));
+                        }}
+                        className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0] font-bold cursor-pointer"
+                      >
+                        <option value="عدد">عدد</option>
+                        {Array.from(new Set(unitDefs.map((u) => u.name)))
+                          .filter((name) => name !== 'عدد')
+                          .map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        {formData.unit && formData.unit !== 'عدد' && !unitDefs.some((u) => u.name === formData.unit) && (
+                          <option value={formData.unit}>{formData.unit}</option>
+                        )}
+                      </select>
                     </div>
 
                     {/* Sub Unit & Conversion */}
                     <div>
                       <label className="font-bold text-[#8E9299] block mb-1">واحد فرعی و ضریب تبدیل (اختیاری):</label>
                       <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formData.subUnit}
+                        <select
+                          value={formData.subUnit || ''}
                           onChange={(e) => setFormData({ ...formData, subUnit: e.target.value })}
-                          placeholder="واحد فرعی (مثلاً عدد)"
-                          className="w-2/3 bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0]"
-                        />
+                          className="w-2/3 bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0] cursor-pointer"
+                        >
+                          <option value="">— بدون واحد فرعی —</option>
+                          {Array.from(
+                            new Set([
+                              ...unitDefs.map((u) => u.subUnit).filter(Boolean),
+                              ...(formData.subUnit ? [formData.subUnit] : []),
+                            ])
+                          ).map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
                         <input
                           type="number"
                           value={formData.conversionFactor}
@@ -934,6 +1043,9 @@ export const ProductsView: React.FC = () => {
                           className="w-1/3 bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none font-mono text-[#E0E0E0]"
                         />
                       </div>
+                      <p className="text-[10px] text-[#5C5F66] mt-1">
+                        برای افزودن واحد جدید، به بخش «دسته‌بندی‌ها و واحدها» در منوی مدیریت مراجعه کنید.
+                      </p>
                     </div>
                   </div>
                 </div>

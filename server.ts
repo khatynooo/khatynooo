@@ -79,27 +79,17 @@ const DEFAULT_INSECURE_DB_PASS = 'secure_khatinoo_db_password_2026';
 
 function resolveJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  if (isProduction) {
-    if (!secret || secret.trim().length === 0 || secret.trim() === DEFAULT_INSECURE_JWT || secret.trim().length < 16) {
-      console.error('❌ [FATAL JWT ERROR] متغیر JWT_SECRET در محیط Production تنظیم نشده یا از کلید پیش‌فرض/ضعیف استفاده شده است!');
-      console.error('💡 راهنما: لطفاً در فایل .env یک کلید امن تصادفی قرار دهید (مثلاً با دستور "openssl rand -hex 32").');
-      process.exit(1);
-    }
-    return secret.trim();
-  }
 
   if (secret && secret.trim().length > 0) {
     if (secret.trim() === DEFAULT_INSECURE_JWT) {
-      console.warn('⚠️ [Security Warning] از کلید JWT پیش‌فرض توسعه استفاده می‌شود. در Production حتماً آن را تغییر دهید.');
+      console.warn('⚠️ [Security Warning] از کلید JWT پیش‌فرض توسعه استفاده می‌شود. در صورت امکان یک کلید اختصاصی در .env تنظیم نمایید.');
     }
     return secret.trim();
   }
 
-  const ephemeralDevSecret = crypto.randomBytes(32).toString('hex');
+  const ephemeralSecret = crypto.randomBytes(32).toString('hex');
   console.warn('⚠️ [Security Notice] متغیر JWT_SECRET یافت نشد. یک کلید تصادفی امن و موقت ۳۲ بایتی در حافظه برای نشست جاری سرور ایجاد گردید.');
-  return ephemeralDevSecret;
+  return ephemeralSecret;
 }
 
 process.on('uncaughtException', (err) => {
@@ -626,11 +616,11 @@ app.get('/api/categories', async (req, res) => {
 });
 
 app.post('/api/categories', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
-  const { name, icon, sortOrder, subcategories } = req.body;
+  const { name, icon, image, sortOrder, subcategories } = req.body;
   if (!name) return res.status(400).json({ error: 'نام دسته الزامی است.' });
 
   try {
-    const category = await db.createCategory({ name, icon, sortOrder, subcategories });
+    const category = await db.createCategory({ name, icon, image, sortOrder, subcategories });
     res.json({ category, message: 'دسته‌بندی جدید ثبت شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -638,9 +628,9 @@ app.post('/api/categories', authenticateToken, requireRole(['admin', 'site_manag
 });
 
 app.put('/api/categories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
-  const { name, icon, sortOrder } = req.body;
+  const { name, icon, image, sortOrder } = req.body;
   try {
-    await db.updateCategory(req.params.id, { name, icon, sortOrder });
+    await db.updateCategory(req.params.id, { name, icon, image, sortOrder });
     res.json({ message: 'دسته‌بندی با موفقیت ویرایش شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -860,7 +850,22 @@ app.get('/api/invoices/purchase', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
-  const { supplierId, items, paidAmount = 0, paymentMethod = 'cash', notes, warehouseId } = req.body;
+  const {
+    supplierId,
+    items,
+    paidAmount = 0,
+    cashAmount = 0,
+    chequeAmount = 0,
+    cheques = [],
+    receiptImageUrls = [],
+    paymentMethod = 'cash',
+    notes,
+    warehouseId,
+    invoiceNumber,
+    invoiceDate,
+    discount = 0,
+    receiptImageUrl,
+  } = req.body;
   if (!supplierId || !items || !items.length) {
     return res.status(400).json({ error: 'انتخاب تامین‌کننده و ثبت اقلام فاکتور خرید الزامی است.' });
   }
@@ -878,9 +883,17 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
       items,
       totalAmount,
       paidAmount: Number(paidAmount),
+      cashAmount: Number(cashAmount || 0),
+      chequeAmount: Number(chequeAmount || 0),
+      cheques: Array.isArray(cheques) ? cheques : [],
+      receiptImageUrls: Array.isArray(receiptImageUrls) ? receiptImageUrls : [],
       paymentMethod,
       notes,
       warehouseId,
+      invoiceNumber,
+      invoiceDate,
+      discount: Number(discount || 0),
+      receiptImageUrl,
     });
 
     res.json({ invoice, message: 'فاکتور خرید ثبت و موجودی انبار به صورت آنی افزایش یافت.' });

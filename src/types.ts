@@ -54,6 +54,7 @@ export interface Category {
   id: string;
   name: string;
   icon?: string;
+  image?: string;
   productCount?: number;
   subcategories: SubCategory[];
 }
@@ -103,6 +104,8 @@ export interface Product {
   variants?: ProductVariant[];
   avgRating?: number;
   reviewsCount?: number;
+  lastMarketPrice?: number;
+  lastMarketCheckedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -212,6 +215,7 @@ export interface ChequeInfo {
   bankName: string;
   dueDate: string;
   sayadId?: string;
+  shebaNumber?: string; // شمارهٔ شبای حساب صادرکننده چک (جدید)
   amount?: number;
 }
 
@@ -247,14 +251,21 @@ export interface SalesInvoice {
 export interface PurchaseInvoice {
   id: string;
   invoiceNumber: string;
+  invoiceDate?: string;
   supplierId: string;
   supplierName: string;
   items: InvoiceItem[];
   totalAmount: number;
+  discount?: number;
   paidAmount: number;
+  cashAmount?: number;      // تفکیک بخش نقدی
+  chequeAmount?: number;    // مجموع مبلغ چک‌ها
+  cheques?: ChequeInfo[];   // آرایه چک‌ها (امکان چند چک)
   remainingAmount: number;
-  paymentMethod: 'cash' | 'bank_transfer' | 'credit' | 'installment';
-  chequeInfo?: ChequeInfo;
+  paymentMethod: 'cash' | 'cheque' | 'mixed' | 'credit' | 'installment' | 'bank_transfer';
+  receiptImageUrls?: string[]; // آرایه تصاویر پیوست
+  receiptImageUrl?: string; // سازگاری با داده‌های قبلی
+  chequeInfo?: ChequeInfo; // سازگاری با داده‌های قبلی
   notes?: string;
   warehouseId?: string;
   warehouseName?: string;
@@ -315,6 +326,9 @@ export interface Cheque {
   entityName?: string;
   status: 'pending' | 'cleared' | 'bounced' | 'cancelled';
   notes?: string;
+  shebaNumber?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
 }
 
 export interface OnlineOrderItem {
@@ -486,6 +500,15 @@ export interface WebsiteSettings {
   customSymbols?: CustomSymbol[];
   headerLayoutStyle?: 'default' | 'centered' | 'minimal' | 'modern_compact';
   footerLayoutStyle?: 'default' | 'compact' | 'detailed' | 'columns_4';
+  headerLayout?: 'standard' | 'compact' | 'centered' | 'fullwidth';
+  footerLayout?: 'default' | 'compact' | 'detailed' | 'multi_column' | 'card' | 'simple';
+  layoutColumns?: 3 | 4 | 5 | 6;
+  // --- کنترل سراسری تایپوگرافی و اندازه ---
+  siteFontFamily?: 'vazirmatn' | 'shabnam' | 'sahel';
+  siteFontScale?: 'sm' | 'base' | 'lg'; // مقیاس اندازهٔ کل متن سایت
+  productImageSize?: 'compact' | 'normal' | 'large'; // اندازهٔ تصویر داخل کارت محصول
+  heroHeight?: 'compact' | 'normal' | 'tall'; // ارتفاع بنر اصلی صفحهٔ نخست
+  sectionSpacing?: 'compact' | 'normal' | 'relaxed'; // فاصلهٔ عمودی بین بخشهای صفحه
   containerWidth?: 'standard' | 'wide' | 'full';
   productsPerRow?: number; // 2, 3, 4, 5, 6
   // Address & Physical Store Location

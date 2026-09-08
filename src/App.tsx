@@ -18,6 +18,7 @@ import { toPersianDigits } from './lib/utils';
 // Storefront Components
 import { Header } from './components/storefront/Header';
 import { BannerSlider } from './components/storefront/BannerSlider';
+import { CategoryShowcase } from './components/storefront/CategoryShowcase';
 import { ProductCard } from './components/storefront/ProductCard';
 import { ProductDetailModal } from './components/storefront/ProductDetailModal';
 import { ServicesCalculatorModal } from './components/storefront/ServicesCalculatorModal';
@@ -60,6 +61,7 @@ import {
   Layers,
   CheckCircle2,
   TrendingUp,
+  BookOpen,
 } from 'lucide-react';
 
 // =============================================================================
@@ -163,8 +165,46 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
 
   const isFilteringOrSearching = !!(selectedCategory || searchQuery.trim() || filterTab !== 'all');
 
+  // Dynamic font family & scale for storefront
+  const fontFamilyMap: Record<string, string> = {
+    vazirmatn: 'Vazirmatn, sans-serif',
+    shabnam: 'Shabnam, Vazirmatn, sans-serif',
+    sahel: 'Sahel, Vazirmatn, sans-serif',
+  };
+  const activeFontFamily = fontFamilyMap[websiteSettings?.siteFontFamily || 'vazirmatn'] || 'Vazirmatn, sans-serif';
+
+  const fontScaleMap: Record<string, string> = {
+    sm: '0.925rem',
+    base: '1rem',
+    lg: '1.075rem',
+  };
+  const activeFontScale = fontScaleMap[websiteSettings?.siteFontScale || 'base'] || '1rem';
+
+  const spacingMap: Record<string, string> = {
+    compact: 'space-y-4 sm:space-y-6',
+    normal: 'space-y-6 sm:space-y-8',
+    relaxed: 'space-y-10 sm:space-y-14',
+  };
+  const activeSectionSpacing = spacingMap[websiteSettings?.sectionSpacing || 'normal'] || 'space-y-6 sm:space-y-8';
+
+  const cols = websiteSettings?.layoutColumns || 5;
+  const gridColsClass = cols === 3
+    ? 'grid-cols-2 sm:grid-cols-3'
+    : cols === 4
+    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
+    : cols === 6
+    ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
+    : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0A0A0B] text-slate-800 dark:text-[#E0E0E0] flex flex-col selection:bg-[#C9A227] selection:text-black font-sans transition-colors" dir="rtl">
+    <div
+      className="min-h-screen bg-[var(--paper)] text-[var(--ink-charcoal)] flex flex-col selection:bg-[var(--coral)] selection:text-white transition-colors"
+      dir="rtl"
+      style={{
+        fontFamily: activeFontFamily,
+        fontSize: activeFontScale,
+      }}
+    >
       {/* Public Header - No admin buttons displayed to customers */}
       <Header
         categories={categories}
@@ -180,7 +220,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
       />
 
       {/* Main Storefront Body - Expansive Full Screen on Desktop */}
-      <main className="flex-1 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 space-y-8">
+      <main className={`flex-1 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 ${activeSectionSpacing}`}>
         {/* If custom Page Builder blocks are loaded and we are on standard home view, render blocks dynamically */}
         {!isFilteringOrSearching && activeBlocks.length > 0 ? (
           activeBlocks.map((block) => (
@@ -202,6 +242,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
             {banners.length > 0 && (
               <BannerSlider
                 banners={banners}
+                websiteSettings={websiteSettings}
                 onBannerClick={(b) => {
                   if (b.link?.includes('category')) {
                     const cat = categories.find((c) => b.link?.includes(c.id));
@@ -211,70 +252,49 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
               />
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-xs">
-              <div className="bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] p-4 rounded-2xl flex items-center gap-3.5 shadow-xs transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-[#C9A227] flex items-center justify-center font-bold shrink-0">
-                  <Sparkles className="w-5 h-5" />
+            {/* 1. نوار افقی ظریف اعتماد بدون بردر و کارت‌های یکنواخت */}
+            <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 py-5 border-y border-[var(--line-soft)] dark:border-[#222225]">
+              {[
+                { icon: BookOpen, color: 'var(--coral)', title: 'تولید اختصاصی خطی‌نو', sub: 'دفاتر مشق، سیمی و طراحی' },
+                { icon: TrendingUp, color: 'var(--teal)', title: 'تضمین مناسب‌ترین قیمت', sub: 'همگام با بازار و قیمت ترب' },
+                { icon: Layers, color: 'var(--grape)', title: 'تنوع ۵۰۰۰+ قلم کالا', sub: 'برترین برندهای داخلی و وارداتی' },
+                { icon: CheckCircle2, color: 'var(--sunshine)', title: 'ارسال سریع کشوری', sub: 'پیک روزانه و پست پیشتاز' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-3 flex-1 min-w-[220px]">
+                  <item.icon className="w-6 h-6 shrink-0" style={{ color: item.color }} strokeWidth={1.75} />
+                  <div>
+                    <div className="font-black text-sm text-[var(--ink-charcoal)] dark:text-[#F3F4F6]">{item.title}</div>
+                    <div className="text-xs text-slate-500 dark:text-[#8E9299]">{item.sub}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm">تولید اختصاصی خطی‌نو</div>
-                  <div className="text-xs text-slate-500 dark:text-[#8E9299]">دفاتر مشق، سیمی و طراحی</div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] p-4 rounded-2xl flex items-center gap-3.5 shadow-xs transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold shrink-0">
-                  <TrendingUp className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm">تضمین مناسب‌ترین قیمت</div>
-                  <div className="text-xs text-slate-500 dark:text-[#8E9299]">همگام با بازار و قیمت ترب</div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] p-4 rounded-2xl flex items-center gap-3.5 shadow-xs transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold shrink-0">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm">تنوع ۵۰۰۰+ قلم کالا</div>
-                  <div className="text-xs text-slate-500 dark:text-[#8E9299]">برترین برندهای داخلی و وارداتی</div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] p-4 rounded-2xl flex items-center gap-3.5 shadow-xs transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900 dark:text-[#F3F4F6] text-sm">ارسال سریع کشوری</div>
-                  <div className="text-xs text-slate-500 dark:text-[#8E9299]">پیک روزانه و پست پیشتاز</div>
-                </div>
-              </div>
+              ))}
             </div>
+
+            {/* 2. ویترین دسته‌بندی با عکس بزرگ */}
+            <CategoryShowcase categories={categories} onSelect={setSelectedCategory} />
           </>
         ) : null}
 
         {/* Storefront Section Header & Filter Tabs / Catalog */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-slate-200 dark:border-[#222225] transition-colors" id="catalog">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-4 border-t border-[var(--line-soft)] dark:border-[#222225] transition-colors" id="catalog">
           <div>
-            <h2 className="text-lg sm:text-2xl font-black text-slate-900 dark:text-[#F3F4F6]">
+            <h2 className="text-2xl sm:text-3xl font-black text-[var(--ink-charcoal)] dark:text-[#F3F4F6] tracking-tight">
               {selectedCategory
                 ? `محصولات دسته: ${categories.find((c) => c.id === selectedCategory)?.name}`
                 : 'کاتالوگ و ویترین کامل محصولات'}
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-[#8E9299] mt-0.5">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-[#8E9299] mt-1">
               نمایش {toPersianDigits(filteredProducts.length)} کالا با قیمت مصوب و موجودی انبار لحظه‌ای
             </p>
           </div>
 
           {/* Filter Pills */}
-          <div className="flex items-center gap-1.5 bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] p-1 rounded-xl text-xs font-semibold overflow-x-auto max-w-full no-scrollbar shadow-xs">
+          <div className="flex items-center gap-1.5 bg-white dark:bg-[#111113] border border-[var(--line-soft)] dark:border-[#222225] p-1 rounded-xl text-xs font-semibold overflow-x-auto max-w-full no-scrollbar shadow-xs">
             <button
               onClick={() => setFilterTab('all')}
               className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer shrink-0 ${
                 filterTab === 'all'
-                  ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/40 text-amber-900 dark:text-[#C9A227] font-bold shadow-xs'
+                  ? 'bg-[var(--teal)] text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-[#8E9299] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
               }`}
             >
@@ -284,18 +304,18 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
               onClick={() => setFilterTab('featured')}
               className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
                 filterTab === 'featured'
-                  ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/40 text-amber-900 dark:text-[#C9A227] font-bold shadow-xs'
+                  ? 'bg-[var(--coral)] text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-[#8E9299] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-[#C9A227]" />
+              <BookOpen className="w-3.5 h-3.5" />
               <span>تولیدات خطی‌نو</span>
             </button>
             <button
               onClick={() => setFilterTab('special')}
               className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer shrink-0 ${
                 filterTab === 'special'
-                  ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/40 text-amber-900 dark:text-[#C9A227] font-bold shadow-xs'
+                  ? 'bg-[var(--sunshine)] text-[var(--ink-charcoal)] font-bold shadow-xs'
                   : 'text-slate-600 dark:text-[#8E9299] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
               }`}
             >
@@ -305,7 +325,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
               onClick={() => setFilterTab('in_stock')}
               className={`px-3.5 py-2 rounded-lg transition-all cursor-pointer shrink-0 ${
                 filterTab === 'in_stock'
-                  ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/40 text-amber-900 dark:text-[#C9A227] font-bold shadow-xs'
+                  ? 'bg-[var(--teal)] text-white font-bold shadow-xs'
                   : 'text-slate-600 dark:text-[#8E9299] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
               }`}
             >
@@ -316,13 +336,13 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
 
         {/* Product Grid / List - Fluid Widescreen */}
         {isLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-4 sm:gap-6 py-12">
+          <div className={`grid ${gridColsClass} gap-4 sm:gap-6 py-12`}>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
-              <div key={i} className="bg-slate-200 dark:bg-[#161619] rounded-2xl h-80 animate-pulse border border-slate-200 dark:border-[#222225]" />
+              <div key={i} className="bg-slate-200 dark:bg-[#161619] rounded-2xl h-80 animate-pulse border border-[var(--line-soft)] dark:border-[#222225]" />
             ))}
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] rounded-3xl p-12 text-center max-w-md mx-auto my-8 shadow-xs">
+          <div className="bg-white dark:bg-[#111113] border border-[var(--line-soft)] dark:border-[#222225] rounded-3xl p-12 text-center max-w-md mx-auto my-8 shadow-xs">
             <Package className="w-12 h-12 text-slate-400 dark:text-[#8E9299] mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-900 dark:text-[#F3F4F6]">کالایی با این مشخصات یافت نشد</h3>
             <p className="text-xs text-slate-500 dark:text-[#8E9299] mt-1 mb-4">
@@ -334,28 +354,76 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                 setSearchQuery('');
                 setFilterTab('all');
               }}
-              className="bg-amber-50 dark:bg-[#1C1C20] hover:bg-amber-100 dark:hover:bg-[#222228] text-amber-800 dark:text-[#C9A227] text-xs font-bold px-4 py-2 rounded-xl border border-[#C9A227]/30 transition-colors cursor-pointer"
+              className="bg-[var(--teal)]/10 hover:bg-[var(--teal)]/20 text-[var(--teal)] text-xs font-bold px-4 py-2 rounded-xl border border-[var(--teal)]/30 transition-colors cursor-pointer"
             >
               مشاهده تمامی محصولات
             </button>
           </div>
         ) : (
-          <div className={
-            websiteSettings?.catalogLayoutMode === 'list'
-              ? "flex flex-col gap-3"
-              : websiteSettings?.catalogLayoutMode === 'compact'
-              ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 2xl:grid-cols-8 gap-3"
-              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 sm:gap-6"
-          }>
-            {filteredProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                websiteSettings={websiteSettings}
-                layoutMode={websiteSettings?.catalogLayoutMode || 'grid'}
-                onQuickView={(p) => setSelectedProduct(p)}
-              />
-            ))}
+          <div className="space-y-8">
+            {/* ردیف محصولات پیشنهادی با یک کارت بزرگ در صفحه اصلی */}
+            {!selectedCategory && !isFilteringOrSearching && filteredProducts.length >= 5 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--coral)]" />
+                    <h3 className="text-lg sm:text-xl font-black text-[var(--ink-charcoal)] dark:text-[#F3F4F6]">
+                      محصولات برگزیده و پیشنهادی
+                    </h3>
+                  </div>
+                  <span className="text-xs font-bold text-[var(--teal)]">ویژهٔ خطی‌نو</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 sm:gap-5">
+                  <div className="sm:col-span-2 sm:row-span-2">
+                    <ProductCard
+                      product={filteredProducts[0]}
+                      websiteSettings={websiteSettings}
+                      layoutMode="grid"
+                      onQuickView={(p) => setSelectedProduct(p)}
+                      large
+                    />
+                  </div>
+                  {filteredProducts.slice(1, 5).map((p) => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      websiteSettings={websiteSettings}
+                      layoutMode="grid"
+                      onQuickView={(p) => setSelectedProduct(p)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* گرید استاندارد محصولات کاتالوگ */}
+            {(() => {
+              const displayProducts = (!selectedCategory && !isFilteringOrSearching && filteredProducts.length >= 5)
+                ? filteredProducts.slice(5)
+                : filteredProducts;
+
+              if (displayProducts.length === 0) return null;
+
+              return (
+                <div className={
+                  websiteSettings?.catalogLayoutMode === 'list'
+                    ? "flex flex-col gap-3"
+                    : websiteSettings?.catalogLayoutMode === 'compact'
+                    ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 2xl:grid-cols-8 gap-3"
+                    : `grid ${gridColsClass} gap-4 sm:gap-6`
+                }>
+                  {displayProducts.map((product) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      websiteSettings={websiteSettings}
+                      layoutMode={websiteSettings?.catalogLayoutMode || 'grid'}
+                      onQuickView={(p) => setSelectedProduct(p)}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>
@@ -424,7 +492,7 @@ function AdminPortal() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#0A0A0B] flex items-center justify-center text-amber-600 dark:text-[#C9A227] font-bold text-sm">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#0A0A0B] flex items-center justify-center text-[var(--coral)] font-bold text-sm">
         در حال اعتبارسنجی نشست کاربری...
       </div>
     );

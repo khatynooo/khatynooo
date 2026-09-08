@@ -79,6 +79,8 @@ function formatProduct(row: any): Product {
     onlyAccounting: isOnlyAcc,
     isSpecialOffer: Boolean(row.is_special_offer),
     featured: Boolean(row.is_featured),
+    lastMarketPrice: row.last_market_price ? Number(row.last_market_price) : undefined,
+    lastMarketCheckedAt: row.last_market_checked_at ? new Date(row.last_market_checked_at).toISOString() : undefined,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
   };
@@ -447,18 +449,19 @@ export const db = {
       id: c.id,
       name: c.name,
       icon: c.icon || 'Tag',
+      image: c.image || undefined,
       sortOrder: c.sort_order || 0,
       subcategories: subs.filter((s: any) => s.category_id === c.id).map((s: any) => ({ id: s.id, name: s.name, description: s.description })),
     }));
   },
 
-  async createCategory(data: { name: string; icon?: string; sortOrder?: number; subcategories?: string[] }): Promise<Category> {
+  async createCategory(data: { name: string; icon?: string; image?: string; sortOrder?: number; subcategories?: string[] }): Promise<Category> {
     const id = `cat_${Date.now()}`;
     await query(
-      `INSERT INTO categories (id, name, icon, sort_order, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO categories (id, name, icon, image, sort_order, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (id) DO NOTHING`,
-      [id, data.name, data.icon || 'Tag', data.sortOrder || 0]
+      [id, data.name, data.icon || 'Tag', data.image || null, data.sortOrder || 0]
     );
 
     if (data.subcategories && Array.isArray(data.subcategories)) {
@@ -473,16 +476,17 @@ export const db = {
       id,
       name: data.name,
       icon: data.icon || 'Tag',
+      image: data.image,
       subcategories: [],
     };
   },
 
-  async updateCategory(id: string, data: { name?: string; icon?: string; sortOrder?: number }): Promise<void> {
+  async updateCategory(id: string, data: { name?: string; icon?: string; image?: string; sortOrder?: number }): Promise<void> {
     await query(
       `UPDATE categories 
-       SET name = COALESCE($1, name), icon = COALESCE($2, icon), sort_order = COALESCE($3, sort_order)
-       WHERE id = $4`,
-      [data.name, data.icon, data.sortOrder, id]
+       SET name = COALESCE($1, name), icon = COALESCE($2, icon), image = COALESCE($3, image), sort_order = COALESCE($4, sort_order)
+       WHERE id = $5`,
+      [data.name, data.icon, data.image, data.sortOrder, id]
     );
   },
 
@@ -1370,37 +1374,114 @@ export const db = {
 
   async getPurchaseInvoices(): Promise<PurchaseInvoice[]> {
     const res = await query('SELECT * FROM purchase_invoices ORDER BY created_at DESC');
-    return res.rows.map((r: any) => ({
-      id: r.id,
-      invoiceNumber: r.invoice_number,
-      supplierId: r.supplier_id,
-      supplierName: r.supplier_name,
-      items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
-      totalAmount: Number(r.total_amount),
-      paidAmount: Number(r.paid_amount || 0),
-      remainingAmount: Number(r.remaining_amount || 0),
-      paymentMethod: r.payment_method,
-      chequeInfo: typeof r.cheque_info === 'string' ? JSON.parse(r.cheque_info) : r.cheque_info,
-      warehouseId: r.warehouse_id || 'wh_central',
-      notes: r.notes,
-      createdAt: r.created_at,
-    }));
+    return res.rows.map((r: any) => {
+      let parsedCheques: any[] = [];
+      try {
+        parsedCheques = typeof r.cheques === 'string' ? JSON.parse(r.cheques) : (r.cheques || []);
+      } catch (e) {
+        parsedCheques = [];
+      }
+      let parsedChequeInfo: any = undefined;
+      try {
+        parsedChequeInfo = typeof r.cheque_info === 'string' ? JSON.parse(r.cheque_info) : r.cheque_info;
+      } catch (e) {
+        parsedChequeInfo = undefined;
+      }
+      const chequesList = Array.isArray(parsedCheques) && parsedCheques.length > 0
+        ? parsedCheques
+        : (parsedChequeInfo ? [parsedChequeInfo] : []);
+
+      let parsedReceiptUrls: string[] = [];
+      try {
+        parsedReceiptUrls = typeof r.receipt_image_urls === 'string' ? JSON.parse(r.receipt_image_urls) : (r.receipt_image_urls || []);
+      } catch (e) {
+        parsedReceiptUrls = [];
+      }
+      const receiptUrlsList = Array.isArray(parsedReceiptUrls) && parsedReceiptUrls.length > 0
+        ? parsedReceiptUrls
+        : (r.receipt_image_url ? [r.receipt_image_url] : []);
+
+      return {
+        id: r.id,
+        invoiceNumber: r.invoice_number,
+        invoiceDate: r.invoice_date || (r.created_at ? new Date(r.created_at).toLocaleDateString('fa-IR') : ''),
+        supplierId: r.supplier_id,
+        supplierName: r.supplier_name,
+        items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
+        totalAmount: Number(r.total_amount),
+        discount: Number(r.discount || 0),
+        paidAmount: Number(r.paid_amount || 0),
+        cashAmount: Number(r.cash_amount || 0),
+        chequeAmount: Number(r.cheque_amount || 0),
+        cheques: chequesList,
+        chequeInfo: chequesList[0] || parsedChequeInfo || undefined,
+        receiptImageUrls: receiptUrlsList,
+        receiptImageUrl: r.receipt_image_url || receiptUrlsList[0] || undefined,
+        remainingAmount: Number(r.remaining_amount || 0),
+        paymentMethod: r.payment_method,
+        warehouseId: r.warehouse_id || 'wh_central',
+        notes: r.notes,
+        createdAt: r.created_at,
+      };
+    });
+  },
+
+  async updateProductMarketPrice(id: string, marketPrice: number, checkedAt?: string): Promise<void> {
+    const at = checkedAt || new Date().toISOString();
+    await query(
+      `UPDATE products SET last_market_price = $1, last_market_checked_at = $2, updated_at = NOW() WHERE id = $3`,
+      [Math.round(marketPrice), at, id]
+    );
   },
 
   async createPurchaseInvoice(invoice: {
     supplierId: string;
     supplierName: string;
-    items: Array<{ productId: string; quantity: number; buyPrice: number }>;
+    items: Array<{ productId: string; quantity: number; buyPrice: number; productName?: string }>;
     totalAmount: number;
-    paidAmount: number;
+    paidAmount?: number;
+    cashAmount?: number;
+    chequeAmount?: number;
+    cheques?: any[];
+    receiptImageUrls?: string[];
     paymentMethod: string;
     notes?: string;
     warehouseId?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    discount?: number;
+    receiptImageUrl?: string;
   }): Promise<PurchaseInvoice> {
     const id = `pur_${Date.now()}`;
-    const invoiceNumber = `PUR-${Date.now().toString().slice(-6)}`;
-    const remainingAmount = Math.max(0, invoice.totalAmount - invoice.paidAmount);
+    const invoiceNumber = invoice.invoiceNumber?.trim() || `PUR-${Date.now().toString().slice(-6)}`;
+    const invoiceDate = invoice.invoiceDate || new Date().toLocaleDateString('fa-IR');
+    const discount = Number(invoice.discount || 0);
+    const finalPayable = Math.max(0, invoice.totalAmount - discount);
+
+    const cheques = Array.isArray(invoice.cheques) ? invoice.cheques : [];
+    const calculatedChequeAmount = Number(invoice.chequeAmount) || cheques.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const cashAmount = Number(invoice.cashAmount || 0);
+
+    let paidAmount = 0;
+    if (invoice.paymentMethod === 'cash') {
+      paidAmount = cashAmount || Number(invoice.paidAmount || 0);
+    } else if (invoice.paymentMethod === 'cheque') {
+      paidAmount = calculatedChequeAmount;
+    } else if (invoice.paymentMethod === 'mixed') {
+      paidAmount = cashAmount + calculatedChequeAmount;
+    } else if (invoice.paymentMethod === 'credit') {
+      paidAmount = 0;
+    } else {
+      paidAmount = Number(invoice.paidAmount || 0);
+    }
+
+    const remainingAmount = Math.max(0, finalPayable - paidAmount);
     const targetWhId = invoice.warehouseId || 'wh_central';
+
+    const receiptUrls = Array.isArray(invoice.receiptImageUrls) && invoice.receiptImageUrls.length > 0
+      ? invoice.receiptImageUrls
+      : (invoice.receiptImageUrl ? [invoice.receiptImageUrl] : []);
+    const primaryReceipt = receiptUrls[0] || invoice.receiptImageUrl || null;
 
     return await withTransaction(async (client) => {
       // ۱. افزایش موجودی در انبار هدف و به‌روزرسانی قیمت خرید محصولات
@@ -1439,27 +1520,42 @@ export const db = {
         }
       }
 
-      // ۳. ثبت فاکتور خرید با شناسه انبار
+      // ۳. ثبت فاکتور خرید با شناسه انبار، تاریخ، تخفیف، تسویه ترکیبی و آرایه چک‌ها و تصاویر
       await client.query(
-        `INSERT INTO purchase_invoices (id, invoice_number, supplier_id, supplier_name, items, total_amount, paid_amount, remaining_amount, payment_method, notes, warehouse_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+        `INSERT INTO purchase_invoices (
+          id, invoice_number, invoice_date, supplier_id, supplier_name, items,
+          total_amount, discount, paid_amount, remaining_amount, payment_method,
+          notes, warehouse_id, receipt_image_url, cash_amount, cheque_amount,
+          cheques, receipt_image_urls, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())`,
         [
           id,
           invoiceNumber,
+          invoiceDate,
           invoice.supplierId,
           invoice.supplierName,
           JSON.stringify(invoice.items),
           invoice.totalAmount,
-          invoice.paidAmount,
+          discount,
+          paidAmount,
           remainingAmount,
           invoice.paymentMethod,
           invoice.notes || null,
           targetWhId,
+          primaryReceipt,
+          cashAmount,
+          calculatedChequeAmount,
+          JSON.stringify(cheques),
+          JSON.stringify(receiptUrls),
         ]
       );
 
-      // ۴. ثبت خروج نقدینگی در دفتر معین خزانه
-      if (invoice.paidAmount > 0) {
+      // ۴. ثبت خروج نقدینگی در دفتر معین خزانه برای بخش نقدی
+      const actualCashSpent = (invoice.paymentMethod === 'cash' || invoice.paymentMethod === 'mixed')
+        ? (cashAmount > 0 ? cashAmount : paidAmount)
+        : 0;
+
+      if (actualCashSpent > 0) {
         const idTrx = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         await client.query(
           `INSERT INTO treasury_transactions (
@@ -1471,10 +1567,10 @@ export const db = {
             'purchase_expense',
             'purchases',
             id,
-            -invoice.paidAmount, // مقدار منفی برای خروج وجه
-            invoice.paymentMethod || 'cash',
-            invoice.paymentMethod === 'pos_pasargad' ? 'کارتخوان پاسارگاد' : 'صندوق نقدی فروشگاه',
-            `پرداخت بابت فاکتور خرید ${invoiceNumber} به تامین‌کننده «${invoice.supplierName}»`,
+            -actualCashSpent, // مقدار منفی برای خروج وجه
+            'cash',
+            'صندوق نقدی فروشگاه',
+            `پرداخت نقدی بابت فاکتور خرید ${invoiceNumber} به تامین‌کننده «${invoice.supplierName}»`,
           ]
         );
       }
@@ -1482,11 +1578,19 @@ export const db = {
       return {
         id,
         invoiceNumber,
+        invoiceDate,
         supplierId: invoice.supplierId,
         supplierName: invoice.supplierName,
         items: invoice.items as any,
         totalAmount: invoice.totalAmount,
-        paidAmount: invoice.paidAmount,
+        discount,
+        paidAmount,
+        cashAmount,
+        chequeAmount: calculatedChequeAmount,
+        cheques,
+        chequeInfo: cheques[0] || undefined,
+        receiptImageUrls: receiptUrls,
+        receiptImageUrl: primaryReceipt || undefined,
         remainingAmount,
         paymentMethod: invoice.paymentMethod as any,
         warehouseId: targetWhId,
@@ -1693,6 +1797,9 @@ export const db = {
       entityName: r.entity_name,
       status: r.status,
       notes: r.notes,
+      shebaNumber: r.sheba_number || undefined,
+      invoiceId: r.invoice_id || undefined,
+      invoiceNumber: r.invoice_number || undefined,
       createdAt: r.created_at,
     }));
   },
@@ -1702,10 +1809,12 @@ export const db = {
     await query(
       `INSERT INTO cheques (
         id, cheque_number, sayad_id, type, bank_name, branch_code, amount, 
-        due_date, issue_date, drawer_name, contact_number, entity_id, entity_name, status, notes, created_at
+        due_date, issue_date, drawer_name, contact_number, entity_id, entity_name, status, notes,
+        sheba_number, invoice_id, invoice_number, created_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, 
-        $8, $9, $10, $11, $12, $13, $14, $15, NOW()
+        $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, NOW()
       )`,
       [
         id,
@@ -1717,12 +1826,15 @@ export const db = {
         c.amount || 0,
         c.dueDate || new Date().toISOString().split('T')[0],
         c.issueDate || new Date().toISOString().split('T')[0],
-        c.drawerName || 'صاحب چک',
+        c.drawerName || c.issuerName || 'صاحب چک',
         c.contactNumber || '',
         c.entityId || null,
         c.entityName || '',
         c.status || 'pending',
         c.notes || null,
+        c.shebaNumber || null,
+        c.invoiceId || null,
+        c.invoiceNumber || null,
       ]
     );
 
@@ -1736,12 +1848,15 @@ export const db = {
       amount: c.amount || 0,
       dueDate: c.dueDate || new Date().toISOString().split('T')[0],
       issueDate: c.issueDate || new Date().toISOString().split('T')[0],
-      drawerName: c.drawerName || 'صاحب چک',
+      drawerName: c.drawerName || c.issuerName || 'صاحب چک',
       contactNumber: c.contactNumber || '',
       entityId: c.entityId,
       entityName: c.entityName,
       status: (c.status as any) || 'pending',
       notes: c.notes,
+      shebaNumber: c.shebaNumber,
+      invoiceId: c.invoiceId,
+      invoiceNumber: c.invoiceNumber,
     };
   },
 

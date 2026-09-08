@@ -75,6 +75,8 @@ CREATE TABLE IF NOT EXISTS products (
     only_accounting BOOLEAN DEFAULT TRUE,
     is_special_offer BOOLEAN DEFAULT FALSE,
     is_featured BOOLEAN DEFAULT FALSE,
+    last_market_price BIGINT,
+    last_market_checked_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -179,14 +181,17 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
 CREATE TABLE IF NOT EXISTS purchase_invoices (
     id VARCHAR(64) PRIMARY KEY,
     invoice_number VARCHAR(50) UNIQUE NOT NULL,
+    invoice_date VARCHAR(50),
     supplier_id VARCHAR(64) NOT NULL REFERENCES suppliers(id),
     supplier_name VARCHAR(150) NOT NULL,
     items JSONB NOT NULL,
     total_amount BIGINT NOT NULL,
+    discount BIGINT NOT NULL DEFAULT 0,
     paid_amount BIGINT NOT NULL DEFAULT 0,
     remaining_amount BIGINT NOT NULL DEFAULT 0,
     payment_method VARCHAR(30) NOT NULL,
     cheque_info JSONB,
+    receipt_image_url TEXT,
     notes TEXT,
     warehouse_id VARCHAR(64) DEFAULT 'wh_central',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

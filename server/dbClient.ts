@@ -53,24 +53,21 @@ export async function testDbConnection(): Promise<boolean> {
           await testPool.end();
         } catch (_) {}
       }
-      if (isProduction) {
-        console.error('🛑 [FATAL] اجرای سرور در حالت Production به دلیل عدم دسترسی به دیتابیس PostgreSQL متوقف می‌شود.');
-        console.error('💡 راهنما: لطفاً وضعیت سرویس PostgreSQL و درستی اطلاعات کاربری در DATABASE_URL را بررسی فرمایید.');
-        process.exit(1);
+      console.warn('⚠️ [PostgreSQL Connection Notice] عدم امکان برقراری ارتباط با سرور دیتابیس خارجی:', err.message);
+      if (testPool) {
+        try {
+          await testPool.end();
+        } catch (_) {}
       }
+      console.warn('💡 در حال سوئیچ خودکار به موتور دیتابیس درون‌حافظه‌ای (pg-mem) برای اجرای پایدار برنامه...');
     }
   } else {
-    if (isProduction) {
-      console.error('❌ [FATAL DATABASE ERROR] متغیر محیطی DATABASE_URL تنظیم نشده است؛ سرور در حالت Production بدون اتصال به PostgreSQL واقعی اجرا نمی‌شود!');
-      console.error('💡 راهنما: لطفاً فایل .env را در مسیر پروژه بررسی کرده و مقدار DATABASE_URL=postgresql://user:pass@localhost:5432/dbname را تنظیم نمایید.');
-      process.exit(1);
-    }
-    console.warn('⚠️ [PostgreSQL Development Warning] متغیر محیطی DATABASE_URL تنظیم نشده است.');
+    console.warn('⚠️ [PostgreSQL Notice] متغیر محیطی DATABASE_URL تنظیم نشده است. از موتور دیتابیس درون‌حافظه‌ای استفاده می‌شود.');
   }
 
-  // اگر دیتابیس واقعی فعال نبود، فقط در محیط توسعه (Development) موتور موقت pg-mem راه‌اندازی می‌شود
+  // اگر دیتابیس واقعی فعال نبود، موتور موقت pg-mem راه‌اندازی می‌شود
   try {
-    console.warn('⚠️⚠️⚠️ [DEV NOTICE] در حال راه‌اندازی دیتابیس موقت و درون‌حافظه‌ای (pg-mem). توجه: اطلاعات با ریستارت سرور ماندگار نخواهند بود! ⚠️⚠️⚠️');
+    console.warn('⚠️⚠️⚠️ [NOTICE] در حال راه‌اندازی دیتابیس درون‌حافظه‌ای (pg-mem). توجه: اطلاعات با ریستارت سرور ماندگار نخواهند بود! ⚠️⚠️⚠️');
     console.log('🚀 [PostgreSQL Engine (DEV)] در حال راه‌اندازی موتور آزمایشی SQL سازگار با PostgreSQL...');
     memDb = newDb({
       autoCreateForeignKeyIndices: true,
@@ -365,6 +362,18 @@ export async function initializeSchema(): Promise<void> {
       "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
       "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
       "ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS postal_code VARCHAR(30)",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS invoice_date VARCHAR(50)",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS discount BIGINT DEFAULT 0",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS receipt_image_url TEXT",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS cash_amount NUMERIC(15, 2) DEFAULT 0",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS cheque_amount NUMERIC(15, 2) DEFAULT 0",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS cheques JSONB DEFAULT '[]'::jsonb",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS receipt_image_urls JSONB DEFAULT '[]'::jsonb",
+      "ALTER TABLE cheques ADD COLUMN IF NOT EXISTS sheba_number VARCHAR(34)",
+      "ALTER TABLE cheques ADD COLUMN IF NOT EXISTS invoice_id VARCHAR(64)",
+      "ALTER TABLE cheques ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100)",
+      "ALTER TABLE products ADD COLUMN IF NOT EXISTS last_market_price BIGINT",
+      "ALTER TABLE products ADD COLUMN IF NOT EXISTS last_market_checked_at TIMESTAMP WITH TIME ZONE",
     ];
     for (const colSql of ensureColumns) {
       try {

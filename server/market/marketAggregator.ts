@@ -14,6 +14,7 @@ import { findBestStationeryMatch, normalizePersianText } from './textMatcher';
 import { resolveStationerySafeImage, resolveStationerySafeImageWithMeta, resolveStationeryMultiImages } from './imageResolver';
 import { getProductPriceHistory, recordPriceSnapshot } from './priceHistoryStore';
 import { categoryPriceListCache, torobSearchCache, inventoryAuditCache, multiSourceCompareCache } from './cache';
+import { db } from '../db';
 
 /**
  * جستجو و تحلیل زنده هوش بازار از چندین منبع (ترب، دیجی‌کالا، تایم تحریر، کاتالوگ بنچمارک)
@@ -858,6 +859,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
     currentPrice: number;
     torobFloorPrice: number;
     digikalaPrice: number;
+    tahrir20Price: number;
     marketAvgPrice: number;
     status: 'OVERPRICED' | 'UNDERPRICED' | 'COMPETITIVE' | 'UNTRACKED';
     statusLabel: string;
@@ -913,6 +915,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
 
         let floor = 0;
         let digi = 0;
+        let tahrirPrice = 0;
         let avg = 0;
         let isLive = false;
         let matchedBenchmarkTitle: string | undefined;
@@ -928,20 +931,25 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
           matchScore = benchmarkMatch.score;
         }
 
-        // ب) در صورت نیاز به استعلام زنده برای اقلامی که بنچمارک ندارند یا استعلام لحظه‌ای
+        // ب) در صورت نیاز به استعلام زنده برای اقلامی که بنچمارک ندارند یا استعلام لحظه‌ای از ترب، دیجی‌کالا و تحریر۲۰
         if (!floor) {
           try {
-            const [liveTorobResults, liveDigiResults] = await Promise.all([
+            const [liveTorobResults, liveDigiResults, liveTahrirResults] = await Promise.all([
               torobApiClient.searchProducts(prod.name, 'popularity').catch(() => []),
               digikalaApiClient.searchProducts(prod.name, 3).catch(() => []),
+              tahrir20ApiClient.searchProducts(prod.name, 3).catch(() => []),
             ]);
 
             const topTrb = liveTorobResults?.find((t) => t.price && t.price > 1000);
             const topDigi = liveDigiResults?.find(
               (d) => (d.default_variant?.price?.selling_price || 0) > 10000
             );
+            const topTahrir = liveTahrirResults?.find((t) => t.price && t.price > 1000);
+            if (topTahrir) {
+              tahrirPrice = topTahrir.price;
+            }
 
-            if (topTrb || topDigi) {
+            if (topTrb || topDigi || topTahrir) {
               isLive = true;
               if (topTrb && topTrb.price) {
                 floor = topTrb.price;
@@ -949,6 +957,9 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
               } else if (topDigi) {
                 floor = Math.round((topDigi.default_variant?.price?.selling_price || 0) / 10);
                 matchedBenchmarkTitle = topDigi.title_fa;
+              } else if (topTahrir) {
+                floor = topTahrir.price;
+                matchedBenchmarkTitle = topTahrir.title;
               }
 
               if (topDigi && topDigi.default_variant?.price?.selling_price) {
@@ -957,7 +968,9 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
                 digi = Math.round(floor * 1.08);
               }
 
-              avg = Math.round((floor + digi) / 2);
+              const pricePool = [floor, digi];
+              if (tahrirPrice > 0) pricePool.push(tahrirPrice);
+              avg = Math.round(pricePool.reduce((a, b) => a + b, 0) / pricePool.length);
               matchScore = 0.95;
             }
           } catch (e) {
@@ -977,7 +990,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
           }
         }
 
-        // ج) اگر هیچ تطبیق زنده یا بنچمارکی یافت نشد: وضعیت UNTRACKED
+        // د) اگر هیچ تطبیق زنده یا بنچمارکی یافت نشد: وضعیت UNTRACKED
         if (floor <= 0) {
           return {
             productId: prod.id,
@@ -988,6 +1001,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
             currentPrice,
             torobFloorPrice: 0,
             digikalaPrice: 0,
+            tahrir20Price: 0,
             marketAvgPrice: 0,
             status: 'UNTRACKED' as const,
             statusLabel: 'استعلام‌نشده در بازار (کالای اختصاصی / نیاز به استعلام مستقیم)',
@@ -1002,14 +1016,24 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
           };
         }
 
-        // د) محاسبات قیمت پیشنهادی و وضعیت رقابتی
+        // ه) ثبت اسنپ‌شات و به‌روزرسانی قیمت کف بازار در دیتابیس کالا
+        try {
+          recordPriceSnapshot(prod.name, floor, avg, digi, currentPrice);
+          if (prod.id) {
+            db.updateProductMarketPrice(prod.id, floor).catch(() => {});
+          }
+        } catch (snapErr) {
+          // ignore error
+        }
+
+        // و) محاسبات قیمت پیشنهادی و وضعیت رقابتی
         const suggestedShop2 = Math.max(Math.round(floor * 0.98), Math.round(buyPrice * 1.12));
         const suggestedShop1 = Math.round(Math.max(floor * 1.08, buyPrice * 1.35));
         const suggestedShop3 = Math.round(Math.max(floor * 0.90, buyPrice * 1.08));
 
         let status: 'OVERPRICED' | 'UNDERPRICED' | 'COMPETITIVE' | 'UNTRACKED' = 'COMPETITIVE';
         let statusLabel = isLive
-          ? 'کاملاً رقابتی بر مبنای استعلام زنده ترب (رتبه ۱)'
+          ? 'کاملاً رقابتی بر مبنای استعلام زنده بازار (ترب/تحریر۲۰)'
           : 'مچ‌شده با کاتالوگ مرجع تحریر (غیر زنده)';
         const discrepancy = currentPrice - floor;
         let potentialGain = 0;
@@ -1017,13 +1041,13 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
         if (currentPrice > floor * 1.03) {
           status = 'OVERPRICED';
           statusLabel = isLive
-            ? 'گران‌تر از کف قیمت زنده ترب (خطر از دست رفتن فروش)'
+            ? 'گران‌تر از کف قیمت زنده بازار (خطر از دست رفتن فروش)'
             : 'گران‌تر از کاتالوگ مرجع تحریر (غیر زنده)';
           potentialGain = 0;
         } else if (currentPrice < floor * 0.92 && currentPrice < suggestedShop2) {
           status = 'UNDERPRICED';
           statusLabel = isLive
-            ? 'ارزان‌تر از کف قیمت زنده ترب (هدررفت حاشیه سود)'
+            ? 'ارزان‌تر از کف قیمت زنده بازار (هدررفت حاشیه سود)'
             : 'ارزان‌تر از کاتالوگ مرجع تحریر (غیر زنده)';
           potentialGain = (suggestedShop2 - currentPrice) * (prod.stock || 1);
         }
@@ -1037,6 +1061,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
           currentPrice,
           torobFloorPrice: floor,
           digikalaPrice: digi,
+          tahrir20Price: tahrirPrice,
           marketAvgPrice: avg,
           status,
           statusLabel,
@@ -1049,7 +1074,7 @@ export async function auditAllInventoryAgainstMarket(inventoryProducts: any[]): 
           matchScore,
           isLiveQueried: isLive,
           isEstimated: !isLive,
-          verifiedMarketPrice: isLive, // تنها در صورت استعلام زنده واقعی verifiedMarketPrice برابر با true می‌شود
+          verifiedMarketPrice: isLive,
         };
       })
     );

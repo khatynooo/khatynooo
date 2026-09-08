@@ -181,7 +181,7 @@ export const CustomerAuthModal: React.FC = () => {
         className="relative w-full max-w-md bg-white dark:bg-[#111113] rounded-3xl border border-slate-200 dark:border-[#222225] shadow-2xl overflow-hidden z-10 text-slate-800 dark:text-[#E0E0E0]"
       >
         {/* Header Accent Bar */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#C9A227] via-amber-400 to-[#8C6D14]" />
+        <div className="h-1.5 w-full bg-[var(--coral)]" />
 
         {/* Close Button */}
         <button
@@ -195,7 +195,7 @@ export const CustomerAuthModal: React.FC = () => {
         <div className="p-6 sm:p-8">
           {/* Brand Icon & Heading */}
           <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-[#1C1C20] border border-amber-200 dark:border-[#C9A227]/30 text-[#C9A227] flex items-center justify-center mx-auto mb-3 shadow-md">
+            <div className="w-14 h-14 rounded-2xl bg-[var(--coral)]/10 border border-[var(--coral)]/30 text-[var(--coral)] flex items-center justify-center mx-auto mb-3 shadow-md">
               <KeyRound className="w-7 h-7" />
             </div>
             <h3 className="text-xl font-black text-slate-900 dark:text-[#F3F4F6]">
@@ -236,7 +236,7 @@ export const CustomerAuthModal: React.FC = () => {
                       setErrorMsg('');
                     }}
                     placeholder="09123456789"
-                    className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-4 py-3 text-slate-900 dark:text-[#F3F4F6] text-sm font-mono text-center tracking-widest outline-none transition-all"
+                    className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] focus:border-[var(--teal)] rounded-xl px-4 py-3 text-slate-900 dark:text-[#F3F4F6] text-sm font-mono text-center tracking-widest outline-none transition-all"
                     autoFocus
                   />
                   <Phone className="w-4 h-4 text-slate-400 dark:text-[#8E9299] absolute right-3.5 top-3.5" />
@@ -247,14 +247,14 @@ export const CustomerAuthModal: React.FC = () => {
                 id="btn-send-otp-submit"
                 type="submit"
                 disabled={isLoading || mobile.length < 11}
-                className="w-full bg-[#C9A227] hover:bg-[#B38E1E] active:scale-[0.99] text-slate-950 font-black py-3 px-4 rounded-xl text-sm transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full bg-[var(--coral)] hover:brightness-110 active:scale-[0.99] text-white font-black py-3 px-4 rounded-xl text-sm transition-all shadow-md shadow-[var(--coral)]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
                 ) : (
                   <>
                     <span>دریافت کد تایید پیامکی</span>
-                    <ArrowRight className="w-4 h-4 text-black rotate-180" />
+                    <ArrowRight className="w-4 h-4 text-white rotate-180" />
                   </>
                 )}
               </button>
@@ -262,7 +262,7 @@ export const CustomerAuthModal: React.FC = () => {
               {/* Quick Demo Options */}
               <div className="pt-3 border-t border-slate-100 dark:border-[#1E1E22] text-center">
                 <div className="text-[11px] text-slate-400 dark:text-[#8E9299] mb-2 flex items-center justify-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[#C9A227]" />
+                  <Sparkles className="w-3 h-3 text-[var(--teal)]" />
                   <span>تست سریع با شماره‌های نمونه:</span>
                 </div>
                 <div className="flex flex-wrap justify-center gap-1.5">
@@ -271,7 +271,7 @@ export const CustomerAuthModal: React.FC = () => {
                       key={num}
                       type="button"
                       onClick={() => handleQuickFillDemo(num)}
-                      className="text-[11px] font-mono bg-slate-100 dark:bg-[#1C1C20] hover:bg-amber-50 dark:hover:bg-[#25252A] hover:text-[#C9A227] px-2.5 py-1 rounded-lg text-slate-600 dark:text-[#8E9299] transition-colors border border-slate-200 dark:border-[#2D2D33]"
+                      className="text-[11px] font-mono bg-slate-100 dark:bg-[#1C1C20] hover:bg-[var(--teal)]/10 hover:text-[var(--teal)] px-2.5 py-1 rounded-lg text-slate-600 dark:text-[#8E9299] transition-colors border border-slate-200 dark:border-[#2D2D33] cursor-pointer"
                     >
                       {toPersianDigits(num)}
                     </button>
@@ -286,12 +286,12 @@ export const CustomerAuthModal: React.FC = () => {
             <div className="space-y-5">
               {/* Simulated Code Helper (for AI preview / sandbox) */}
               {simulatedCode && (
-                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-300 text-xs text-center space-y-1">
+                <div className="p-3 rounded-xl bg-[var(--sunshine)]/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs text-center space-y-1">
                   <div className="font-bold flex items-center justify-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-[#C9A227]" />
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
                     <span>کد شبیه‌سازی شده پیامک (محیط تست):</span>
                   </div>
-                  <div className="font-mono text-base font-black text-amber-700 dark:text-[#C9A227] tracking-widest">
+                  <div className="font-mono text-base font-black text-amber-800 dark:text-amber-200 tracking-widest">
                     {simulatedCode}
                   </div>
                   <button
@@ -301,7 +301,7 @@ export const CustomerAuthModal: React.FC = () => {
                       setOtpCode(splitted);
                       handleVerifyCode(simulatedCode);
                     }}
-                    className="text-[11px] underline text-amber-800 dark:text-amber-400 hover:text-[#C9A227] cursor-pointer"
+                    className="text-[11px] underline text-amber-800 dark:text-amber-300 hover:text-amber-900 cursor-pointer"
                   >
                     درج خودکار کد تست و ورود
                   </button>
@@ -320,7 +320,7 @@ export const CustomerAuthModal: React.FC = () => {
                     value={digit}
                     onChange={(e) => handleOtpChange(idx, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                    className="w-12 h-14 bg-slate-50 dark:bg-[#161619] border-2 border-slate-200 dark:border-[#2D2D33] focus:border-[#C9A227] rounded-xl text-center text-xl font-mono font-bold text-slate-900 dark:text-[#F3F4F6] outline-none transition-all shadow-xs"
+                    className="w-12 h-14 bg-slate-50 dark:bg-[#161619] border-2 border-slate-200 dark:border-[#2D2D33] focus:border-[var(--teal)] rounded-xl text-center text-xl font-mono font-bold text-slate-900 dark:text-[#F3F4F6] outline-none transition-all shadow-xs"
                   />
                 ))}
               </div>
@@ -343,7 +343,7 @@ export const CustomerAuthModal: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleSendOtp(undefined, mobile)}
-                    className="text-[#C9A227] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                    className="text-[var(--teal)] hover:underline font-bold flex items-center gap-1 cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3" />
                     <span>ارسال مجدد کد</span>
@@ -356,13 +356,13 @@ export const CustomerAuthModal: React.FC = () => {
                 type="button"
                 onClick={() => handleVerifyCode()}
                 disabled={isLoading || otpCode.join('').length < 5}
-                className="w-full bg-[#C9A227] hover:bg-[#B38E1E] active:scale-[0.99] text-slate-950 font-black py-3 px-4 rounded-xl text-sm transition-all shadow-md shadow-[#C9A227]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full bg-[var(--coral)] hover:brightness-110 active:scale-[0.99] text-white font-black py-3 px-4 rounded-xl text-sm transition-all shadow-md shadow-[var(--coral)]/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isLoading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
                 ) : (
                   <>
-                    <CheckCircle2 className="w-4 h-4 text-black" />
+                    <CheckCircle2 className="w-4 h-4 text-white" />
                     <span>تایید کد و ورود به حساب</span>
                   </>
                 )}

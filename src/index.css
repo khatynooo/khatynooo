@@ -7,11 +7,22 @@
   --font-heading: 'Estedad', 'Vazirmatn', system-ui, sans-serif;
   --font-mono: 'Vazirmatn', 'Courier New', monospace;
   
-  /* Brand Tokens */
+  /* Brand Tokens - Legacy fallback */
   --brand-gold: #C9A227;
   --brand-gold-hover: #B38E1E;
   --brand-gold-light: #DFB738;
   --brand-gold-glow: rgba(201, 162, 39, 0.25);
+  
+  /* --- هویت جدید: استودیوی رنگ (بدون طلایی) --- */
+  --ink-charcoal: #20242E;   /* متن اصلی، تیره ولی نه سیاه مطلق */
+  --coral: #FF6B4A;          /* لهجهٔ اصلیِ اکشن — دکمه خرید، CTA اصلی */
+  --coral-hover: #F1552F;
+  --teal: #0EA5A0;           /* لهجهٔ دوم — لینک‌ها، حالت انتخاب‌شده، آیکون موفقیت */
+  --sunshine: #FFC94A;       /* لهجهٔ شاد — نشان‌های مدرسه/تخفیف کوچک */
+  --grape: #8B6BF2;          /* لهجهٔ شاد دوم — تنوع در دسته‌بندی‌ها */
+  --paper: #FCFBF8;          /* پس‌زمینهٔ روشن، سفیدِ گرم نه سفید مطلق */
+  --line-soft: #EAE7DD;      /* خطوط و مرزهای ظریف در حالت روشن */
+  --line-soft-dark: #262A33; /* خطوط و مرزهای ظریف در حالت تیره */
   
   /* Radii Scale (4px base) */
   --radius-sm: 8px;
@@ -61,7 +72,7 @@
   letter-spacing: -0.02em;
 }
 
-/* Gold Gradient Accents */
+/* Gold Gradient Accents - Legacy support */
 .bg-gold-gradient {
   background: linear-gradient(135deg, #E2BD3B 0%, #C9A227 50%, #9E7B12 100%);
 }
@@ -75,6 +86,91 @@
 .border-gold-glow {
   border-color: rgba(201, 162, 39, 0.35);
   box-shadow: 0 0 15px rgba(201, 162, 39, 0.15);
+}
+
+/* --- هویت استودیوی رنگ: کلاس‌های اختصاصی ویترین --- */
+
+/* بلابِ ارگانیک نرم برای پس‌زمینهٔ هیرو — یک لحظهٔ رنگی، نه روی کل سایت */
+.hero-blob-bg {
+  position: relative;
+  overflow: hidden;
+}
+.hero-blob-bg::before,
+.hero-blob-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.35;
+  z-index: 0;
+  pointer-events: none;
+}
+.hero-blob-bg::before {
+  width: 320px;
+  height: 320px;
+  background: var(--coral);
+  top: -100px;
+  left: -80px;
+}
+.hero-blob-bg::after {
+  width: 280px;
+  height: 280px;
+  background: var(--teal);
+  bottom: -120px;
+  right: -60px;
+}
+.dark .hero-blob-bg::before,
+.dark .hero-blob-bg::after {
+  opacity: 0.18;
+}
+
+/* بهینه‌سازی موبایل: بلاب‌های رنگی هیرو در سایز کوچک با blur و opacity کمتر */
+@media (max-width: 480px) {
+  .hero-blob-bg::before {
+    width: 180px;
+    height: 180px;
+    filter: blur(35px);
+    opacity: 0.22;
+  }
+  .hero-blob-bg::after {
+    width: 160px;
+    height: 160px;
+    filter: blur(35px);
+    opacity: 0.22;
+  }
+}
+
+/* روبان رنگی گوشهٔ کارت به‌جای بج بیضی */
+.ribbon-corner {
+  position: absolute;
+  top: 12px;
+  left: -6px;
+  padding: 3px 10px 3px 14px;
+  font-size: 10px;
+  font-weight: 900;
+  color: white;
+  border-radius: 0 6px 6px 0;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.ribbon-corner::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -5px;
+  border-style: solid;
+  border-width: 5px 6px 0 0;
+  border-color: transparent;
+  filter: brightness(0.7);
+}
+
+/* کارت‌های بخش «لوازم مدرسه و کودک» — کمی بازیگوش‌تر */
+.card-playful {
+  border-radius: 20px !important;
+  border-style: dashed !important;
+}
+.card-playful:hover {
+  transform: rotate(-0.5deg);
 }
 
 /* Custom Scrollbars for Dark Interface */

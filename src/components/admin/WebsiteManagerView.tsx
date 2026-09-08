@@ -44,6 +44,7 @@ import {
   MapPin,
   HardDrive,
   Database,
+  Type,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
@@ -68,7 +69,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
   const [trackingModalOrder, setTrackingModalOrder] = useState<OnlineOrder | null>(null);
   const [trackingCodeInput, setTrackingCodeInput] = useState('');
 
-  const [settingsSubTab, setSettingsSubTab] = useState<'appearance' | 'header' | 'branding' | 'contact' | 'backup'>('appearance');
+  const [settingsSubTab, setSettingsSubTab] = useState<'appearance' | 'layout' | 'header' | 'branding' | 'contact' | 'backup'>('appearance');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingEnamad, setIsUploadingEnamad] = useState(false);
   const [isUploadingSamandehi, setIsUploadingSamandehi] = useState(false);
@@ -853,7 +854,19 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 }`}
               >
                 <Palette className="w-3.5 h-3.5" />
-                <span>رنگ، دکمه‌ها و چیدمان</span>
+                <span>رنگ و تم دکمه‌ها</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('layout')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  settingsSubTab === 'layout'
+                    ? 'bg-[#1C1C20] text-[#C9A227] border border-[#C9A227]/40 shadow-xs'
+                    : 'text-[#8E9299] hover:text-[#E0E0E0]'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>چیدمان و تایپوگرافی</span>
               </button>
               <button
                 type="button"
@@ -1114,6 +1127,194 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                       <Plus className="w-4 h-4 text-black" />
                       <span>افزودن برچسب</span>
                     </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SUB-TAB: LAYOUT & TYPOGRAPHY */}
+          {settingsSubTab === 'layout' && (
+            <div className="space-y-6">
+              {/* Typography & Font Scaling */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <Type className="w-4 h-4" />
+                  <span>تایپوگرافی، فونت و مقیاس اندازه متن ویترین سایت</span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  فونت و مقیاس فونت را برای خریداران ویترین تنظیم کنید. توجه داشته باشید تغییر مقیاس تنها بر ویترین سایت اثر می‌گذارد و چیدمان پنل مدیریت دست‌نخورده باقی می‌ماند.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Font Family */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">قلم (فونت) سراسری فروشگاه:</label>
+                    <select
+                      value={webSettings.siteFontFamily || 'vazirmatn'}
+                      onChange={(e) => setWebSettings({ ...webSettings, siteFontFamily: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="vazirmatn">وزیرمتن (Vazirmatn - مدرن، خوانا و رسمی)</option>
+                      <option value="shabnam">شبنم (Shabnam - گرد، نرم و خوانا)</option>
+                      <option value="sahel">ساحل (Sahel - کلاسیک و متوازن)</option>
+                    </select>
+                  </div>
+
+                  {/* Font Scale */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">مقیاس اندازه متن ویترین (Font Scale):</label>
+                    <select
+                      value={webSettings.siteFontScale || 'base'}
+                      onChange={(e) => setWebSettings({ ...webSettings, siteFontScale: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="sm">فشرده و کوچک‌تر (۹۰٪ - تراکم بیشتر المان‌ها)</option>
+                      <option value="base">استاندارد خطی‌نو (۱۰۰٪ - حالت پیش‌فرض)</option>
+                      <option value="lg">بزرگ و برجسته (۱۱۰٪ - برای خوانایی فوق‌العاده)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Font Live Preview */}
+                <div className="p-4 bg-[#111113] rounded-xl border border-[#222225] space-y-1">
+                  <span className="text-[10px] text-[#8E9299] font-bold block">پیش‌نمایش زنده نمونه متن با فونت و مقیاس انتخابی:</span>
+                  <div
+                    style={{
+                      fontFamily: webSettings.siteFontFamily === 'shabnam' ? 'Shabnam, Vazirmatn, sans-serif'
+                        : webSettings.siteFontFamily === 'sahel' ? 'Sahel, Vazirmatn, sans-serif'
+                        : 'Vazirmatn, sans-serif',
+                      fontSize: webSettings.siteFontScale === 'sm' ? '0.9rem' : webSettings.siteFontScale === 'lg' ? '1.1rem' : '1rem',
+                    }}
+                    className="p-3 bg-[#161619] rounded-lg text-[#F3F4F6] font-medium transition-all"
+                  >
+                    دفاتر سیمی اختصاصی خطی‌نو با بالاترین کیفیت کاغذ، چاپ و صحافی کارگاهی برای دانش‌آموزان و دانشجویان
+                  </div>
+                </div>
+              </div>
+
+              {/* Product Grid & Images */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <LayoutGrid className="w-4 h-4" />
+                  <span>چیدمان کارت‌های محصول و اندازه تصاویر</span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  تعداد ستون‌های ویترین در مانیتور دسکتاپ و میزان فضای داخلی اطراف تصاویر محصول را سفارشی‌سازی کنید.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Product Grid Columns */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">تعداد ستون‌های محصولات در دسکتاپ:</label>
+                    <select
+                      value={webSettings.layoutColumns || 5}
+                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value={3}>۳ ستونه (تصاویر بسیار بزرگ و جزئیات بالا)</option>
+                      <option value={4}>۴ ستونه (متعادل و خوانا برای اکثر مانیتورها)</option>
+                      <option value={5}>۵ ستونه (استاندارد پیش‌فرض فروشگاه خطی‌نو)</option>
+                      <option value={6}>۶ ستونه (تراکم بالا ویژه مانیتورهای عریض Full HD و 2K)</option>
+                    </select>
+                  </div>
+
+                  {/* Product Image Padding Size */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">اندازه و فاصله تصویر درون کادر محصول:</label>
+                    <select
+                      value={webSettings.productImageSize || 'normal'}
+                      onChange={(e) => setWebSettings({ ...webSettings, productImageSize: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="compact">تصویر بزرگ‌تر و فیت کادر (پدینگ کم p-3)</option>
+                      <option value="normal">اندازه استاندارد خطی‌نو (پدینگ متوسط p-6 - پیش‌فرض)</option>
+                      <option value="large">بزرگ حداکثری و لبه‌به‌لبه (حداقل پدینگ p-2)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hero Banner & Section Spacing */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <ImageIcon className="w-4 h-4" />
+                  <span>ارتفاع بنر اصلی هدر و فواصل عمودی بین بخش‌های صفحه اصلی</span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  ارتفاع اسلایدر بالای صفحه و فاصله خالی بین ردیف‌های محصولات و بنرها را تنظیم نمایید.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Hero Height */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">ارتفاع اسلایدر و بنر اصلی (Hero Banner Height):</label>
+                    <select
+                      value={webSettings.heroHeight || 'normal'}
+                      onChange={(e) => setWebSettings({ ...webSettings, heroHeight: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="compact">فشرده و جمع‌وجور (ارتفاع ۳۲۰ پیکسل - مشاهده سریع‌تر محصولات)</option>
+                      <option value="normal">استاندارد متعادل (ارتفاع ۴۲۰ پیکسل - پیش‌فرض خطی‌نو)</option>
+                      <option value="tall">عریض و سینمایی (ارتفاع ۵۲۰ پیکسل - جلوه بصری چشمگیر)</option>
+                    </select>
+                  </div>
+
+                  {/* Section Spacing */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">فاصله عمودی بین بخش‌های صفحه اصلی (Section Spacing):</label>
+                    <select
+                      value={webSettings.sectionSpacing || 'normal'}
+                      onChange={(e) => setWebSettings({ ...webSettings, sectionSpacing: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="compact">فشرده و نزدیک به‌هم (فاصله 24px - مشاهده محتوای بیشتر بدون اسکرول زیاد)</option>
+                      <option value="normal">متعادل و استاندارد (فاصله 48px - پیش‌فرض)</option>
+                      <option value="relaxed">دلباز و با فضای تنفس زیاد (فاصله 72px - لوکس و مینیمال)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Header & Footer Architectural Layouts */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <Sliders className="w-4 h-4" />
+                  <span>معماری و نحوه چیدمان سربرگ (Header) و پاورقی (Footer)</span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  سبک ساختاری قرارگیری اجزای هدر و فوتر فروشگاه را تعیین کنید. این تنظیمات فوراً روی ظاهر سایت اعمال می‌شوند.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Header Layout */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان هدر (Header Layout):</label>
+                    <select
+                      value={webSettings.headerLayout || 'standard'}
+                      onChange={(e) => setWebSettings({ ...webSettings, headerLayout: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="standard">استاندارد تجاری (لوگو راست، سرچ وسط، ابزارها چپ)</option>
+                      <option value="compact">فشرده و کم‌ارتفاع (پدینگ کمتر، سایز تیتر ظریف‌تر)</option>
+                      <option value="centered">لوگو در مرکز با ردیف جستجوی مجزا (Centered)</option>
+                      <option value="fullwidth">عرض کامل چسبیده به لبه‌ها (Full Width)</option>
+                    </select>
+                  </div>
+
+                  {/* Footer Layout */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان فوتر (Footer Layout):</label>
+                    <select
+                      value={webSettings.footerLayout || 'multi_column'}
+                      onChange={(e) => setWebSettings({ ...webSettings, footerLayout: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="multi_column">چندستونه کامل (۴ ستون جامع شامل مجوزها، نقشه، لینک‌ها و تماس)</option>
+                      <option value="detailed">کامل با نمادهای بزرگتر (Detailed)</option>
+                      <option value="default">دو ستونه ساده (۲ ستون)</option>
+                      <option value="compact">مینیمال فشرده تک‌خطی (Compact)</option>
+                    </select>
                   </div>
                 </div>
               </div>

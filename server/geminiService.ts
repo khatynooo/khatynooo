@@ -3,7 +3,9 @@
 // Khatinoo Advanced Business, Accounting & Stationery AI Engine
 // ==============================================================================
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
+import { db } from './db';
+import { auditAllInventoryAgainstMarket } from './market/marketAggregator';
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -272,6 +274,90 @@ function generateOfflineGroundedMarketAnalysis(queryText: string): GroundedSearc
   };
 }
 
+const checkInventoryMarketPricesDeclaration: FunctionDeclaration = {
+  name: 'checkInventoryMarketPrices',
+  description: 'بررسی زنده و تطبیق قیمت‌های موجودی انبار فروشگاه با کف قیمت بازار آزاد (ترب، دیجی‌کالا، تحریر۲۰) و ارائه تحلیل کالاهای گران‌تر از بازار، ارزان‌تر از بازار، یا با پتانسیل افزایش سود',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      categoryFilter: {
+        type: Type.STRING,
+        description: 'نام یا فیلتر دسته‌بندی خاص برای بررسی، مثلا: "دفتر"، "خودکار"، "کاغذ" یا خالی برای کل انبار',
+      },
+      limit: {
+        type: Type.NUMBER,
+        description: 'تعداد کالاهای مورد استعلام و بررسی (پیش‌فرض ۱۰)',
+      },
+    },
+  },
+};
+
+async function executeCheckInventoryMarketPrices(args?: { categoryFilter?: string; limit?: number }) {
+  const allProds = await db.getProducts();
+  let targetProds = allProds;
+  if (args?.categoryFilter?.trim()) {
+    const filter = args.categoryFilter.trim().toLowerCase();
+    targetProds = allProds.filter(
+      (p) =>
+        (p.name && p.name.toLowerCase().includes(filter)) ||
+        (p.categoryName && p.categoryName.toLowerCase().includes(filter))
+    );
+  }
+  const maxItems = Math.min(Math.max(Number(args?.limit) || 10, 1), 20);
+  const toAudit = targetProds.slice(0, maxItems);
+  const auditResult = await auditAllInventoryAgainstMarket(toAudit);
+
+  return {
+    totalAudited: auditResult.totalAudited,
+    overpricedCount: auditResult.overpricedCount,
+    underpricedCount: auditResult.underpricedCount,
+    competitiveCount: auditResult.competitiveCount,
+    untrackedCount: auditResult.untrackedCount,
+    potentialProfitIncreaseToman: auditResult.potentialProfitIncrease,
+    items: auditResult.items.map((i) => ({
+      productName: i.productName,
+      stock: i.stock,
+      buyPrice: i.buyPrice,
+      currentPrice: i.currentPrice,
+      marketFloorPrice: i.torobFloorPrice,
+      digikalaPrice: i.digikalaPrice,
+      tahrir20Price: i.tahrir20Price,
+      status: i.status,
+      statusLabel: i.statusLabel,
+      suggestedPrice: i.suggestedShop2Price,
+      potentialGain: i.potentialGain,
+    })),
+  };
+}
+
+function formatInventoryAuditReport(data: any): string {
+  const itemsList = (data.items || [])
+    .map(
+      (i: any) =>
+        `- **${i.productName}** (موجودی: ${i.stock}):\n` +
+        `  • قیمت فعلی: **${i.currentPrice.toLocaleString('fa-IR')} تومان** | خرید: **${i.buyPrice.toLocaleString('fa-IR')} تومان**\n` +
+        `  • کف بازار (ترب/تحریر۲۰): **${i.marketFloorPrice.toLocaleString('fa-IR')} تومان** | دیجی‌کالا: **${i.digikalaPrice.toLocaleString('fa-IR')} تومان**\n` +
+        `  • وضعیت: **${i.statusLabel}** ${i.potentialGain > 0 ? `| پتانسیل افزایش سود: +${i.potentialGain.toLocaleString('fa-IR')} تومان` : ''}\n` +
+        `  • پیشنهاد هوشمند فروش: **${i.suggestedPrice.toLocaleString('fa-IR')} تومان**`
+    )
+    .join('\n\n');
+
+  return `### 📊 گزارش هوشمند تطبیق و آدیت قیمت‌های انبار با بازار
+
+در بررسی **${data.totalAudited} قلم کالا** از انبار فروشگاه در مقایسه با بازار آنلاین (ترب، دیجی‌کالا، تحریر۲۰):
+
+- 🔴 **کالاهای گران‌تر از بازار (نیاز به کاهش):** ${data.overpricedCount} مورد
+- 🟢 **کالاهای ارزان‌تر از بازار (پتانسیل افزایش قیمت و مارجین):** ${data.underpricedCount} مورد
+- ⚖️ **کالاهای با قیمت کاملاً رقابتی:** ${data.competitiveCount} مورد
+${data.potentialProfitIncreaseToman > 0 ? `- 💰 **مجموع پتانسیل افزایش سود با اصلاح قیمت‌ها:** **${data.potentialProfitIncreaseToman.toLocaleString('fa-IR')} تومان**\n` : ''}
+---
+
+#### جزئیات اقلام بررسی‌شده:
+${itemsList}
+
+💡 **پیشنهاد مشاور:** برای حفظ سهم بازار در ترب و حفظ مشتریان حضوری، قیمت اقلام قرمز رنگ را به قیمت پیشنهادی اصلاح کنید و برای اقلام سبز، قیمت را به سقف رقابتی نزدیک‌تر کنید تا حاشیه سود حفظ شود.`;
+}
+
 export async function askGeminiAssistant(
   messages: Array<{ role: 'user' | 'model'; text: string }>,
   storeContext?: string,
@@ -280,12 +366,13 @@ export async function askGeminiAssistant(
   const latestMessage = messages[messages.length - 1]?.text || '';
   const ai = getAiClient();
 
-  // اگر کلاینت Gemini فعال بود، تلاش برای تحلیل هوشمند
+  // اگر کلاینت Gemini فعال بود، تلاش برای تحلیل هوشمند همراه با ابزار Function Calling
   if (ai) {
     const systemPrompt = `شما دستیار هوشمند، تحلیلگر ارشد بازار و مشاور مالی/تولیدی سیستم یکپارچه نوشت‌افزار «خطی‌نو» (Khatinoo) هستید.
+شما دسترسی به ابزار تابعی «checkInventoryMarketPrices» دارید که می‌تواند قیمت‌های انبار را با کف بازار (ترب، دیجی‌کالا، تحریر۲۰) مقایسه کند. هر زمان کاربر درباره وضعیت قیمت‌های انبار، استعلام بازار کالاها، یا ارزیابی رقابتی انبار پرسید، حتما از این ابزار استفاده کنید.
 وظایف:
 ۱. تحلیل دقیق بهای تمام‌شده (BOM) تولید دفاتر و محصولات کارگاهی خطی‌نو.
-۲. استخراج قیمت‌های زنده و تحلیل رقابت در ترب، دیجی‌کالا و بازار ایران با استفاده از جستجوی وب (Google Search Grounding).
+۲. استخراج قیمت‌های زنده و تحلیل رقابت در ترب، دیجی‌کالا و بازار ایران با استفاده از ابزارهای هوش بازار و وب.
 ۳. استراتژی قیمت‌گذاری ۵ سطحی و سودآوری فروشگاه آنلاین و حضوری.
 ۴. بهینه‌سازی جریان نقدینگی، گردش انبار، تامین فصل مدارس و خدمات تکثیر و چاپ.
 پاسخ‌ها را به زبان فارسی روان، ساختاریافته با مارک‌داون، تیترهای تمیز، اعداد مستند به تومان و تحلیل‌های دقیق بنویس.
@@ -298,7 +385,70 @@ ${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افز
       parts: [{ text: m.text }],
     }));
 
-    // مرحله ۱: تلاش با فعال بودن Search Grounding (در صورت درخواست)
+    // مرحله ۱: تلاش با ابزار Function Calling
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: formattedContents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.7,
+          tools: [{ functionDeclarations: [checkInventoryMarketPricesDeclaration] }],
+        },
+      });
+
+      // بررسی آیا مدل تابعی را فراخوانی کرده است
+      const functionCalls = response.functionCalls;
+      if (functionCalls && functionCalls.length > 0) {
+        for (const call of functionCalls) {
+          if (call.name === 'checkInventoryMarketPrices') {
+            const result = await executeCheckInventoryMarketPrices(call.args as any);
+            const followup = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [
+                ...formattedContents,
+                response.candidates?.[0]?.content as any,
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      functionResponse: {
+                        name: call.name,
+                        response: result,
+                      },
+                    },
+                  ],
+                },
+              ],
+              config: {
+                systemInstruction: systemPrompt,
+                temperature: 0.7,
+              },
+            });
+
+            const replyText = followup.text || '';
+            if (replyText.trim()) {
+              return {
+                reply: replyText,
+                groundingEnabled: false,
+              };
+            }
+          }
+        }
+      }
+
+      const text = response.text || '';
+      if (text.trim()) {
+        return {
+          reply: text,
+          groundingEnabled: false,
+        };
+      }
+    } catch (error: any) {
+      console.warn('Gemini function calling call unavailable or rate-limited, continuing...');
+    }
+
+    // مرحله ۲: تلاش با Search Grounding در صورت درخواست
     if (enableSearchGrounding) {
       try {
         const response = await ai.models.generateContent({
@@ -337,35 +487,34 @@ ${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افز
           };
         }
       } catch (error: any) {
-        // در صورت اتمام سهمیه جستجوی وب یا نرخ درخواست، در مرحله بعد بدون Grounding تلاش می‌شود
-        console.warn('Gemini Search Grounding call unavailable (quota or rate-limit), trying standard generation...');
+        console.warn('Gemini Search Grounding call unavailable, falling back...');
       }
-    }
-
-    // مرحله ۲: تلاش ساده با Gemini بدون ابزار جستجوی وب
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: formattedContents,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.7,
-        },
-      });
-
-      const text = response.text || '';
-      if (text.trim()) {
-        return {
-          reply: text,
-          groundingEnabled: false,
-        };
-      }
-    } catch (error: any) {
-      console.warn('Gemini API quota/rate-limit hit, falling back gracefully to built-in stationery expert engine.');
     }
   }
 
-  // مرحله ۳: حالت آفلاین و بومی تضمینی (بدون نیاز به کلید با دقت بالای کارگاهی)
+  // مرحله ۳: بررسی تقاضای بررسی قیمت‌های انبار در حالت آفلاین
+  const isInventoryAuditQuery =
+    (latestMessage.includes('انبار') || latestMessage.includes('موجودی')) &&
+    (latestMessage.includes('بازار') ||
+      latestMessage.includes('چک') ||
+      latestMessage.includes('استعلام') ||
+      latestMessage.includes('قیمت') ||
+      latestMessage.includes('آدیت') ||
+      latestMessage.includes('تطبیق'));
+
+  if (isInventoryAuditQuery) {
+    try {
+      const data = await executeCheckInventoryMarketPrices({ limit: 8 });
+      return {
+        reply: formatInventoryAuditReport(data),
+        groundingEnabled: false,
+      };
+    } catch (e) {
+      // ادامه به هوش عمومی
+    }
+  }
+
+  // مرحله ۴: حالت آفلاین و بومی تضمینی (بدون نیاز به کلید با دقت بالای کارگاهی)
   return {
     reply: runOfflineStationeryExpert(latestMessage, storeContext),
     groundingEnabled: false,

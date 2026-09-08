@@ -128,6 +128,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
           )}
           <BannerSlider
             banners={activeBanners}
+            websiteSettings={websiteSettings}
             onBannerClick={(b) => {
               if (b.link?.includes('category')) {
                 const cat = categories.find((c) => b.link?.includes(c.id));
@@ -157,7 +158,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
         <section key={block.id} className={`space-y-3 ${paddingClass}`}>
           {heading && heading !== 'نوار مزایا و ویژگی‌های برتر خطی‌نو' && (
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-[#D1D5DB]">
-              <Sparkles className="w-4 h-4 text-[#C9A227]" />
+              <Sparkles className="w-4 h-4 text-[var(--coral)]" />
               <span>{heading}</span>
             </div>
           )}
@@ -170,41 +171,47 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                 : 'grid-cols-2 sm:grid-cols-2 lg:grid-cols-4'
             }`}
           >
-            {itemsToRender.map((feat) => (
-              <div
-                key={feat.id}
-                className={`bg-white dark:bg-[#111113] border ${
-                  feat.highlight
-                    ? 'border-[#C9A227]/60 shadow-sm bg-gradient-to-l from-amber-500/5 to-transparent'
-                    : 'border-slate-200 dark:border-[#222225]'
-                } p-3.5 rounded-2xl flex items-center gap-3 shadow-xs hover:border-[#C9A227]/40 transition-colors`}
-              >
+            {itemsToRender.map((feat, idx) => {
+              const iconColors = [
+                'bg-[var(--coral)]/15 text-[var(--coral)]',
+                'bg-[var(--teal)]/15 text-[var(--teal)]',
+                'bg-[var(--sunshine)]/25 text-[var(--ink-charcoal)] dark:text-[var(--sunshine)]',
+                'bg-[var(--grape)]/15 text-[var(--grape)]',
+              ];
+              const colorClass = iconColors[idx % iconColors.length];
+
+              return (
                 <div
-                  className={`w-9 h-9 rounded-xl ${
+                  key={feat.id}
+                  className={`bg-white dark:bg-[#111113] border ${
                     feat.highlight
-                      ? 'bg-amber-500/20 text-amber-600 dark:text-[#C9A227]'
-                      : 'bg-slate-100 dark:bg-[#1A1A1E] text-slate-700 dark:text-slate-300'
-                  } flex items-center justify-center font-bold shrink-0`}
+                      ? 'border-[var(--coral)]/50 shadow-sm bg-gradient-to-l from-[var(--coral)]/5 to-transparent'
+                      : 'border-[var(--line-soft)] dark:border-[#222225]'
+                  } p-3.5 rounded-2xl flex items-center gap-3 shadow-xs hover:border-[var(--teal)]/50 transition-colors`}
                 >
-                  {getIconComponent(feat.icon)}
-                </div>
-                <div className="overflow-hidden">
-                  <div className="font-bold text-slate-900 dark:text-[#F3F4F6] truncate flex items-center gap-1.5">
-                    <span>{feat.title}</span>
-                    {feat.badge && (
-                      <span className="text-[9px] font-bold bg-[#C9A227]/20 text-amber-800 dark:text-[#C9A227] px-1.5 py-0.5 rounded-md shrink-0">
-                        {feat.badge}
-                      </span>
+                  <div
+                    className={`w-9 h-9 rounded-xl ${colorClass} flex items-center justify-center font-bold shrink-0`}
+                  >
+                    {getIconComponent(feat.icon)}
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="font-bold text-slate-900 dark:text-[#F3F4F6] truncate flex items-center gap-1.5">
+                      <span>{feat.title}</span>
+                      {feat.badge && (
+                        <span className="text-[9px] font-bold bg-[var(--coral)]/15 text-[var(--coral)] px-1.5 py-0.5 rounded-md shrink-0">
+                          {feat.badge}
+                        </span>
+                      )}
+                    </div>
+                    {feat.subtitle && (
+                      <div className="text-[11px] text-slate-500 dark:text-[#8E9299] truncate mt-0.5">
+                        {feat.subtitle}
+                      </div>
                     )}
                   </div>
-                  {feat.subtitle && (
-                    <div className="text-[11px] text-slate-500 dark:text-[#8E9299] truncate mt-0.5">
-                      {feat.subtitle}
-                    </div>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       );
@@ -228,7 +235,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
             {buttonPos !== 'hidden' && (
               <button
                 onClick={() => onSelectCategory(null)}
-                className="text-xs font-bold text-amber-600 dark:text-[#C9A227] hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-[var(--teal)] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <span>{buttonText || 'مشاهده همه'}</span>
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -247,19 +254,27 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                 : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
             }`}
           >
-            {categories.slice(0, settings?.limitCount || 12).map((cat) => {
+            {categories.slice(0, settings?.limitCount || 12).map((cat, idx) => {
               const count = websiteProducts.filter((p) => p.categoryId === cat.id).length;
+              const catColors = [
+                'bg-[var(--coral)]/10 text-[var(--coral)]',
+                'bg-[var(--teal)]/10 text-[var(--teal)]',
+                'bg-[var(--sunshine)]/20 text-[var(--ink-charcoal)] dark:text-[var(--sunshine)]',
+                'bg-[var(--grape)]/10 text-[var(--grape)]',
+              ];
+              const colorClass = catColors[idx % catColors.length];
+
               return (
                 <button
                   key={cat.id}
                   onClick={() => onSelectCategory(cat.id)}
-                  className="p-4 bg-white dark:bg-[#111113] hover:bg-amber-50/50 dark:hover:bg-[#161619] border border-slate-200 dark:border-[#222225] hover:border-[#C9A227] rounded-2xl text-right transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-xs"
+                  className="p-4 bg-white dark:bg-[#111113] hover:bg-[var(--coral)]/5 dark:hover:bg-[#161619] border border-[var(--line-soft)] dark:border-[#222225] hover:border-[var(--coral)]/50 rounded-2xl text-right transition-all flex flex-col justify-between gap-3 group cursor-pointer shadow-xs"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-[#C9A227] flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <div className={`w-10 h-10 rounded-xl ${colorClass} flex items-center justify-center group-hover:scale-110 transition-transform`}>
                     <Package className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-[#F3F4F6] group-hover:text-amber-600 dark:group-hover:text-[#C9A227] transition-colors">
+                    <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-[#F3F4F6] group-hover:text-[var(--coral)] transition-colors">
                       {cat.name}
                     </div>
                     <div className="text-[11px] text-slate-400 dark:text-[#8E9299] mt-0.5 font-mono">
@@ -287,7 +302,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       if (featuredList.length === 0) return null;
 
       return (
-        <section key={block.id} className={`space-y-4 ${paddingClass} border-t border-slate-200 dark:border-[#222225]`}>
+        <section key={block.id} className={`space-y-4 ${paddingClass} border-t border-[var(--line-soft)] dark:border-[#222225]`}>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <div>
               <div className="flex items-center gap-2">
@@ -295,7 +310,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                   {heading || 'تولیدات اختصاصی خطی‌نو'}
                 </h3>
                 {settings?.badgeText && (
-                  <span className="text-[10px] font-bold bg-[#C9A227] text-black px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold bg-[var(--coral)] text-white px-2.5 py-0.5 rounded-full shadow-xs">
                     {settings.badgeText}
                   </span>
                 )}
@@ -324,7 +339,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                       if (notebookCat) onSelectCategory(notebookCat.id);
                     }
                   }}
-                  className="bg-amber-50 dark:bg-[#1C1C20] hover:bg-amber-100 dark:hover:bg-[#25252B] text-amber-800 dark:text-[#C9A227] text-xs font-bold px-3.5 py-1.5 rounded-xl border border-[#C9A227]/30 transition-colors flex items-center gap-1 cursor-pointer"
+                  className="bg-[var(--teal)]/10 hover:bg-[var(--teal)]/20 text-[var(--teal)] text-xs font-bold px-3.5 py-1.5 rounded-xl border border-[var(--teal)]/30 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <span>{buttonText || 'مشاهده همه تولیدات'}</span>
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -339,11 +354,22 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                 ? 'grid-cols-2'
                 : columns === 3
                 ? 'grid-cols-2 sm:grid-cols-3'
+                : websiteSettings?.layoutColumns === 3
+                ? 'grid-cols-2 sm:grid-cols-3'
+                : websiteSettings?.layoutColumns === 4
+                ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
+                : websiteSettings?.layoutColumns === 6
+                ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
                 : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'
             }`}
           >
             {featuredList.map((product) => (
-              <ProductCard key={product.id} product={product} onQuickView={onQuickView} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                websiteSettings={websiteSettings}
+                onQuickView={onQuickView}
+              />
             ))}
           </div>
         </section>
@@ -363,25 +389,25 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       return (
         <section
           key={block.id}
-          className={`p-5 sm:p-6 bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-transparent border border-rose-500/30 rounded-3xl space-y-4 shadow-sm ${paddingClass}`}
+          className={`p-5 sm:p-6 bg-gradient-to-r from-[var(--coral)]/10 via-[var(--sunshine)]/10 to-transparent border border-[var(--coral)]/30 rounded-3xl space-y-4 shadow-sm ${paddingClass}`}
         >
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-rose-500 text-white flex items-center justify-center font-black shadow-md">
+              <div className="w-9 h-9 rounded-xl bg-[var(--coral)] text-white flex items-center justify-center font-black shadow-md">
                 <Percent className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-base sm:text-xl font-black text-slate-900 dark:text-[#F3F4F6]">
                   {heading || 'تخفیف‌های ویژه و شگفت‌انگیز'}
                 </h3>
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-bold mt-0.5">
+                <p className="text-xs text-[var(--coral)] font-bold mt-0.5">
                   {subheading || 'فرصت محدود خرید لوازم‌تحریر با بیشترین تخفیف'}
                 </p>
               </div>
             </div>
 
             {settings?.badgeText && (
-              <span className="text-xs font-black bg-rose-500 text-white px-3 py-1 rounded-full animate-pulse">
+              <span className="text-xs font-black bg-[var(--coral)] text-white px-3 py-1 rounded-full animate-pulse">
                 {settings.badgeText}
               </span>
             )}
@@ -393,11 +419,22 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
                 ? 'grid-cols-2'
                 : columns === 3
                 ? 'grid-cols-2 sm:grid-cols-3'
+                : websiteSettings?.layoutColumns === 3
+                ? 'grid-cols-2 sm:grid-cols-3'
+                : websiteSettings?.layoutColumns === 4
+                ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
+                : websiteSettings?.layoutColumns === 6
+                ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
                 : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'
             }`}
           >
             {specialList.map((product) => (
-              <ProductCard key={product.id} product={product} onQuickView={onQuickView} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                websiteSettings={websiteSettings}
+                onQuickView={onQuickView}
+              />
             ))}
           </div>
         </section>
@@ -418,10 +455,10 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       return (
         <section
           key={block.id}
-          className={`bg-gradient-to-l from-slate-900 via-[#1C1C20] to-[#111113] text-white rounded-3xl p-6 sm:p-8 border border-[#C9A227]/40 shadow-xl relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-6 ${paddingClass}`}
+          className={`bg-gradient-to-l from-slate-900 via-[#1C1F26] to-[#12141A] text-white rounded-3xl p-6 sm:p-8 border border-[var(--teal)]/40 shadow-xl relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-6 ${paddingClass}`}
         >
           <div className="space-y-3 z-10 text-right w-full lg:max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 bg-[#C9A227]/20 border border-[#C9A227]/40 text-[#C9A227] px-3 py-1 rounded-full text-xs font-bold">
+            <div className="inline-flex items-center gap-1.5 bg-[var(--teal)]/20 border border-[var(--teal)]/40 text-[var(--teal)] px-3 py-1 rounded-full text-xs font-bold">
               <Printer className="w-3.5 h-3.5" />
               <span>{settings?.badgeText || 'مرکز تخصصی کپی و چاپ دیجیتال خطی‌نو'}</span>
             </div>
@@ -435,17 +472,20 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
 
             {/* Sub-items features */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2">
-              {serviceItems.map((it) => (
-                <div key={it.id} className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2">
-                  <div className="text-[#C9A227] shrink-0">
-                    {getIconComponent(it.icon)}
+              {serviceItems.map((it, idx) => {
+                const subColors = ['text-[var(--teal)]', 'text-[var(--coral)]', 'text-[var(--sunshine)]'];
+                return (
+                  <div key={it.id} className="bg-white/5 border border-white/10 rounded-xl p-2.5 flex items-center gap-2">
+                    <div className={`${subColors[idx % subColors.length]} shrink-0`}>
+                      {getIconComponent(it.icon)}
+                    </div>
+                    <div className="text-[11px] leading-tight">
+                      <div className="font-bold text-white">{it.title}</div>
+                      {it.subtitle && <div className="text-slate-400 text-[10px] mt-0.5">{it.subtitle}</div>}
+                    </div>
                   </div>
-                  <div className="text-[11px] leading-tight">
-                    <div className="font-bold text-white">{it.title}</div>
-                    {it.subtitle && <div className="text-slate-400 text-[10px] mt-0.5">{it.subtitle}</div>}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -460,9 +500,9 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
           >
             <button
               onClick={onOpenCalculator}
-              className="w-full lg:w-auto bg-[#C9A227] hover:bg-[#B38E1E] active:scale-98 text-slate-950 font-black px-8 py-3.5 rounded-2xl text-xs sm:text-sm transition-all shadow-lg shadow-[#C9A227]/30 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full lg:w-auto bg-[var(--coral)] hover:brightness-110 active:scale-98 text-white font-black px-8 py-3.5 rounded-2xl text-xs sm:text-sm transition-all shadow-lg shadow-[var(--coral)]/25 flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Calculator className="w-4 h-4 text-black" />
+              <Calculator className="w-4 h-4 text-white" />
               <span>{buttonText || 'شروع محاسبه آنلاین قیمت کپی'}</span>
             </button>
           </div>
@@ -477,7 +517,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       return (
         <section
           key={block.id}
-          className={`rounded-3xl overflow-hidden border border-slate-200 dark:border-[#222225] shadow-md relative min-h-[180px] sm:min-h-[240px] flex items-center justify-between p-6 sm:p-10 bg-cover bg-center ${paddingClass}`}
+          className={`rounded-3xl overflow-hidden border border-[var(--line-soft)] dark:border-[#222225] shadow-md relative min-h-[180px] sm:min-h-[240px] flex items-center justify-between p-6 sm:p-10 bg-cover bg-center ${paddingClass}`}
           style={{
             backgroundImage: settings?.bannerImageUrl
               ? `url(${settings.bannerImageUrl})`
@@ -488,7 +528,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
           <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px]" />
           <div className="relative z-10 space-y-2.5 text-right text-white max-w-xl">
             {settings?.badgeText && (
-              <span className="text-[10px] font-bold bg-[#C9A227] text-slate-950 px-2.5 py-1 rounded-full inline-block">
+              <span className="text-[10px] font-bold bg-[var(--sunshine)] text-slate-950 px-2.5 py-1 rounded-full inline-block">
                 {settings.badgeText}
               </span>
             )}
@@ -499,7 +539,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
               <div className="pt-2">
                 <a
                   href={settings?.buttonLink || '#products'}
-                  className="inline-flex items-center gap-2 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black px-5 py-2.5 rounded-xl text-xs transition-all shadow-md"
+                  className="inline-flex items-center gap-2 bg-[var(--coral)] hover:brightness-110 text-white font-black px-5 py-2.5 rounded-xl text-xs transition-all shadow-md"
                 >
                   <span>{buttonText || 'مشاهده و خرید'}</span>
                   <ChevronLeft className="w-3.5 h-3.5" />
@@ -517,20 +557,20 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       return (
         <section
           key={block.id}
-          className={`bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#222225] rounded-3xl p-6 sm:p-8 space-y-3 shadow-sm text-right ${paddingClass}`}
+          className={`bg-white dark:bg-[#111113] border border-[var(--line-soft)] dark:border-[#222225] rounded-3xl p-6 sm:p-8 space-y-3 shadow-sm text-right ${paddingClass}`}
           style={{
             backgroundColor: settings?.backgroundColor || undefined,
             color: settings?.textColor || undefined,
           }}
         >
           <div className="flex items-center gap-2">
-            <Info className="w-5 h-5 text-[#C9A227]" />
+            <Info className="w-5 h-5 text-[var(--teal)]" />
             <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-[#F3F4F6]">
               {heading || 'درباره و معرفی خطی‌نو'}
             </h3>
           </div>
           {subheading && (
-            <p className="text-xs font-bold text-amber-700 dark:text-[#C9A227]">{subheading}</p>
+            <p className="text-xs font-bold text-[var(--coral)]">{subheading}</p>
           )}
           <div className="text-xs sm:text-sm text-slate-600 dark:text-[#B0B3B8] leading-relaxed">
             {settings?.customHtml ? (
@@ -546,7 +586,7 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
             <div className="pt-2">
               <a
                 href={settings.buttonLink}
-                className="inline-flex items-center gap-1 text-xs font-bold text-[#C9A227] hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-bold text-[var(--teal)] hover:underline"
               >
                 <span>{buttonText || 'اطلاعات بیشتر'}</span>
                 <ChevronLeft className="w-3.5 h-3.5" />
@@ -563,11 +603,11 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
       return (
         <section
           key={block.id}
-          className={`bg-gradient-to-r from-amber-500/10 via-slate-900 to-[#111113] border border-[#C9A227]/30 rounded-3xl p-6 sm:p-8 text-white text-right space-y-4 shadow-lg ${paddingClass}`}
+          className={`bg-gradient-to-r from-[var(--teal)]/15 via-slate-900 to-[#111113] border border-[var(--teal)]/30 rounded-3xl p-6 sm:p-8 text-white text-right space-y-4 shadow-lg ${paddingClass}`}
         >
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="space-y-1 max-w-xl">
-              <div className="flex items-center gap-2 text-[#C9A227] text-xs font-bold">
+              <div className="flex items-center gap-2 text-[var(--sunshine)] text-xs font-bold">
                 <Gift className="w-4 h-4" />
                 <span>{settings?.badgeText || 'باشگاه مشتریان خطی‌نو'}</span>
               </div>
@@ -579,11 +619,11 @@ export const DynamicBlockRenderer: React.FC<DynamicBlockRendererProps> = ({
               <input
                 type="tel"
                 placeholder="شماره موبایل (مثال: 0913...)"
-                className="bg-white/10 border border-white/20 text-white placeholder-slate-400 text-xs px-4 py-2.5 rounded-xl w-full sm:w-64 focus:outline-none focus:border-[#C9A227]"
+                className="bg-white/10 border border-white/20 text-white placeholder-slate-400 text-xs px-4 py-2.5 rounded-xl w-full sm:w-64 focus:outline-none focus:border-[var(--teal)]"
               />
               <button
                 type="button"
-                className="bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 text-xs font-black px-4 py-2.5 rounded-xl shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="bg-[var(--coral)] hover:brightness-110 text-white text-xs font-black px-4 py-2.5 rounded-xl shrink-0 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 <span>{buttonText || 'عضویت'}</span>
                 <Send className="w-3.5 h-3.5" />

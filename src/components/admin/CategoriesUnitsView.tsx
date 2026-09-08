@@ -14,6 +14,7 @@ export const CategoriesUnitsView: React.FC = () => {
   const [showCatModal, setShowCatModal] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [catName, setCatName] = useState('');
+  const [catImage, setCatImage] = useState('');
   const [subCatInput, setSubCatInput] = useState('');
 
   const [showUnitModal, setShowUnitModal] = useState(false);
@@ -45,6 +46,7 @@ export const CategoriesUnitsView: React.FC = () => {
   const openCreateCategoryModal = () => {
     setEditingCategoryId(null);
     setCatName('');
+    setCatImage('');
     setSubCatInput('');
     setShowCatModal(true);
   };
@@ -52,6 +54,7 @@ export const CategoriesUnitsView: React.FC = () => {
   const openEditCategoryModal = (cat: Category) => {
     setEditingCategoryId(cat.id);
     setCatName(cat.name);
+    setCatImage(cat.image || '');
     setSubCatInput('');
     setShowCatModal(true);
   };
@@ -61,19 +64,20 @@ export const CategoriesUnitsView: React.FC = () => {
     if (!catName.trim()) return;
     try {
       if (editingCategoryId) {
-        await api.updateCategory(editingCategoryId, { name: catName.trim() });
+        await api.updateCategory(editingCategoryId, { name: catName.trim(), image: catImage.trim() || undefined });
         showToast('دسته‌بندی با موفقیت ویرایش شد.', 'success');
       } else {
         const subcategories = subCatInput
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean);
-        await api.createCategory({ name: catName.trim(), subcategories });
+        await api.createCategory({ name: catName.trim(), image: catImage.trim() || undefined, subcategories });
         showToast('دسته‌بندی جدید با موفقیت ایجاد شد.', 'success');
       }
       setShowCatModal(false);
       setEditingCategoryId(null);
       setCatName('');
+      setCatImage('');
       setSubCatInput('');
       loadData();
     } catch (err: any) {
@@ -355,8 +359,53 @@ export const CategoriesUnitsView: React.FC = () => {
                   value={catName}
                   onChange={(e) => setCatName(e.target.value)}
                   placeholder="مثال: نوشت‌افزار، اداری، هنری"
-                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none font-bold text-[#E0E0E0]"
+                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[var(--teal)] rounded-xl p-2.5 outline-none font-bold text-[#E0E0E0]"
                 />
+              </div>
+
+              <div>
+                <label className="font-bold text-[#8E9299] block mb-1">تصویر کاشی دسته‌بندی (اختیاری):</label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={catImage}
+                    onChange={(e) => setCatImage(e.target.value)}
+                    placeholder="https://... یا آپلود فایل"
+                    className="flex-1 bg-[#161619] border border-[#2D2D33] focus:border-[var(--teal)] rounded-xl p-2.5 outline-none text-[#E0E0E0] dir-ltr text-left text-xs font-mono"
+                  />
+                  <label className="px-3 py-2.5 bg-[#1F1F24] hover:bg-[#2A2A32] text-xs font-bold text-white rounded-xl cursor-pointer border border-[#33333A] shrink-0">
+                    آپلود عکس
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            if (typeof reader.result === 'string') {
+                              setCatImage(reader.result);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                {catImage && (
+                  <div className="mt-2 relative w-full h-24 rounded-xl overflow-hidden border border-[#33333A]">
+                    <img src={catImage} alt="پیش‌نمایش" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setCatImage('')}
+                      className="absolute top-1 right-1 bg-black/70 hover:bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-md"
+                    >
+                      حذف عکس
+                    </button>
+                  </div>
+                )}
               </div>
 
               {!editingCategoryId && (
@@ -367,7 +416,7 @@ export const CategoriesUnitsView: React.FC = () => {
                     value={subCatInput}
                     onChange={(e) => setSubCatInput(e.target.value)}
                     placeholder="خودکار, روان‌نویس, ماژیک, مداد"
-                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0]"
+                    className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[var(--teal)] rounded-xl p-2.5 outline-none text-[#E0E0E0]"
                   />
                 </div>
               )}
@@ -375,7 +424,7 @@ export const CategoriesUnitsView: React.FC = () => {
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  className="flex-1 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl shadow-xs cursor-pointer"
+                  className="flex-1 bg-[var(--coral)] hover:bg-[var(--coral-hover)] text-white font-black py-2.5 rounded-xl shadow-xs cursor-pointer"
                 >
                   {editingCategoryId ? 'ذخیره تغییرات' : 'ایجاد دسته‌بندی'}
                 </button>

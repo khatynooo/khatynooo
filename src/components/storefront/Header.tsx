@@ -46,6 +46,15 @@ interface HeaderProps {
   storeSettings?: StoreSettings | null;
 }
 
+const CATEGORY_COLORS = ['var(--coral)', 'var(--teal)', 'var(--grape)', 'var(--sunshine)'];
+
+const CATEGORY_ACCENTS = [
+  { border: 'hover:border-[var(--coral)]', bg: 'hover:bg-[var(--coral)]/5', text: 'group-hover:text-[var(--coral)]' },
+  { border: 'hover:border-[var(--teal)]', bg: 'hover:bg-[var(--teal)]/5', text: 'group-hover:text-[var(--teal)]' },
+  { border: 'hover:border-[var(--sunshine)]', bg: 'hover:bg-[var(--sunshine)]/10', text: 'group-hover:text-[var(--ink-charcoal)]' },
+  { border: 'hover:border-[var(--grape)]', bg: 'hover:bg-[var(--grape)]/5', text: 'group-hover:text-[var(--grape)]' },
+];
+
 export const Header: React.FC<HeaderProps> = ({
   categories,
   selectedCategory,
@@ -73,6 +82,11 @@ export const Header: React.FC<HeaderProps> = ({
   const calculatorButtonText = websiteSettings?.calculatorButtonText || 'محاسبه هزینه کپی و پرینت';
   const showCalculatorButton = websiteSettings?.showCalculatorButton !== false;
   const cartButtonText = websiteSettings?.cartButtonText || 'سبد خرید';
+
+  const headerLayout = websiteSettings?.headerLayout || 'standard';
+  const headerPaddingX = headerLayout === 'fullwidth' ? 'px-3 sm:px-4' : 'px-4 sm:px-8 lg:px-12 2xl:px-16';
+  const headerPaddingY = headerLayout === 'compact' ? 'py-2' : 'py-3.5';
+  const siteTitleSizeClass = headerLayout === 'compact' ? 'text-lg sm:text-xl' : 'text-2xl';
 
   // Dynamic header menu items from CMS settings
   const customMenuItems = websiteSettings?.headerMenuItems && websiteSettings.headerMenuItems.length > 0
@@ -201,7 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
                       : websiteSettings.logoBorderRadius || 'rounded-none'
                   } shrink-0 ${
                     websiteSettings.logoHasBorder
-                      ? 'shadow-md ring-1 ring-[#C9A227]/40 p-1 bg-white/5'
+                      ? 'shadow-md ring-1 ring-[var(--coral)]/40 p-1 bg-white/5'
                       : 'border-0 ring-0 shadow-none'
                   } transition-all duration-200`}
                 />
@@ -212,16 +226,16 @@ export const Header: React.FC<HeaderProps> = ({
                     width: `${websiteSettings?.logoHeight || 48}px`,
                     maxHeight: `${Math.max(websiteSettings?.logoHeight || 48, 240)}px`,
                   }}
-                  className={`${websiteSettings?.logoBorderRadius || 'rounded-xl'} bg-gradient-to-br from-[#C9A227] to-[#8C6D14] flex items-center justify-center text-slate-950 font-black shadow-lg shadow-[#C9A227]/20 shrink-0`}
+                  className={`${websiteSettings?.logoBorderRadius || 'rounded-xl'} bg-gradient-to-br from-[var(--coral)] to-[var(--coral-hover)] flex items-center justify-center text-white font-black shadow-lg shadow-[var(--coral)]/25 shrink-0`}
                 >
-                  <BookOpen className="w-6 h-6 text-black" />
+                  <BookOpen className="w-6 h-6 text-white" />
                 </div>
               )}
               {websiteSettings?.showLogoText !== false && (
                 <div className="flex flex-col">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-2xl font-black tracking-tight text-slate-900 dark:text-[#F3F4F6]">{siteTitle}</span>
-                    <span className="text-[10px] uppercase font-bold tracking-widest bg-slate-100 dark:bg-[#161619] text-[#C9A227] border border-[#C9A227]/30 px-1.5 py-0.5 rounded">
+                    <span className={`${siteTitleSizeClass} font-black tracking-tight text-slate-900 dark:text-[#F3F4F6]`}>{siteTitle}</span>
+                    <span className="text-[10px] uppercase font-bold tracking-widest bg-slate-100 dark:bg-[#161619] text-[var(--teal)] border border-[var(--teal)]/30 px-1.5 py-0.5 rounded">
                       khatynoo.ir
                     </span>
                   </div>
@@ -242,7 +256,7 @@ export const Header: React.FC<HeaderProps> = ({
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={elem.customText || searchPlaceholder}
-                className="w-full bg-slate-50 dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1A1A1E] focus:bg-white dark:focus:bg-[#161619] text-slate-900 dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] text-sm rounded-xl pr-10 pl-4 py-2.5 border border-slate-200 dark:border-[#2D2D33] focus:border-[#C9A227] transition-all outline-none"
+                className="w-full bg-[var(--paper)] dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1A1A1E] focus:bg-white dark:focus:bg-[#161619] text-[var(--ink-charcoal)] dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] text-sm rounded-full pr-10 pl-4 py-2.5 border border-[var(--line-soft)] dark:border-[#2D2D33] focus:border-[var(--teal)] transition-all outline-none"
               />
               <Search className="w-4 h-4 text-slate-400 dark:text-[#8E9299] absolute right-3.5 top-3.5" />
               {searchQuery && (
@@ -272,10 +286,10 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-header-customer-account"
                 onClick={onOpenCustomerAccount}
-                className="flex items-center gap-2 bg-amber-50 dark:bg-[#1C1C20] hover:bg-amber-100 dark:hover:bg-[#25252A] text-amber-900 dark:text-[#F3F4F6] text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-xl border border-amber-200 dark:border-[#C9A227]/40 transition-all cursor-pointer shadow-xs"
+                className="flex items-center gap-2 bg-[var(--paper)] dark:bg-[#1C1C20] hover:bg-slate-100 dark:hover:bg-[#25252A] text-[var(--ink-charcoal)] dark:text-[#F3F4F6] text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-full border border-[var(--line-soft)] dark:border-[var(--line-soft-dark)] transition-all cursor-pointer shadow-xs"
                 title="مشاهده حساب کاربری و سوابق خرید"
               >
-                <div className="w-5 h-5 rounded-full bg-[#C9A227] text-black flex items-center justify-center font-bold text-[10px]">
+                <div className="w-5 h-5 rounded-full bg-[var(--teal)] text-white flex items-center justify-center font-bold text-[10px]">
                   <User className="w-3.5 h-3.5" />
                 </div>
                 <span className="max-w-[90px] sm:max-w-[120px] truncate">
@@ -286,13 +300,9 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 id="btn-header-customer-login"
                 onClick={() => openAuthModal()}
-                className={`flex items-center gap-2 text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer shadow-xs ${
-                  elem.buttonStyle === 'gold'
-                    ? 'bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 border-[#C9A227]'
-                    : 'bg-slate-50 dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1F1F24] text-slate-800 dark:text-[#E0E0E0] hover:text-[#C9A227] border-slate-200 dark:border-[#2D2D33]'
-                }`}
+                className="flex items-center gap-2 text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-full border transition-all cursor-pointer shadow-xs bg-[var(--paper)] dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1F1F24] text-[var(--ink-charcoal)] dark:text-[#E0E0E0] hover:text-[var(--coral)] border-[var(--line-soft)] dark:border-[#2D2D33]"
               >
-                {renderCustomIcon(elem.icon, <KeyRound className="w-4 h-4 text-[#C9A227]" />)}
+                {renderCustomIcon(elem.icon, <KeyRound className="w-4 h-4 text-[var(--coral)]" />)}
                 <span className="hidden sm:inline">{elem.customText || 'ورود / ثبت‌نام'}</span>
                 <span className="sm:hidden">ورود</span>
               </button>
@@ -306,15 +316,11 @@ export const Header: React.FC<HeaderProps> = ({
             key={elem.id}
             id="btn-header-print-calculator"
             onClick={onOpenCalculator}
-            className={`items-center gap-2 text-xs font-semibold px-3.5 py-2.5 rounded-xl border transition-all cursor-pointer shadow-xs ${
+            className={`items-center gap-2 text-xs font-semibold px-3.5 py-2.5 rounded-full border transition-all cursor-pointer shadow-xs ${
               elem.showOnMobile === false ? 'hidden sm:flex' : 'hidden sm:flex'
-            } ${
-              elem.buttonStyle === 'gold'
-                ? 'bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 border-[#C9A227]'
-                : 'bg-slate-50 dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1F1F24] text-slate-700 dark:text-[#E0E0E0] border-slate-200 dark:border-[#2D2D33]'
-            }`}
+            } bg-[var(--paper)] dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1F1F24] text-[var(--ink-charcoal)] dark:text-[#E0E0E0] hover:text-[var(--teal)] border-[var(--line-soft)] dark:border-[#2D2D33]`}
           >
-            {renderCustomIcon(elem.icon, <Printer className="w-4 h-4 text-[#C9A227]" />)}
+            {renderCustomIcon(elem.icon, <Printer className="w-4 h-4 text-[var(--teal)]" />)}
             <span>{elem.customText || calculatorButtonText}</span>
           </button>
         );
@@ -325,16 +331,12 @@ export const Header: React.FC<HeaderProps> = ({
             key={elem.id}
             id="btn-header-cart-toggle"
             onClick={() => setIsCartOpen(true)}
-            className={`relative flex items-center gap-2 text-xs sm:text-sm font-black px-4 py-2.5 rounded-xl transition-all shadow-md cursor-pointer ${
-              elem.buttonStyle === 'subtle' || elem.buttonStyle === 'outline'
-                ? 'bg-slate-50 dark:bg-[#161619] text-[#C9A227] border border-[#C9A227]/40 shadow-xs'
-                : 'bg-[#C9A227] hover:bg-[#B38E1E] active:scale-95 text-slate-950 shadow-[#C9A227]/20'
-            }`}
+            className="relative flex items-center gap-2 text-xs sm:text-sm font-black px-4 py-2.5 rounded-full transition-all shadow-md shadow-[var(--coral)]/20 active:scale-95 bg-[var(--coral)] hover:bg-[var(--coral-hover)] text-white cursor-pointer"
           >
-            {renderCustomIcon(elem.icon, <ShoppingBag className="w-4 h-4 text-black" />)}
+            {renderCustomIcon(elem.icon, <ShoppingBag className="w-4 h-4 text-white" />)}
             <span className="hidden sm:inline">{elem.customText || cartButtonText}</span>
             {totalItems > 0 && (
-              <span className="bg-black text-[#C9A227] font-black text-xs px-1.5 py-0.2 rounded-full min-w-[20px] text-center">
+              <span className="bg-white text-[var(--coral)] font-black text-xs px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-xs">
                 {toPersianDigits(totalItems)}
               </span>
             )}
@@ -352,7 +354,7 @@ export const Header: React.FC<HeaderProps> = ({
               elem.showOnMobile === false ? 'hidden sm:flex' : 'flex'
             } ${
               elem.buttonStyle === 'gold'
-                ? 'bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 border-[#C9A227]'
+                ? 'bg-[var(--coral)] hover:bg-[var(--coral-hover)] text-white border-[var(--coral)]'
                 : elem.buttonStyle === 'primary'
                 ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600'
                 : elem.buttonStyle === 'ghost'
@@ -360,7 +362,7 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'bg-slate-50 dark:bg-[#161619] hover:bg-slate-100 dark:hover:bg-[#1F1F24] text-slate-800 dark:text-[#E0E0E0] border-slate-200 dark:border-[#2D2D33]'
             }`}
           >
-            {renderCustomIcon(elem.icon, <Sparkles className="w-4 h-4 text-[#C9A227]" />)}
+            {renderCustomIcon(elem.icon, <Tag className="w-4 h-4 text-[var(--coral)]" />)}
             <span>{elem.customText || elem.title}</span>
           </button>
         );
@@ -375,13 +377,13 @@ export const Header: React.FC<HeaderProps> = ({
           id="header-top-notice-bar"
           className={`border-b text-xs py-2 px-4 sm:px-8 lg:px-12 2xl:px-16 transition-colors ${
             websiteSettings?.noticeBannerStyle === 'gold_gradient'
-              ? 'bg-gradient-to-r from-amber-500/20 via-[#C9A227]/30 to-amber-600/20 border-[#C9A227]/40 text-slate-900 dark:text-[#F3F4F6]'
+              ? 'bg-gradient-to-r from-[var(--sunshine)]/25 via-[var(--sunshine)]/35 to-[var(--sunshine)]/25 border-[var(--sunshine)]/50 text-[var(--ink-charcoal)] dark:text-[#F3F4F6]'
               : websiteSettings?.noticeBannerStyle === 'emerald_deals'
               ? 'bg-gradient-to-r from-emerald-600/20 via-emerald-500/25 to-teal-600/20 border-emerald-500/40 text-emerald-900 dark:text-emerald-300'
               : websiteSettings?.noticeBannerStyle === 'indigo_promo'
               ? 'bg-gradient-to-r from-indigo-600/20 via-blue-600/25 to-violet-600/20 border-indigo-500/40 text-indigo-900 dark:text-indigo-200'
               : websiteSettings?.noticeBannerStyle === 'rose_hot'
-              ? 'bg-gradient-to-r from-rose-600/20 via-orange-500/25 to-amber-600/20 border-rose-500/40 text-rose-900 dark:text-rose-200'
+              ? 'bg-gradient-to-r from-rose-600/20 via-[var(--coral)]/25 to-[var(--coral)]/30 border-rose-500/40 text-rose-900 dark:text-rose-200'
               : websiteSettings?.noticeBannerStyle === 'dark_luxury'
               ? 'bg-[#0A0A0B] border-[#222225] text-[#E0E0E0]'
               : 'bg-slate-100 dark:bg-[#0A0A0B] border-slate-200 dark:border-[#222225] text-slate-800 dark:text-[#E0E0E0]'
@@ -389,8 +391,8 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <div className="w-full flex flex-wrap justify-between items-center gap-2">
             <div className="flex items-center flex-wrap gap-2 font-medium">
-              <span className="bg-[#C9A227] text-slate-950 px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-xs shrink-0 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-black" />
+              <span className="bg-[var(--coral)] text-white px-2.5 py-0.5 rounded-full text-[11px] font-black shadow-xs shrink-0 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-white" />
                 <span>{noticeBadgeText}</span>
               </span>
               <span className="text-slate-800 dark:text-[#E0E0E0] font-semibold text-xs">
@@ -400,7 +402,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMenuClick(websiteSettings.noticeLink!)}
-                  className="inline-flex items-center gap-1 text-[11px] font-black text-[#C9A227] hover:underline bg-black/10 dark:bg-white/10 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                  className="inline-flex items-center gap-1 text-[11px] font-black text-[var(--teal)] hover:underline bg-black/10 dark:bg-white/10 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
                 >
                   <span>{websiteSettings.noticeLinkText || 'مشاهده و سفارش'}</span>
                   <ArrowRight className="w-3 h-3 -rotate-180" />
@@ -415,7 +417,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onClick={onOpenTracker}
                   className="hover:text-slate-900 dark:hover:text-[#F3F4F6] flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <Truck className="w-3.5 h-3.5 text-[#C9A227]" />
+                  <Truck className="w-3.5 h-3.5 text-[var(--teal)]" />
                   <span>{quickTrackingText}</span>
                 </button>
               )}
@@ -428,21 +430,56 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Main Header Dynamic Content */}
-      <div id="header-main-bar" className="w-full px-4 sm:px-8 lg:px-12 2xl:px-16 py-3.5">
-        <div className="flex items-center justify-between gap-4">
-          {/* Start Section (e.g. Logo & Brand) */}
-          <div className="flex items-center gap-3">
-            {startElements.map(renderSingleElement)}
-          </div>
+      <div id="header-main-bar" className={`w-full ${headerPaddingX} ${headerPaddingY}`}>
+        {headerLayout === 'centered' ? (
+          <div className="flex flex-col items-center gap-3">
+            {/* Top row: Logo centered, with mobile toggle / space on right and actions on left */}
+            <div className="w-full flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  id="btn-mobile-menu-toggle-centered"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden p-2 rounded-xl border border-[var(--line-soft)] dark:border-[#2D2D33] text-slate-700 dark:text-[#E0E0E0] hover:bg-slate-100 dark:hover:bg-[#1C1C20] transition-colors cursor-pointer"
+                  aria-label="منوی سایت"
+                >
+                  {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+              </div>
 
-          {/* Center Section (e.g. Search Box) */}
-          {centerElements.map(renderSingleElement)}
+              {/* Centered Logo */}
+              <div className="flex justify-center">
+                {startElements.map(renderSingleElement)}
+              </div>
 
-          {/* End Section (e.g. Theme Toggle, Auth, Calculator, Cart, Custom Buttons) */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {endElements.map(renderSingleElement)}
+              {/* End Section Tools */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                {endElements.map(renderSingleElement)}
+              </div>
+            </div>
+
+            {/* Bottom row: Search Box Centered */}
+            {centerElements.length > 0 && (
+              <div className="w-full max-w-2xl 2xl:max-w-3xl mx-auto flex justify-center pb-1">
+                {centerElements.map(renderSingleElement)}
+              </div>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between gap-4">
+            {/* Start Section (e.g. Logo & Brand) */}
+            <div className="flex items-center gap-3">
+              {startElements.map(renderSingleElement)}
+            </div>
+
+            {/* Center Section (e.g. Search Box) */}
+            {centerElements.map(renderSingleElement)}
+
+            {/* End Section (e.g. Theme Toggle, Auth, Calculator, Cart, Custom Buttons) */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {endElements.map(renderSingleElement)}
+            </div>
+          </div>
+        )}
 
         {/* Mobile Search Box (If search is enabled) */}
         {isSearchActive && (
@@ -454,7 +491,7 @@ export const Header: React.FC<HeaderProps> = ({
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full bg-slate-50 dark:bg-[#161619] text-slate-900 dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] text-xs rounded-xl pr-9 pl-3 py-2 border border-slate-200 dark:border-[#2D2D33] focus:border-[#C9A227] outline-none"
+                className="w-full bg-[var(--paper)] dark:bg-[#161619] text-[var(--ink-charcoal)] dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] text-xs rounded-full pr-9 pl-3 py-2 border border-[var(--line-soft)] dark:border-[#2D2D33] focus:border-[var(--teal)] outline-none"
               />
               <Search className="w-4 h-4 text-slate-400 dark:text-[#8E9299] absolute right-3 top-2.5" />
             </div>
@@ -462,22 +499,22 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {/* Dynamic Categories & Header Navigation Bar */}
-        <nav id="header-nav-categories" className="mt-3 pt-2.5 border-t border-slate-200 dark:border-[#222225] hidden lg:flex items-center gap-2 overflow-x-auto no-scrollbar text-xs font-semibold text-slate-600 dark:text-[#8E9299]">
+        <nav id="header-nav-categories" className="mt-3 pt-2.5 border-t border-[var(--line-soft)] dark:border-[var(--line-soft-dark)] hidden lg:flex items-center gap-2 overflow-x-auto no-scrollbar text-xs font-semibold text-slate-600 dark:text-[#8E9299]">
           {customMenuItems ? (
             customMenuItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleMenuClick(item.url)}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-full border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
                   item.highlight
-                    ? 'bg-[#C9A227]/10 text-[#C9A227] border border-[#C9A227]/40 font-bold hover:bg-[#C9A227]/20'
-                    : 'hover:bg-slate-100 dark:hover:bg-[#161619] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
+                    ? 'bg-[var(--coral)] text-white border-[var(--coral)] font-bold shadow-xs'
+                    : 'bg-white dark:bg-[#121316] text-[var(--ink-charcoal)] dark:text-[#E2E4E9] border-[var(--line-soft)] dark:border-[var(--line-soft-dark)] hover:border-[var(--coral)] hover:bg-[var(--coral)]/5'
                 }`}
               >
                 {renderIcon(item.icon)}
                 <span>{item.title}</span>
                 {item.badge && (
-                  <span className="bg-[#C9A227] text-black text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
+                  <span className="bg-[var(--sunshine)] text-[var(--ink-charcoal)] text-[10px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
                     {item.badge}
                   </span>
                 )}
@@ -487,38 +524,42 @@ export const Header: React.FC<HeaderProps> = ({
             <>
               <button
                 onClick={() => onSelectCategory(null)}
-                className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                className={`px-3.5 py-1.5 rounded-full border transition-all cursor-pointer shrink-0 ${
                   selectedCategory === null
-                    ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/50 text-amber-700 dark:text-[#C9A227] font-bold shadow-xs'
-                    : 'hover:bg-slate-100 dark:hover:bg-[#161619] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
+                    ? 'bg-[var(--ink-charcoal)] text-white border-[var(--ink-charcoal)] dark:bg-white dark:text-[var(--ink-charcoal)] shadow-sm font-bold'
+                    : 'bg-white dark:bg-[#121316] text-[var(--ink-charcoal)] dark:text-[#E2E4E9] border-[var(--line-soft)] dark:border-[var(--line-soft-dark)] hover:border-[var(--coral)] hover:bg-[var(--coral)]/5'
                 }`}
               >
                 همه محصولات
               </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => onSelectCategory(cat.id)}
-                  className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                    selectedCategory === cat.id
-                      ? 'bg-amber-50 dark:bg-[#1C1C20] border border-[#C9A227]/50 text-amber-700 dark:text-[#C9A227] font-bold shadow-xs'
-                      : 'hover:bg-slate-100 dark:hover:bg-[#161619] hover:text-slate-900 dark:hover:text-[#E0E0E0]'
-                  }`}
-                >
-                  <span>{cat.name}</span>
-                  {cat.productCount > 0 && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      selectedCategory === cat.id 
-                        ? 'bg-[#C9A227]/20 text-amber-800 dark:text-[#C9A227]' 
-                        : 'bg-slate-200 dark:bg-[#222225] text-slate-600 dark:text-[#8E9299]'
-                    }`}>
-                      {toPersianDigits(cat.productCount)}
-                    </span>
-                  )}
-                </button>
-              ))}
-              <div className="mr-auto flex items-center gap-2 text-[#C9A227] font-bold">
-                <Sparkles className="w-3.5 h-3.5 text-[#C9A227]" />
+              {categories.map((cat, index) => {
+                const isSelected = selectedCategory === cat.id;
+                const accent = CATEGORY_ACCENTS[index % CATEGORY_ACCENTS.length];
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => onSelectCategory(cat.id)}
+                    className={`group px-3.5 py-1.5 rounded-full border transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-[var(--ink-charcoal)] text-white border-[var(--ink-charcoal)] dark:bg-white dark:text-[var(--ink-charcoal)] shadow-sm font-bold'
+                        : `bg-white dark:bg-[#121316] text-[var(--ink-charcoal)] dark:text-[#E2E4E9] border-[var(--line-soft)] dark:border-[var(--line-soft-dark)] ${accent.border} ${accent.bg}`
+                    }`}
+                  >
+                    <span className={!isSelected ? accent.text : ''}>{cat.name}</span>
+                    {cat.productCount > 0 && (
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isSelected 
+                          ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[var(--ink-charcoal)]' 
+                          : 'bg-slate-100 dark:bg-[#1C1D22] text-slate-500 dark:text-[#8E9299]'
+                      }`}>
+                        {toPersianDigits(cat.productCount)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              <div className="mr-auto flex items-center gap-2 text-[var(--teal)] font-bold">
+                <BookOpen className="w-3.5 h-3.5 text-[var(--coral)]" />
                 <span>تولیدات اختصاصی خطی‌نو</span>
               </div>
             </>
@@ -532,30 +573,34 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="text-xs font-bold text-slate-500 dark:text-[#8E9299] mb-1">منوی دسترسی و دسته‌بندی‌ها:</div>
           <div className="grid grid-cols-2 gap-2">
             {customMenuItems ? (
-              customMenuItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    handleMenuClick(item.url);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`text-right p-2.5 rounded-lg text-xs font-medium flex items-center justify-between gap-1.5 ${
-                    item.highlight
-                      ? 'bg-[#C9A227]/15 text-[#C9A227] border border-[#C9A227]/40 font-bold'
-                      : 'bg-slate-100 dark:bg-[#161619] text-slate-700 dark:text-[#E0E0E0]'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5 truncate">
-                    {renderIcon(item.icon)}
-                    {item.title}
-                  </span>
-                  {item.badge && (
-                    <span className="bg-[#C9A227] text-black text-[9px] font-black px-1.5 py-0.2 rounded-full shrink-0">
-                      {item.badge}
+              customMenuItems.map((item, idx) => {
+                const accent = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      handleMenuClick(item.url);
+                      setMobileMenuOpen(false);
+                    }}
+                    style={item.highlight ? { backgroundColor: `color-mix(in srgb, ${accent} 15%, transparent)`, color: accent, borderColor: `color-mix(in srgb, ${accent} 40%, transparent)` } : undefined}
+                    className={`text-right p-2.5 rounded-lg text-xs font-medium flex items-center justify-between gap-1.5 ${
+                      item.highlight
+                        ? 'border font-bold'
+                        : 'bg-slate-100 dark:bg-[#161619] text-slate-700 dark:text-[#E0E0E0]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 truncate">
+                      {renderIcon(item.icon)}
+                      {item.title}
                     </span>
-                  )}
-                </button>
-              ))
+                    {item.badge && (
+                      <span className="bg-[var(--coral)] text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shrink-0">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
             ) : (
               <>
                 <button
@@ -563,9 +608,9 @@ export const Header: React.FC<HeaderProps> = ({
                     onSelectCategory(null);
                     setMobileMenuOpen(false);
                   }}
-                  className={`text-right p-2 rounded-lg text-xs font-medium ${
+                  className={`text-right p-2.5 rounded-xl text-xs font-medium ${
                     selectedCategory === null 
-                      ? 'bg-amber-50 dark:bg-[#1C1C20] text-amber-700 dark:text-[#C9A227] border border-[#C9A227]/50' 
+                      ? 'bg-[var(--ink-charcoal)] text-white dark:bg-white dark:text-[var(--ink-charcoal)] font-bold' 
                       : 'bg-slate-100 dark:bg-[#161619] text-slate-600 dark:text-[#8E9299]'
                   }`}
                 >
@@ -578,9 +623,9 @@ export const Header: React.FC<HeaderProps> = ({
                       onSelectCategory(cat.id);
                       setMobileMenuOpen(false);
                     }}
-                    className={`text-right p-2 rounded-lg text-xs font-medium truncate ${
+                    className={`text-right p-2.5 rounded-xl text-xs font-medium truncate ${
                       selectedCategory === cat.id 
-                        ? 'bg-amber-50 dark:bg-[#1C1C20] text-amber-700 dark:text-[#C9A227] border border-[#C9A227]/50' 
+                        ? 'bg-[var(--ink-charcoal)] text-white dark:bg-white dark:text-[var(--ink-charcoal)] font-bold' 
                         : 'bg-slate-100 dark:bg-[#161619] text-slate-600 dark:text-[#8E9299]'
                     }`}
                   >
@@ -592,7 +637,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* Mobile Customer Auth & Account Section */}
-          <div className="p-3 bg-amber-500/10 rounded-xl border border-[#C9A227]/30 flex items-center justify-between">
+          <div className="p-3 bg-[var(--paper)] dark:bg-[#161619] rounded-2xl border border-[var(--line-soft)] dark:border-[#2D2D33] flex items-center justify-between">
             {isAuthenticated && customer ? (
               <button
                 onClick={() => {
@@ -602,11 +647,11 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-full flex items-center justify-between text-right cursor-pointer"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-[#C9A227] text-black flex items-center justify-center font-black">
+                  <div className="w-8 h-8 rounded-full bg-[var(--teal)] text-white flex items-center justify-center font-black">
                     <User className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="font-black text-xs text-slate-900 dark:text-[#F3F4F6]">
+                    <div className="font-black text-xs text-[var(--ink-charcoal)] dark:text-[#F3F4F6]">
                       {customer.name || 'حساب کاربری من'}
                     </div>
                     <div className="text-[10px] text-slate-500 dark:text-[#8E9299]">
@@ -614,7 +659,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   </div>
                 </div>
-                <span className="text-xs text-[#C9A227] font-bold">مدیریت ←</span>
+                <span className="text-xs text-[var(--teal)] font-bold">مدیریت ←</span>
               </button>
             ) : (
               <button
@@ -625,12 +670,12 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-full flex items-center justify-between text-right cursor-pointer"
               >
                 <div className="flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-[#C9A227]" />
-                  <span className="font-bold text-xs text-slate-900 dark:text-[#F3F4F6]">
+                  <KeyRound className="w-4 h-4 text-[var(--coral)]" />
+                  <span className="font-bold text-xs text-[var(--ink-charcoal)] dark:text-[#F3F4F6]">
                     ورود یا ثبت‌نام با شماره موبایل
                   </span>
                 </div>
-                <span className="text-xs text-[#C9A227] font-bold">ورود ←</span>
+                <span className="text-xs text-[var(--coral)] font-bold">ورود ←</span>
               </button>
             )}
           </div>
@@ -647,7 +692,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="w-full flex items-center justify-between p-2.5 rounded-lg bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] text-slate-800 dark:text-[#E0E0E0] text-xs font-bold cursor-pointer"
               >
                 <span className="flex items-center gap-2">
-                  {renderCustomIcon(elem.icon, <Sparkles className="w-4 h-4 text-[#C9A227]" />)}
+                  {renderCustomIcon(elem.icon, <Tag className="w-4 h-4 text-[var(--coral)]" />)}
                   {elem.customText || elem.title}
                 </span>
                 <span>←</span>

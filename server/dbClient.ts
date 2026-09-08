@@ -334,6 +334,7 @@ export async function initializeSchema(): Promise<void> {
     // اطمینان از وجود ستون‌های مهم و همگام‌سازی چند-انباره و تنظیمات آدرس و وب‌سایت
     const ensureColumns = [
       "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
+      "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP",
       "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",
       "ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_online'",
       "ALTER TABLE production_runs ADD COLUMN IF NOT EXISTS warehouse_id VARCHAR(64) DEFAULT 'wh_central'",

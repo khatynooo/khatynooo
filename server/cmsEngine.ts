@@ -15,6 +15,7 @@ import {
   PaymentGatewayConfig,
   AdminAuditLog,
 } from '../src/types';
+import { db } from './db';
 
 // ۱. لیست ماژول‌های اولیه استاندارد سیستم
 let modules: CmsModule[] = [
@@ -441,19 +442,7 @@ let mediaItems: MediaItem[] = [
   },
 ];
 
-// ۵. تنظیمات درگاه پیامک و OTP
-let smsConfig: SmsProviderConfig = {
-  provider: 'kavenegar',
-  apiKey: 'khatinoo_kavenegar_live_api_key_sample',
-  senderNumber: '10008585',
-  isEnabled: true,
-  patternOrderPlaced: 'khatinoo-order-placed',
-  patternOrderShipped: 'khatinoo-order-shipped',
-  patternOtp: 'khatinoo-otp-auth',
-  lowStockAlertMobile: '09131234567',
-  isSimulated: true, // شبیه‌ساز امن در محیط توسعه
-};
-
+// ۵. گزارش‌های ارسال پیامک
 let smsLogs: SmsLog[] = [
   {
     id: 'sms_1',
@@ -661,18 +650,19 @@ export const cmsEngine = {
     return mod;
   },
   getEventHooks: () => eventHooks,
-  triggerEvent: (eventName: string, payload: any) => {
+  triggerEvent: async (eventName: string, payload: any) => {
     console.log(`📡 [CMS Event Triggered]: ${eventName}`, payload);
     // Execute registered module behaviors
     if (eventName === 'order:created') {
       const order = payload;
-      if (smsConfig.isEnabled && order.customerMobile) {
+      const currentConfig = await db.getSmsGatewayConfig();
+      if (currentConfig.isEnabled && order.customerMobile) {
         const msg = `خطی‌نو: سفارش ${order.orderNumber} به مبلغ ${Number(order.finalAmount || 0).toLocaleString('fa-IR')} تومان ثبت گردید. با تشکر از خرید شما.`;
         smsLogs.unshift({
           id: `sms_${Date.now()}`,
           recipient: order.customerMobile,
           message: msg,
-          provider: smsConfig.provider,
+          provider: currentConfig.provider,
           status: 'sent',
           sentAt: new Date().toLocaleTimeString('fa-IR'),
           costRials: 1850,
@@ -749,17 +739,19 @@ export const cmsEngine = {
   },
 
   // --- SMS GATEWAY ---
-  getSmsConfig: () => smsConfig,
-  updateSmsConfig: (newConfig: Partial<SmsProviderConfig>) => {
-    smsConfig = { ...smsConfig, ...newConfig };
-    return smsConfig;
+  getSmsConfig: async (): Promise<SmsProviderConfig> => {
+    return await db.getSmsGatewayConfig();
   },
-  sendTestSms: (mobile: string, messageText: string) => {
+  updateSmsConfig: async (newConfig: Partial<SmsProviderConfig>): Promise<SmsProviderConfig> => {
+    return await db.updateSmsGatewayConfig(newConfig);
+  },
+  sendTestSms: async (mobile: string, messageText: string) => {
+    const currentConfig = await db.getSmsGatewayConfig();
     const newLog: SmsLog = {
       id: `sms_${Date.now()}`,
       recipient: mobile,
       message: messageText || 'پیامک تستی از پرتال خطی‌نو',
-      provider: smsConfig.provider,
+      provider: currentConfig.provider || 'kavenegar',
       status: 'delivered',
       sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
       costRials: 1850,
@@ -877,12 +869,12 @@ export const cmsEngine = {
   },
 
   // --- FULL BACKUP & RESTORE CMS DATA ---
-  getAllCmsData: () => ({
+  getAllCmsData: async () => ({
     modules,
     pageBlocks,
     pageTemplates,
     mediaItems,
-    smsConfig,
+    smsConfig: await db.getSmsGatewayConfig(),
     smsLogs,
     coupons,
     productReviews,
@@ -890,7 +882,7 @@ export const cmsEngine = {
     auditLogs,
   }),
 
-  restoreCmsData: (data: any) => {
+  restoreCmsData: async (data: any) => {
     let restoredCount = 0;
     if (data.mediaItems && Array.isArray(data.mediaItems)) {
       mediaItems = data.mediaItems;
@@ -912,7 +904,7 @@ export const cmsEngine = {
       productReviews = data.productReviews;
     }
     if (data.smsConfig) {
-      smsConfig = { ...smsConfig, ...data.smsConfig };
+      await db.updateSmsGatewayConfig(data.smsConfig);
     }
     if (data.paymentGateways && Array.isArray(data.paymentGateways)) {
       paymentGateways = data.paymentGateways;

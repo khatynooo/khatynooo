@@ -198,6 +198,13 @@ export const api = {
       headers: getAuthHeader(),
     }).then(handleResponse),
 
+  updateSalesInvoice: (id: string, data: any) =>
+    fetch(`${API_BASE}/invoices/sales/${id}`, {
+      method: 'PUT',
+      headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
   getPurchaseInvoices: () =>
     fetch(`${API_BASE}/invoices/purchase`, {
       headers: getAuthHeader(),

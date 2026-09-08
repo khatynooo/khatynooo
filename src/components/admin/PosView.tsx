@@ -457,7 +457,7 @@ export const PosView: React.FC = () => {
             chequeAmount: paymentMethod === 'cheque' ? finalAmount : 0,
             chequeInfo:
               paymentMethod === 'cheque'
-                ? { chequeNumber, sayadId, dueDate: chequeDueDate, bankName }
+                ? { chequeNumber, sayadId, dueDate: chequeDueDate, bankName, amount: finalAmount }
                 : undefined,
             warehouseId: selectedWarehouseId || 'wh_central',
           });

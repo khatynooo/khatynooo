@@ -39,6 +39,7 @@ export const CORE_TABLES = [
   'production_runs',
   'website_settings',
   'store_settings',
+  'sms_gateway_config',
   'treasury_transactions',
   'market_price_snapshots',
   'audit_logs',
@@ -86,7 +87,7 @@ export async function getBackupStats() {
     }
   }
 
-  const cmsData = cmsEngine.getAllCmsData();
+  const cmsData = await cmsEngine.getAllCmsData();
   const mediaCount = cmsData.mediaItems?.length || 0;
   const couponCount = cmsData.coupons?.length || 0;
   const reviewCount = cmsData.productReviews?.length || 0;
@@ -163,7 +164,7 @@ export async function generateSqlDump(): Promise<string> {
   }
 
   // ذخیره فراداده‌های CMS و رسانه‌ها در قالب توضیحات یا متادیتا
-  const cmsData = cmsEngine.getAllCmsData();
+  const cmsData = await cmsEngine.getAllCmsData();
   sql += `-- -------------------------------------------------------------\n`;
   sql += `-- CMS Media Library, Modules & Settings Metadata (JSON Block)\n`;
   sql += `-- -------------------------------------------------------------\n`;
@@ -191,7 +192,7 @@ export async function generateJsonBackup(): Promise<any> {
     }
   }
 
-  const cmsData = cmsEngine.getAllCmsData();
+  const cmsData = await cmsEngine.getAllCmsData();
 
   return {
     format: 'khatinoo_backup_bundle',
@@ -271,7 +272,7 @@ export async function restoreFromJson(backupData: any): Promise<{
   // بازیابی داده‌های رسانه و CMS
   let restoredMedia = 0;
   if (backupData.cms) {
-    const res = cmsEngine.restoreCmsData(backupData.cms);
+    const res = await cmsEngine.restoreCmsData(backupData.cms);
     restoredMedia = res.restoredCmsItems;
   }
 
@@ -302,7 +303,7 @@ export async function restoreFromSql(sqlScript: string): Promise<{
   if (cmsMatch && cmsMatch[1]) {
     try {
       const cmsJson = JSON.parse(cmsMatch[1].trim());
-      cmsEngine.restoreCmsData(cmsJson);
+      await cmsEngine.restoreCmsData(cmsJson);
       cmsRestored = true;
     } catch (e) {
       console.warn('⚠️ [Restore SQL] خطا در خواندن متادیتای CMS از فایل SQL:', e);

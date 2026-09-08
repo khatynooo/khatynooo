@@ -31,10 +31,11 @@ import {
   Banknote,
   ChevronLeft,
   ChevronRight,
+  Pencil,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber } from '../../lib/utils';
-import { SalesInvoice, PurchaseInvoice, ReturnInvoice, ReturnInvoiceItem, Customer, Supplier, Product, Warehouse, Category, ChequeInfo } from '../../types';
+import { SalesInvoice, PurchaseInvoice, ReturnInvoice, ReturnInvoiceItem, Customer, Supplier, Product, Warehouse, Category, ChequeInfo, PaymentMethod } from '../../types';
 import { useToast } from '../common/Toast';
 import { ReceiptModal } from './ReceiptModal';
 import { QuickAddProductModal } from './QuickAddProductModal';
@@ -68,16 +69,11 @@ export const InvoicesView: React.FC = () => {
   );
   const [purchaseDiscount, setPurchaseDiscount] = useState<number | ''>(0);
   const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<'cash' | 'cheque' | 'mixed' | 'credit'>('cash');
-  const [purchaseCashAmount, setPurchaseCashAmount] = useState<number | ''>('');
-  const [purchaseCheques, setPurchaseCheques] = useState<Array<{
-    chequeNumber: string;
-    bankName: string;
-    dueDate: string;
-    sayadId: string;
-    shebaNumber: string;
-    amount: number | '';
-  }>>([]);
+  const [purchaseCashAmount, setPurchaseCashAmount] = useState<number | ''>(0);
+  const [purchaseCheques, setPurchaseCheques] = useState<ChequeInfo[]>([]);
   const [purchaseReceiptImages, setPurchaseReceiptImages] = useState<string[]>([]);
+  const [viewingReceiptUrls, setViewingReceiptUrls] = useState<string[]>([]);
+  const [activeReceiptIndex, setActiveReceiptIndex] = useState<number>(0);
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [purchaseItems, setPurchaseItems] = useState<
     Array<{ productId: string; productName: string; quantity: number; buyPrice: number; total: number }>
@@ -87,8 +83,6 @@ export const InvoicesView: React.FC = () => {
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [quickAddInitialName, setQuickAddInitialName] = useState('');
-  const [viewingReceiptList, setViewingReceiptList] = useState<string[]>([]);
-  const [activeReceiptIndex, setActiveReceiptIndex] = useState(0);
   const [checkingMarketProductId, setCheckingMarketProductId] = useState<string | null>(null);
 
   // New Return Invoice Modal
@@ -102,6 +96,23 @@ export const InvoicesView: React.FC = () => {
   const [returnWarehouseId, setReturnWarehouseId] = useState('wh_central');
   const [returnItems, setReturnItems] = useState<ReturnInvoiceItem[]>([]);
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
+
+  // Edit Sales Invoice Modal States
+  const [editingSalesInvoice, setEditingSalesInvoice] = useState<SalesInvoice | null>(null);
+  const [editCustomerId, setEditCustomerId] = useState('');
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerMobile, setEditCustomerMobile] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('cash');
+  const [editPaidAmount, setEditPaidAmount] = useState<number | ''>(0);
+  const [editDiscount, setEditDiscount] = useState<number | ''>(0);
+  const [editTaxRate, setEditTaxRate] = useState<number | ''>(0);
+  const [editWarehouseId, setEditWarehouseId] = useState('wh_central');
+  const [editNotes, setEditNotes] = useState('');
+  const [editItems, setEditItems] = useState<
+    Array<{ productId: string; productName: string; quantity: number; unitPrice: number; total: number; isService?: boolean }>
+  >([]);
+  const [editProductSearchTerm, setEditProductSearchTerm] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -137,36 +148,41 @@ export const InvoicesView: React.FC = () => {
     }
   }
 
-  const handleReceiptFileUpload = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      showToast('لطفاً یک فایل تصویری (رسید یا فاکتور کاغذی) انتخاب کنید.', 'warning');
-      return;
-    }
+  const handleReceiptFilesUpload = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (!fileArray.length) return;
     setIsUploadingReceipt(true);
+    let successCount = 0;
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string;
-        try {
-          const res = await api.uploadFile({
-            dataUrl,
-            filename: file.name,
-            title: `رسید فاکتور خرید ${purchaseInvoiceNumber || ''}`,
-            category: 'receipt',
-          });
-          setPurchaseReceiptImageUrl(res.url || dataUrl);
-          showToast('تصویر فاکتور تامین‌کننده بارگذاری شد.', 'success');
-        } catch {
-          setPurchaseReceiptImageUrl(dataUrl);
-          showToast('تصویر فاکتور ذخیره شد.', 'success');
-        } finally {
-          setIsUploadingReceipt(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch {
+      for (const file of fileArray) {
+        if (!file.type.startsWith('image/')) continue;
+        await new Promise<void>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            try {
+              const res = await api.uploadFile({
+                dataUrl: reader.result as string,
+                filename: file.name,
+                category: 'receipts',
+                title: `رسید فاکتور خرید ${purchaseInvoiceNumber || ''}`,
+              });
+              const url = res.url || res.fileUrl || (reader.result as string);
+              setPurchaseReceiptImages((prev) => [...prev, url]);
+              successCount++;
+            } catch {
+              setPurchaseReceiptImages((prev) => [...prev, reader.result as string]);
+              successCount++;
+            }
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+      if (successCount > 0) {
+        showToast(`${successCount} تصویر پیوست فاکتور با موفقیت افزوده شد.`, 'success');
+      }
+    } finally {
       setIsUploadingReceipt(false);
-      showToast('خطا در پردازش فایل تصویر', 'error');
     }
   };
 
@@ -256,26 +272,111 @@ export const InvoicesView: React.FC = () => {
       return;
     }
 
+    const grossTotal = purchaseItems.reduce((s, i) => s + (i.total || i.quantity * i.buyPrice), 0);
+    const discountVal = Number(purchaseDiscount) || 0;
+    const finalPayable = Math.max(0, grossTotal - discountVal);
+
+    const cashPart = (purchasePaymentMethod === 'cash' || purchasePaymentMethod === 'mixed')
+      ? (Number(purchaseCashAmount) || 0)
+      : 0;
+    const chequeTotal = (purchasePaymentMethod === 'cheque' || purchasePaymentMethod === 'mixed')
+      ? purchaseCheques.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+      : 0;
+    const totalPaid = cashPart + chequeTotal;
+
+    // ۱. اعتبارسنجی: مجموع مبالغ پرداختی نمی‌تواند بیشتر از مبلغ نهایی فاکتور باشد
+    if (totalPaid > finalPayable) {
+      showToast(
+        `مجموع مبالغ پرداختی (${formatToman(totalPaid)}) بیشتر از مبلغ نهایی فاکتور (${formatToman(finalPayable)}) است.`,
+        'warning'
+      );
+      return;
+    }
+
+    // ۲. اعتبارسنجی فیلدهای چک و شماره شبا
+    if (purchasePaymentMethod === 'cheque' || purchasePaymentMethod === 'mixed') {
+      if (purchasePaymentMethod === 'cheque' && purchaseCheques.length === 0) {
+        showToast('لطفاً حداقل یک فقره چک برای تسویه فاکتور ثبت کنید.', 'warning');
+        return;
+      }
+      for (let idx = 0; idx < purchaseCheques.length; idx++) {
+        const c = purchaseCheques[idx];
+        if (!c.chequeNumber?.trim() || !c.dueDate || !c.amount || Number(c.amount) <= 0) {
+          showToast(`اطلاعات چک ردیف ${idx + 1} (شماره چک، تاریخ سررسید، مبلغ معتبر) ناقص است.`, 'warning');
+          return;
+        }
+        if (c.shebaNumber) {
+          const cleanSheba = c.shebaNumber.replace(/^IR/i, '').replace(/\s+/g, '');
+          if (cleanSheba.length !== 24 || !/^\d{24}$/.test(cleanSheba)) {
+            showToast(`شماره شبای چک ردیف ${idx + 1} باید دقیقاً ۲۴ رقم باشد.`, 'warning');
+            return;
+          }
+        }
+      }
+    }
+
     try {
-      await api.createPurchaseInvoice({
+      const invoiceResult = await api.createPurchaseInvoice({
         supplierId: purchaseSupplierId,
         warehouseId: purchaseWarehouseId,
         items: purchaseItems,
-        paidAmount: purchasePaidAmount,
-        paymentMethod: 'cash',
+        totalAmount: grossTotal,
+        discount: discountVal,
+        paidAmount: totalPaid,
+        cashAmount: cashPart,
+        chequeAmount: chequeTotal,
+        cheques: purchaseCheques,
+        paymentMethod: purchasePaymentMethod,
+        receiptImageUrls: purchaseReceiptImages,
+        receiptImageUrl: purchaseReceiptImages[0] || undefined,
         invoiceNumber: purchaseInvoiceNumber.trim() || undefined,
         invoiceDate: purchaseInvoiceDate.trim() || undefined,
-        discount: Number(purchaseDiscount) || 0,
-        receiptImageUrl: purchaseReceiptImageUrl || undefined,
       });
-      showToast('فاکتور خرید ثبت و موجودی انبار به‌روزرسانی شد.', 'success');
+
+      // ۳. ثبت خودکار چک‌ها در ماژول چک‌ها (نوع: پرداختی به پخش/تامین‌کننده)
+      if (purchasePaymentMethod === 'cheque' || purchasePaymentMethod === 'mixed') {
+        const supObj = suppliers.find((s) => s.id === purchaseSupplierId);
+        const supName = supObj?.name || 'تامین‌کننده';
+        const invNumber = invoiceResult?.invoice?.invoiceNumber || purchaseInvoiceNumber.trim() || '';
+        const invId = invoiceResult?.invoice?.id;
+
+        for (const chq of purchaseCheques) {
+          try {
+            const cleanSheba = chq.shebaNumber ? chq.shebaNumber.replace(/^IR/i, '').replace(/\s+/g, '') : undefined;
+            await api.createCheque({
+              chequeNumber: chq.chequeNumber.trim(),
+              sayadId: chq.sayadId?.trim() || '0000000000000000',
+              type: 'paid', // چک صادرشده توسط ما به تامین‌کننده
+              bankName: chq.bankName.trim() || 'بانک',
+              amount: Number(chq.amount),
+              dueDate: chq.dueDate,
+              shebaNumber: cleanSheba,
+              entityId: purchaseSupplierId,
+              entityName: supName,
+              invoiceId: invId,
+              invoiceNumber: invNumber,
+              notes: `بابت فاکتور خرید ${invNumber}${cleanSheba ? ` — شبا: IR${cleanSheba}` : ''}`,
+              status: 'pending',
+            });
+          } catch (chequeErr) {
+            console.warn('ثبت خودکار چک در ماژول چک‌ها ناموفق بود:', chequeErr);
+          }
+        }
+      }
+
+      showToast(
+        'فاکتور خرید با موفقیت ثبت، موجودی انبار به‌روزرسانی، و چک‌های مربوطه در ماژول چک‌ها درج شدند.',
+        'success'
+      );
       setShowNewPurchaseModal(false);
       setPurchaseItems([]);
-      setPurchasePaidAmount(0);
+      setPurchaseCashAmount(0);
+      setPurchaseCheques([]);
+      setPurchaseReceiptImages([]);
       setPurchaseInvoiceNumber('');
       setPurchaseInvoiceDate(new Date().toLocaleDateString('fa-IR'));
       setPurchaseDiscount(0);
-      setPurchaseReceiptImageUrl('');
+      setPurchasePaymentMethod('cash');
       loadData();
     } catch (err: any) {
       showToast(err.message || 'خطا در ثبت فاکتور خرید', 'error');
@@ -319,6 +420,108 @@ export const InvoicesView: React.FC = () => {
       showToast(err.message || 'خطا در ثبت فاکتور مرجوعی', 'error');
     } finally {
       setIsSubmittingReturn(false);
+    }
+  };
+
+  const handleOpenEditSalesInvoice = (inv: SalesInvoice) => {
+    setEditingSalesInvoice(inv);
+    setEditCustomerId(inv.customerId || '');
+    setEditCustomerName(inv.customerName || 'مشتری نقدی حضوری');
+    setEditCustomerMobile(inv.customerMobile || '');
+    setEditPaymentMethod(inv.paymentMethod || 'cash');
+    setEditPaidAmount(inv.paidAmount ?? inv.finalAmount);
+    setEditDiscount(inv.discount || 0);
+    const calculatedTaxRate =
+      inv.tax && inv.subtotal
+        ? Math.round((inv.tax / Math.max(1, inv.subtotal - (inv.discount || 0))) * 100)
+        : 0;
+    setEditTaxRate(calculatedTaxRate);
+    setEditWarehouseId(inv.warehouseId || 'wh_central');
+    setEditNotes(inv.notes || '');
+    setEditProductSearchTerm('');
+    setEditItems(
+      (inv.items || []).map((it) => ({
+        productId: it.productId,
+        productName: it.productName,
+        quantity: Number(it.quantity) || 1,
+        unitPrice: Number(it.unitPrice) || 0,
+        total: Number(it.total) || (Number(it.quantity) * Number(it.unitPrice)),
+        isService: (it as any).isService,
+      }))
+    );
+  };
+
+  const handleEditItemQuantity = (index: number, newQty: number) => {
+    if (newQty <= 0) return;
+    setEditItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, quantity: newQty, total: newQty * it.unitPrice } : it
+      )
+    );
+  };
+
+  const handleEditItemPrice = (index: number, newPrice: number) => {
+    if (newPrice < 0) return;
+    setEditItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, unitPrice: newPrice, total: it.quantity * newPrice } : it
+      )
+    );
+  };
+
+  const handleRemoveEditItem = (index: number) => {
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddProductToEdit = (prod: Product) => {
+    const existingIndex = editItems.findIndex((it) => it.productId === prod.id);
+    if (existingIndex >= 0) {
+      handleEditItemQuantity(existingIndex, editItems[existingIndex].quantity + 1);
+    } else {
+      setEditItems((prev) => [
+        ...prev,
+        {
+          productId: prod.id,
+          productName: prod.name,
+          quantity: 1,
+          unitPrice: prod.salePrice,
+          total: prod.salePrice,
+        },
+      ]);
+    }
+    setEditProductSearchTerm('');
+  };
+
+  const handleSaveEditSalesInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSalesInvoice) return;
+    if (editItems.length === 0) {
+      showToast('حداقل باید یک کالا در فاکتور فروش وجود داشته باشد.', 'warning');
+      return;
+    }
+
+    setIsSubmittingEdit(true);
+    try {
+      const res = await api.updateSalesInvoice(editingSalesInvoice.id, {
+        items: editItems,
+        customerId: editCustomerId || undefined,
+        customerName: editCustomerName.trim() || 'مشتری نقدی حضوری',
+        customerMobile: editCustomerMobile.trim() || undefined,
+        paymentMethod: editPaymentMethod,
+        paidAmount: Number(editPaidAmount) || 0,
+        discount: Number(editDiscount) || 0,
+        taxRate: Number(editTaxRate) || 0,
+        warehouseId: editWarehouseId,
+        notes: editNotes,
+      });
+
+      showToast(res.message || 'فاکتور فروش با موفقیت ویرایش شد و انبار و حساب‌ها به‌روزرسانی شدند.', 'success');
+      setEditingSalesInvoice(null);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ویرایش فاکتور فروش', 'error');
+    } finally {
+      setIsSubmittingEdit(false);
     }
   };
 
@@ -388,7 +591,7 @@ export const InvoicesView: React.FC = () => {
                   <th className="p-3.5">مبلغ کل فاکتور</th>
                   <th className="p-3.5">شیوه تسویه</th>
                   <th className="p-3.5">صندوقدار</th>
-                  <th className="p-3.5 text-center">چاپ و مشاهده</th>
+                  <th className="p-3.5 text-center">عملیات و چاپ</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -413,16 +616,27 @@ export const InvoicesView: React.FC = () => {
                     </td>
                     <td className="p-3.5 text-slate-600">{inv.createdByName || 'فروشنده'}</td>
                     <td className="p-3.5 text-center">
-                      <button
-                        onClick={() => {
-                          setSelectedInvoice(inv);
-                          setShowReceipt(true);
-                        }}
-                        className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-colors inline-flex items-center gap-1 font-bold text-[11px]"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>چاپ فیش</span>
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setSelectedInvoice(inv);
+                            setShowReceipt(true);
+                          }}
+                          className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer"
+                          title="چاپ فیش"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>چاپ فیش</span>
+                        </button>
+                        <button
+                          onClick={() => handleOpenEditSalesInvoice(inv)}
+                          className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer"
+                          title="ویرایش فاکتور فروش"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>ویرایش</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -471,7 +685,31 @@ export const InvoicesView: React.FC = () => {
                         <span className="text-slate-400">-</span>
                       )}
                     </td>
-                    <td className="p-3.5 text-emerald-600 font-mono font-bold">{formatToman(inv.paidAmount)}</td>
+                    <td className="p-3.5 text-emerald-600 font-mono font-bold">
+                      <div>{formatToman(inv.paidAmount)}</div>
+                      {inv.paymentMethod === 'mixed' && (
+                        <div className="text-[10px] font-normal mt-0.5 space-y-0.5">
+                          {Boolean(inv.cashAmount && inv.cashAmount > 0) && (
+                            <span className="block text-indigo-700">نقد: {formatToman(inv.cashAmount)}</span>
+                          )}
+                          {Boolean(inv.cheques && inv.cheques.length > 0) && (
+                            <span className="block text-amber-700 font-bold">
+                              {inv.cheques.length} فقره چک ({formatToman(inv.chequeAmount || inv.cheques.reduce((s, c) => s + (c.amount || 0), 0))})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {inv.paymentMethod === 'cheque' && (
+                        <div className="text-[10px] text-amber-700 font-normal mt-0.5 font-bold">
+                          {inv.cheques && inv.cheques.length > 0
+                            ? `${inv.cheques.length} فقره چک (${formatToman(inv.chequeAmount || inv.paidAmount)})`
+                            : (inv.chequeInfo ? `چک: ${inv.chequeInfo.chequeNumber}` : 'تسویه با چک')}
+                        </div>
+                      )}
+                      {inv.paymentMethod === 'credit' && (
+                        <div className="text-[10px] text-rose-600 font-normal mt-0.5">نسیه (دفتری)</div>
+                      )}
+                    </td>
                     <td className="p-3.5 font-mono font-bold text-rose-600">
                       {inv.remainingAmount > 0 ? (
                         formatToman(inv.remainingAmount)
@@ -480,19 +718,28 @@ export const InvoicesView: React.FC = () => {
                       )}
                     </td>
                     <td className="p-3.5 text-center">
-                      {inv.receiptImageUrl ? (
-                        <button
-                          type="button"
-                          onClick={() => setViewingReceiptUrl(inv.receiptImageUrl || null)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition-colors cursor-pointer"
-                          title="مشاهده تصویر فاکتور/رسید"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>مشاهده برگه</span>
-                        </button>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">ندارد</span>
-                      )}
+                      {(() => {
+                        const receipts = (inv.receiptImageUrls && inv.receiptImageUrls.length > 0)
+                          ? inv.receiptImageUrls
+                          : (inv.receiptImageUrl ? [inv.receiptImageUrl] : []);
+                        if (receipts.length === 0) {
+                          return <span className="text-slate-400 text-[11px]">ندارد</span>;
+                        }
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViewingReceiptUrls(receipts);
+                              setActiveReceiptIndex(0);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] transition-colors cursor-pointer"
+                            title="مشاهده تصویر فاکتور/رسید"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>مشاهده برگه {receipts.length > 1 ? `(${receipts.length} عکس)` : ''}</span>
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -932,26 +1179,34 @@ export const InvoicesView: React.FC = () => {
                 </div>
               )}
 
-              {/* Financial Calculation & Discount */}
+              {/* Financial Calculation & Settlement System */}
               {(() => {
                 const grossTotal = purchaseItems.reduce((s, i) => s + i.total, 0);
                 const discountVal = Number(purchaseDiscount) || 0;
                 const finalPayable = Math.max(0, grossTotal - discountVal);
-                const remainingDebt = Math.max(0, finalPayable - purchasePaidAmount);
+                const cashPart = (purchasePaymentMethod === 'cash' || purchasePaymentMethod === 'mixed')
+                  ? (Number(purchaseCashAmount) || 0)
+                  : 0;
+                const chequeTotal = (purchasePaymentMethod === 'cheque' || purchasePaymentMethod === 'mixed')
+                  ? purchaseCheques.reduce((s, c) => s + (Number(c.amount) || 0), 0)
+                  : 0;
+                const totalPaid = cashPart + chequeTotal;
+                const remainingDebt = Math.max(0, finalPayable - totalPaid);
 
                 return (
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
+                    {/* Top Row: Gross, Discount, Final Payable */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
-                        <label className="text-slate-600 font-medium block mb-1">جمع ناخالص اقلام:</label>
-                        <div className="font-mono font-bold text-slate-800 text-sm bg-white p-2 rounded-xl border border-slate-200">
+                        <label className="text-slate-600 font-medium block mb-1 text-xs">جمع ناخالص اقلام:</label>
+                        <div className="font-mono font-bold text-slate-800 text-sm bg-white p-2.5 rounded-xl border border-slate-200">
                           {formatToman(grossTotal)}
                         </div>
                       </div>
 
                       <div>
-                        <label className="text-slate-700 font-bold block mb-1 flex items-center gap-1">
-                          <Percent className="w-3 h-3 text-emerald-600" />
+                        <label className="text-slate-700 font-bold block mb-1 text-xs flex items-center gap-1">
+                          <Percent className="w-3.5 h-3.5 text-emerald-600" />
                           <span>تخفیف فاکتور (تومان):</span>
                         </label>
                         <input
@@ -963,41 +1218,250 @@ export const InvoicesView: React.FC = () => {
                             setPurchaseDiscount(e.target.value === '' ? '' : Number(e.target.value))
                           }
                           placeholder="۰"
-                          className="w-full bg-white border border-slate-300 focus:border-emerald-500 rounded-xl p-2 font-mono font-bold text-emerald-700 outline-none"
+                          className="w-full bg-white border border-slate-300 focus:border-emerald-500 rounded-xl p-2 font-mono font-bold text-emerald-700 outline-none text-xs"
                         />
                       </div>
 
                       <div>
-                        <label className="text-slate-800 font-black block mb-1">مبلغ نهایی فاکتور خرید:</label>
-                        <div className="font-mono font-black text-indigo-700 text-sm bg-indigo-50/80 p-2 rounded-xl border border-indigo-200">
+                        <label className="text-slate-800 font-black block mb-1 text-xs">مبلغ نهایی فاکتور خرید:</label>
+                        <div className="font-mono font-black text-indigo-700 text-sm bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200">
                           {formatToman(finalPayable)}
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                      <div>
-                        <label className="font-bold text-slate-700 block mb-1">مبلغ پرداختی نقدی فعلی (تومان):</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={10000}
-                          value={purchasePaidAmount}
-                          onChange={(e) => setPurchasePaidAmount(Number(e.target.value))}
-                          className="w-full bg-white border border-slate-300 focus:border-indigo-500 rounded-xl p-2 font-mono outline-none font-bold"
-                        />
+                    {/* Settlement Method Selector */}
+                    <div className="space-y-3 pt-3 border-t border-slate-200">
+                      <label className="font-bold text-slate-700 block text-xs">روش تسویه با تامین‌کننده:</label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { v: 'cash', l: 'نقدی کامل' },
+                          { v: 'cheque', l: 'چک کامل' },
+                          { v: 'mixed', l: 'ترکیبی (نقد + چک)' },
+                          { v: 'credit', l: 'نسیه (بدون پرداخت)' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.v}
+                            type="button"
+                            onClick={() => setPurchasePaymentMethod(opt.v as any)}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                              purchasePaymentMethod === opt.v
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {opt.l}
+                          </button>
+                        ))}
                       </div>
 
-                      <div>
-                        <label className="font-bold text-slate-700 block mb-1">باقی‌مانده بدهی به تامین‌کننده:</label>
+                      {/* Cash Input (Visible if cash or mixed) */}
+                      {(purchasePaymentMethod === 'cash' || purchasePaymentMethod === 'mixed') && (
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                          <label className="font-bold text-slate-700 block text-[11px]">
+                            مبلغ نقدی پرداختی (تومان):
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={10000}
+                            value={purchaseCashAmount}
+                            onChange={(e) =>
+                              setPurchaseCashAmount(e.target.value === '' ? '' : Number(e.target.value))
+                            }
+                            placeholder="۰"
+                            className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-500 rounded-xl p-2 font-mono outline-none font-bold text-xs"
+                          />
+                        </div>
+                      )}
+
+                      {/* Cheques Input (Visible if cheque or mixed) */}
+                      {(purchasePaymentMethod === 'cheque' || purchasePaymentMethod === 'mixed') && (
+                        <div className="space-y-3 bg-amber-50/70 border border-amber-200 rounded-2xl p-3.5">
+                          <div className="flex items-center justify-between">
+                            <label className="font-black text-amber-900 text-xs flex items-center gap-1.5">
+                              <CreditCard className="w-4 h-4 text-amber-700" />
+                              <span>چک‌های تحویلی به تامین‌کننده / پخش:</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPurchaseCheques((prev) => [
+                                  ...prev,
+                                  {
+                                    chequeNumber: '',
+                                    bankName: 'بانک ملت',
+                                    dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+                                    sayadId: '',
+                                    shebaNumber: '',
+                                    amount: 0,
+                                  },
+                                ])
+                              }
+                              className="text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg cursor-pointer transition-colors flex items-center gap-1 shadow-2xs"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>افزودن چک</span>
+                            </button>
+                          </div>
+
+                          {purchaseCheques.map((cheque, idx) => (
+                            <div
+                              key={idx}
+                              className="bg-white border border-amber-200 rounded-xl p-3 space-y-2.5 relative shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                                <span className="font-bold text-[11px] text-amber-900">
+                                  فقره چک شماره {toPersianDigits(idx + 1)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPurchaseCheques((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer transition-colors"
+                                >
+                                  حذف چک
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">شماره چک (سریال)</label>
+                                  <input
+                                    type="text"
+                                    placeholder="مثال: 123456"
+                                    value={cheque.chequeNumber}
+                                    onChange={(e) =>
+                                      setPurchaseCheques((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, chequeNumber: e.target.value } : c))
+                                      )
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-mono outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">نام بانک صادرکننده</label>
+                                  <input
+                                    type="text"
+                                    placeholder="مثال: بانک ملی / ملت / صادرات"
+                                    value={cheque.bankName}
+                                    onChange={(e) =>
+                                      setPurchaseCheques((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, bankName: e.target.value } : c))
+                                      )
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">تاریخ سررسید چک</label>
+                                  <input
+                                    type="date"
+                                    value={cheque.dueDate}
+                                    onChange={(e) =>
+                                      setPurchaseCheques((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, dueDate: e.target.value } : c))
+                                      )
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs outline-none focus:border-amber-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">مبلغ چک (تومان)</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={10000}
+                                    placeholder="۰"
+                                    value={cheque.amount || ''}
+                                    onChange={(e) =>
+                                      setPurchaseCheques((prev) =>
+                                        prev.map((c, i) =>
+                                          i === idx ? { ...c, amount: Number(e.target.value) } : c
+                                        )
+                                      )
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-mono font-bold outline-none focus:border-amber-500 text-indigo-900"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">
+                                    شناسه ۱۶ رقمی صیاد (اختیاری)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="16 رقم صیادی"
+                                    maxLength={16}
+                                    value={cheque.sayadId || ''}
+                                    onChange={(e) =>
+                                      setPurchaseCheques((prev) =>
+                                        prev.map((c, i) => (i === idx ? { ...c, sayadId: e.target.value } : c))
+                                      )
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-mono outline-none focus:border-amber-500"
+                                    dir="ltr"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">
+                                    شماره شبا حساب صادرکننده (۲۴ رقم - اختیاری)
+                                  </label>
+                                  <div className="relative flex items-center">
+                                    <span className="absolute left-2 text-[11px] font-mono text-slate-400 select-none">
+                                      IR
+                                    </span>
+                                    <input
+                                      type="text"
+                                      placeholder="۲۴ رقم بدون IR"
+                                      maxLength={26}
+                                      value={cheque.shebaNumber || ''}
+                                      onChange={(e) => {
+                                        const clean = e.target.value.replace(/^IR/i, '').replace(/\s+/g, '');
+                                        setPurchaseCheques((prev) =>
+                                          prev.map((c, i) => (i === idx ? { ...c, shebaNumber: clean } : c))
+                                        );
+                                      }}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 pl-8 text-xs font-mono outline-none focus:border-amber-500 text-slate-800"
+                                      dir="ltr"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          {purchaseCheques.length === 0 && (
+                            <p className="text-[11px] text-amber-700 bg-amber-100/60 p-2.5 rounded-xl border border-amber-200">
+                              هنوز چکی اضافه نشده — برای درج چک‌های فاکتور، دکمهٔ «+ افزودن چک» را بزنید.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Summary Badges: Total Paid & Remaining Debt */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                        <div className="bg-white p-3 rounded-xl border border-slate-200 font-bold flex items-center justify-between shadow-2xs">
+                          <span className="text-slate-600">مجموع پرداختی (نقد + چک):</span>
+                          <span className="font-mono text-indigo-700 font-black text-sm">
+                            {formatToman(totalPaid)}
+                          </span>
+                        </div>
                         <div
-                          className={`font-mono font-bold text-sm p-2 rounded-xl border ${
+                          className={`p-3 rounded-xl border font-bold flex items-center justify-between shadow-2xs ${
                             remainingDebt > 0
                               ? 'bg-rose-50 text-rose-700 border-rose-200'
                               : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}
                         >
-                          {remainingDebt > 0 ? formatToman(remainingDebt) : 'تسویه کامل'}
+                          <span>باقی‌مانده بدهی فاکتور:</span>
+                          <span className="font-mono font-black text-sm">
+                            {remainingDebt > 0 ? formatToman(remainingDebt) : 'تسویه کامل'}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1005,86 +1469,72 @@ export const InvoicesView: React.FC = () => {
                 );
               })()}
 
-              {/* Receipt / Invoice Paper Image Upload */}
-              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                <div className="font-bold text-slate-700 mb-2 flex items-center gap-1.5">
-                  <ImageIcon className="w-4 h-4 text-slate-500" />
-                  <span>پیوست تصویر رسید / برگه فاکتور کاغذی (اختیاری):</span>
+              {/* Multi-Image Receipt & Invoice Attachment */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-slate-500" />
+                    <span>پیوست تصاویر فاکتور / فیش واریزی / برگه کاغذی (چند عکس مجاز):</span>
+                  </div>
+                  {purchaseReceiptImages.length > 0 && (
+                    <span className="text-[11px] text-indigo-600 font-bold">
+                      {purchaseReceiptImages.length} تصویر پیوست شده
+                    </span>
+                  )}
                 </div>
 
-                <input
-                  type="file"
-                  ref={receiptFileInputRef}
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleReceiptFileUpload(f);
-                  }}
-                />
-
-                {purchaseReceiptImageUrl ? (
-                  <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-3">
+                <div className="flex flex-wrap gap-2.5">
+                  {purchaseReceiptImages.map((url, idx) => (
+                    <div
+                      key={idx}
+                      className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-300 group shadow-xs bg-white"
+                    >
                       <img
-                        src={purchaseReceiptImageUrl}
-                        alt="رسید فاکتور"
-                        className="w-14 h-14 object-cover rounded-lg border border-slate-200 cursor-pointer"
-                        onClick={() => setViewingReceiptUrl(purchaseReceiptImageUrl)}
+                        src={url}
+                        alt={`رسید ${idx + 1}`}
+                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => {
+                          setViewingReceiptUrls(purchaseReceiptImages);
+                          setActiveReceiptIndex(idx);
+                        }}
                       />
-                      <div>
-                        <div className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>تصویر برگه فاکتور ذخیره شد</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setViewingReceiptUrl(purchaseReceiptImageUrl)}
-                          className="text-[11px] text-indigo-600 hover:underline font-bold mt-0.5 cursor-pointer"
-                        >
-                          مشاهده بزرگنمایی
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => setPurchaseReceiptImages((prev) => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-1 left-1 bg-black/70 hover:bg-rose-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center cursor-pointer transition-colors shadow-xs"
+                        title="حذف این تصویر"
+                      >
+                        ×
+                      </button>
+                      <div className="absolute bottom-0 inset-x-0 bg-black/40 text-[9px] text-white text-center py-0.5 font-mono">
+                        {idx + 1}
                       </div>
                     </div>
+                  ))}
 
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => receiptFileInputRef.current?.click()}
-                        className="px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer"
-                      >
-                        تغییر عکس
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPurchaseReceiptImageUrl('')}
-                        className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
-                      >
-                        حذف
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => receiptFileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/40 rounded-xl p-4 text-center cursor-pointer transition-colors"
-                  >
+                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-white hover:bg-indigo-50/50 flex flex-col items-center justify-center cursor-pointer text-slate-400 hover:text-indigo-600 transition-all group shadow-2xs">
                     {isUploadingReceipt ? (
-                      <div className="flex items-center justify-center gap-2 text-indigo-600 font-bold">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>در حال بارگذاری تصویر رسید...</span>
-                      </div>
+                      <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
                     ) : (
-                      <div className="space-y-1">
-                        <Upload className="w-6 h-6 mx-auto text-slate-400" />
-                        <div className="font-bold text-slate-700 text-xs">
-                          برای بارگذاری عکس فاکتور کاغذی یا فیش واریزی کلیک کنید
-                        </div>
-                        <div className="text-[10px] text-slate-400">فرمت‌های تصویری JPG، PNG یا WEBP</div>
-                      </div>
+                      <>
+                        <Plus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <span className="text-[10px] mt-1 font-bold">افزودن عکس</span>
+                      </>
                     )}
-                  </div>
-                )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          handleReceiptFilesUpload(e.target.files);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -1117,33 +1567,82 @@ export const InvoicesView: React.FC = () => {
         initialName={quickAddInitialName}
       />
 
-      {/* Full-Screen Receipt Image Viewer Modal */}
-      {viewingReceiptUrl && (
+      {/* Full-Screen Multi-Image Receipt Viewer Modal */}
+      {viewingReceiptUrls.length > 0 && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-4 shadow-2xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 <ImageIcon className="w-4 h-4 text-indigo-600" />
-                <span className="font-bold text-xs text-slate-800">تصویر برگه فاکتور / رسید تامین‌کننده</span>
+                <span className="font-bold text-xs text-slate-800">
+                  تصویر برگه فاکتور / رسید تامین‌کننده ({activeReceiptIndex + 1} از {viewingReceiptUrls.length})
+                </span>
               </div>
               <button
                 type="button"
-                onClick={() => setViewingReceiptUrl(null)}
+                onClick={() => setViewingReceiptUrls([])}
                 className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg text-lg leading-none cursor-pointer"
               >
                 ✕
               </button>
             </div>
-            <div className="max-h-[75vh] overflow-auto flex items-center justify-center bg-slate-900/5 rounded-2xl p-2">
+
+            <div className="relative max-h-[70vh] min-h-[250px] overflow-hidden flex items-center justify-center bg-slate-900/5 rounded-2xl p-2">
               <img
-                src={viewingReceiptUrl}
-                alt="تصویر فاکتور"
-                className="max-h-[70vh] w-auto rounded-xl object-contain shadow-sm"
+                src={viewingReceiptUrls[activeReceiptIndex]}
+                alt={`تصویر فاکتور ${activeReceiptIndex + 1}`}
+                className="max-h-[65vh] w-auto rounded-xl object-contain shadow-sm"
               />
+
+              {viewingReceiptUrls.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveReceiptIndex((prev) => (prev > 0 ? prev - 1 : viewingReceiptUrls.length - 1))
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 cursor-pointer transition-colors shadow-md"
+                    title="تصویر قبلی"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setActiveReceiptIndex((prev) => (prev < viewingReceiptUrls.length - 1 ? prev + 1 : 0))
+                    }
+                    className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 cursor-pointer transition-colors shadow-md"
+                    title="تصویر بعدی"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
             </div>
+
+            {/* Thumbnail Strip */}
+            {viewingReceiptUrls.length > 1 && (
+              <div className="flex gap-2 justify-center overflow-x-auto py-1">
+                {viewingReceiptUrls.map((url, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActiveReceiptIndex(i)}
+                    className={`w-12 h-12 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                      activeReceiptIndex === i
+                        ? 'border-indigo-600 scale-105 shadow-xs'
+                        : 'border-transparent opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <img src={url} alt={`بندانگشتی ${i + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-1">
               <a
-                href={viewingReceiptUrl}
+                href={viewingReceiptUrls[activeReceiptIndex]}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-colors"
@@ -1153,7 +1652,7 @@ export const InvoicesView: React.FC = () => {
               </a>
               <button
                 type="button"
-                onClick={() => setViewingReceiptUrl(null)}
+                onClick={() => setViewingReceiptUrls([])}
                 className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors cursor-pointer"
               >
                 بستن
@@ -1418,6 +1917,406 @@ export const InvoicesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Edit Sales Invoice Modal */}
+      {editingSalesInvoice && (() => {
+        const subtotal = editItems.reduce(
+          (acc, curr) => acc + (Number(curr.quantity) * Number(curr.unitPrice)),
+          0
+        );
+        const discountNum = Number(editDiscount) || 0;
+        const taxableAmount = Math.max(0, subtotal - discountNum);
+        const taxNum = Math.round((taxableAmount * (Number(editTaxRate) || 0)) / 100);
+        const finalAmount = taxableAmount + taxNum;
+        const paidNum = Number(editPaidAmount) || 0;
+        const remainingDebt = Math.max(0, finalAmount - paidNum);
+
+        const filteredProducts = editProductSearchTerm.trim()
+          ? products.filter(
+              (p) =>
+                p.name.toLowerCase().includes(editProductSearchTerm.toLowerCase()) ||
+                (p.barcode && p.barcode.includes(editProductSearchTerm)) ||
+                (p.sku && p.sku.toLowerCase().includes(editProductSearchTerm.toLowerCase()))
+            ).slice(0, 5)
+          : [];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                    <Pencil className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <span>ویرایش فاکتور فروش</span>
+                      <span className="font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-xs">
+                        {editingSalesInvoice.invoiceNumber}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      تاریخ ثبت اولیه: {new Date(editingSalesInvoice.createdAt).toLocaleDateString('fa-IR')} | انبار و اسناد مالی خودکار همگام می‌شوند
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingSalesInvoice(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg text-lg leading-none cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEditSalesInvoice} className="space-y-4 text-xs">
+                {/* 1. Customer and Warehouse Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">مشتری ثبت شده:</label>
+                    <select
+                      value={editCustomerId}
+                      onChange={(e) => {
+                        const cid = e.target.value;
+                        setEditCustomerId(cid);
+                        const c = customers.find((x) => x.id === cid);
+                        if (c) {
+                          setEditCustomerName(c.name);
+                          setEditCustomerMobile(c.mobile || '');
+                        } else if (!cid) {
+                          setEditCustomerName('مشتری نقدی حضوری');
+                          setEditCustomerMobile('');
+                        }
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 font-bold outline-none"
+                    >
+                      <option value="">-- مشتری آزاد / عمومی --</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.mobile || 'بدون همراه'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">نام خریدار:</label>
+                    <input
+                      type="text"
+                      value={editCustomerName}
+                      onChange={(e) => setEditCustomerName(e.target.value)}
+                      placeholder="نام خریدار"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 font-bold outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">موبایل خریدار:</label>
+                    <input
+                      type="text"
+                      value={editCustomerMobile}
+                      onChange={(e) => setEditCustomerMobile(e.target.value)}
+                      placeholder="۰۹۱۲..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono outline-none"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3 pt-1">
+                    <label className="font-bold text-slate-700 block mb-1">انبار مبدا (کسر موجودی):</label>
+                    <select
+                      value={editWarehouseId}
+                      onChange={(e) => setEditWarehouseId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 font-bold outline-none"
+                    >
+                      {warehouses.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} ({w.isCentral ? 'انبار مرکزی' : w.code})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      ⚠️ با ذخیره ویرایش، موجودی اقلام قبلی به انبار بازگشته و موجودی اقلام جدید از این انبار کسر خواهد شد.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Items List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                      <span>اقلام و کالاهای فاکتور ({editItems.length} قلم):</span>
+                    </label>
+                  </div>
+
+                  {/* Add Product Search Bar */}
+                  <div className="relative">
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                      <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="جستجوی نام یا بارکد کالا برای افزودن به فاکتور..."
+                        value={editProductSearchTerm}
+                        onChange={(e) => setEditProductSearchTerm(e.target.value)}
+                        className="bg-transparent border-none outline-none w-full text-xs font-medium"
+                      />
+                      {editProductSearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setEditProductSearchTerm('')}
+                          className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Search results dropdown */}
+                    {filteredProducts.length > 0 && (
+                      <div className="absolute top-full right-0 left-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-20 overflow-hidden divide-y divide-slate-100 max-h-52 overflow-y-auto">
+                        {filteredProducts.map((p) => (
+                          <div
+                            key={p.id}
+                            onClick={() => handleAddProductToEdit(p)}
+                            className="p-2.5 hover:bg-indigo-50 flex items-center justify-between cursor-pointer transition-colors"
+                          >
+                            <div>
+                              <div className="font-bold text-slate-900">{p.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                بارکد: {p.barcode || '—'} | قیمت فروش: {formatToman(p.salePrice)}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 py-1 rounded-lg text-[10px]"
+                            >
+                              + افزودن
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Items Table */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">نام کالا</th>
+                          <th className="p-2.5 w-32">قیمت واحد (تومان)</th>
+                          <th className="p-2.5 w-28 text-center">تعداد</th>
+                          <th className="p-2.5 w-32">جمع کل</th>
+                          <th className="p-2.5 w-12 text-center">حذف</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="p-2.5 font-bold text-slate-900">
+                              {item.productName}
+                              {item.isService && (
+                                <span className="mr-1.5 text-[9px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-sm">
+                                  خدمت
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.unitPrice}
+                                onChange={(e) => handleEditItemPrice(idx, Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-xs outline-none"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditItemQuantity(idx, item.quantity - 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) => handleEditItemQuantity(idx, Math.max(1, Number(e.target.value)))}
+                                  className="w-10 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditItemQuantity(idx, item.quantity + 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-2.5 font-mono font-black text-slate-900">
+                              {formatToman(item.quantity * item.unitPrice)}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEditItem(idx)}
+                                className="text-rose-500 hover:text-rose-700 p-1 rounded-md hover:bg-rose-50 cursor-pointer"
+                                title="حذف کالا"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {editItems.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-slate-400">
+                              هیچ کالایی در فاکتور وجود ندارد. از کادر بالا کالا جستجو کرده و اضافه کنید.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. Payment & Settlement Summary */}
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                    <CreditCard className="w-4 h-4 text-indigo-600" />
+                    <span>شیوه پرداخت و تسویه حساب:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">شیوه پرداخت:</label>
+                      <select
+                        value={editPaymentMethod}
+                        onChange={(e) => {
+                          const m = e.target.value as PaymentMethod;
+                          setEditPaymentMethod(m);
+                          if (m === 'credit') {
+                            setEditPaidAmount(0);
+                          } else {
+                            setEditPaidAmount(finalAmount);
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 font-bold outline-none"
+                      >
+                        <option value="cash">نقدی (صندوق)</option>
+                        <option value="pos_pasargad">کارتخوان پاسارگاد</option>
+                        <option value="credit">نسیه / دفتری (حساب مشتری)</option>
+                        <option value="installment">اقساطی</option>
+                        <option value="sms_link">لینک پرداخت پیامکی</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">مبلغ تخفیف (تومان):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editDiscount}
+                        onChange={(e) => setEditDiscount(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">درصد مالیات ارزش افزوده (%):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={editTaxRate}
+                        onChange={(e) => setEditTaxRate(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">مبلغ پرداختی مشتری (تومان):</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editPaidAmount}
+                        onChange={(e) => setEditPaidAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary Totals Bar */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200 text-center">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <div className="text-[10px] text-slate-500 font-bold">جمع اقلام (Subtotal)</div>
+                      <div className="text-xs font-mono font-black text-slate-900 mt-0.5">{formatToman(subtotal)}</div>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <div className="text-[10px] text-slate-500 font-bold">مالیات ({editTaxRate || 0}%)</div>
+                      <div className="text-xs font-mono font-black text-slate-900 mt-0.5">{formatToman(taxNum)}</div>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <div className="text-[10px] text-slate-500 font-bold">مبلغ نهایی فاکتور</div>
+                      <div className="text-xs font-mono font-black text-indigo-700 mt-0.5">{formatToman(finalAmount)}</div>
+                    </div>
+                    <div className={`p-2.5 rounded-xl border ${remainingDebt > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                      <div className="text-[10px] font-bold">{remainingDebt > 0 ? 'مانده بدهی (نسیه)' : 'وضعیت تسویه'}</div>
+                      <div className="text-xs font-mono font-black mt-0.5">
+                        {remainingDebt > 0 ? formatToman(remainingDebt) : 'تسویه کامل ✓'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">یادداشت و توضیحات فاکتور:</label>
+                    <input
+                      type="text"
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      placeholder="توضیحات اختیاری فاکتور..."
+                      className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingEdit}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {isSubmittingEdit ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>در حال ذخیره و به‌روزرسانی انبار...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>ذخیره تغییرات فاکتور و اعمال در انبار و حسابداری</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSalesInvoice(null)}
+                    className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

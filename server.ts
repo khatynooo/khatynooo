@@ -99,22 +99,9 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('⚠️ [Unhandled Rejection at]:', promise, 'reason:', reason);
 });
 
-function resolvePort(): number {
-  if (process.env.PORT) {
-    const p = parseInt(process.env.PORT, 10);
-    if (!isNaN(p) && p > 0) return p;
-  }
-  const portArgIndex = process.argv.indexOf('--port');
-  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
-    const p = parseInt(process.argv[portArgIndex + 1], 10);
-    if (!isNaN(p) && p > 0) return p;
-  }
-  return 3000;
-}
-
 const app = express();
 app.set('trust proxy', 1);
-const PORT = resolvePort();
+const PORT = 3000;
 const JWT_SECRET = resolveJwtSecret();
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -837,6 +824,27 @@ app.get('/api/invoices/sales/:id', authenticateToken, async (req, res) => {
     res.json({ invoice });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/invoices/sales/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (user && user.role && user.role !== 'admin' && user.role !== 'manager') {
+      return res.status(403).json({ error: 'دسترسی غیرمجاز: تنها مدیران سیستم امکان ویرایش فاکتور فروش دارند.' });
+    }
+
+    const updated = await db.updateSalesInvoice(req.params.id, {
+      ...req.body,
+      userId: user?.id,
+      userName: user?.fullName || user?.username || 'مدیر سیستم',
+      ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'Web App',
+    });
+
+    res.json({ success: true, invoice: updated, message: 'فاکتور فروش با موفقیت ویرایش شد.' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'خطا در ویرایش فاکتور فروش' });
   }
 });
 
@@ -1989,7 +1997,7 @@ app.post('/api/customer/auth/send-otp', async (req, res) => {
 
     // ارسال پیامک از طریق ماژول پیامک سیستم
     const smsMessage = `کد تایید ورود به فروشگاه خطی‌نو: ${otpCode}\n(اعتبار ۲ دقیقه)\nkhatynoo.ir`;
-    cmsEngine.sendTestSms(cleanMobile, smsMessage);
+    await cmsEngine.sendTestSms(cleanMobile, smsMessage);
 
     console.log(`📱 [Customer OTP] کد پیامکی ورود برای ${cleanMobile}: ${otpCode}`);
 
@@ -2387,24 +2395,29 @@ app.delete('/api/cms/media/:id', authenticateToken, requireRole(['admin', 'site_
 });
 
 // SMS Gateway
-app.get('/api/cms/sms/config', authenticateToken, requireRole(['admin', 'site_manager']), (req, res) => {
-  res.json({ config: cmsEngine.getSmsConfig() });
+app.get('/api/cms/sms/config', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const config = await cmsEngine.getSmsConfig();
+    res.json({ config });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.put('/api/cms/sms/config', authenticateToken, requireRole(['admin', 'site_manager']), (req, res) => {
+app.put('/api/cms/sms/config', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
   try {
-    const updated = cmsEngine.updateSmsConfig(req.body);
+    const updated = await cmsEngine.updateSmsConfig(req.body);
     res.json({ config: updated, message: 'تنظیمات درگاه پیامک به‌روزرسانی شد.' });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post('/api/cms/sms/send-test', authenticateToken, requireRole(['admin', 'site_manager']), (req, res) => {
+app.post('/api/cms/sms/send-test', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
   try {
     const { mobile, message } = req.body;
     if (!mobile) return res.status(400).json({ error: 'شماره موبایل گیرنده الزامی است.' });
-    const result = cmsEngine.sendTestSms(mobile, message);
+    const result = await cmsEngine.sendTestSms(mobile, message);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

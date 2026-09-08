@@ -38,6 +38,7 @@ import {
   InventoryTransfer,
   InventoryAdjustment,
   SystemAuditLog,
+  SmsProviderConfig,
 } from '../src/types';
 
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
@@ -1370,6 +1371,240 @@ export const db = {
     const res = await query('SELECT * FROM sales_invoices WHERE id = $1', [id]);
     if (res.rows.length === 0) return null;
     return formatSalesInvoice(res.rows[0]);
+  },
+
+  async updateSalesInvoice(
+    id: string,
+    updatedData: {
+      items: InvoiceItem[];
+      customerId?: string;
+      customerName?: string;
+      customerMobile?: string;
+      paymentMethod?: 'cash' | 'pos_pasargad' | 'credit' | 'installment' | 'sms_link';
+      paidAmount?: number;
+      discount?: number;
+      taxRate?: number;
+      cashAmount?: number;
+      chequeAmount?: number;
+      chequeInfo?: any;
+      notes?: string;
+      warehouseId?: string;
+      userId: string;
+      userName: string;
+      ip?: string;
+      userAgent?: string;
+    }
+  ): Promise<SalesInvoice> {
+    return await withTransaction(async (client) => {
+      // ۱. واکشی و قفل‌گذاری فاکتور قبلی
+      const oldCheck = await client.query('SELECT * FROM sales_invoices WHERE id = $1 FOR UPDATE', [id]);
+      if (oldCheck.rows.length === 0) {
+        throw new Error('فاکتور فروش مورد نظر یافت نشد.');
+      }
+      const oldInv = oldCheck.rows[0];
+      const oldItems: InvoiceItem[] =
+        typeof oldInv.items === 'string' ? JSON.parse(oldInv.items) : (oldInv.items || []);
+      const oldWarehouseId = oldInv.warehouse_id || 'wh_central';
+      const oldCustomerId = oldInv.customer_id;
+      const oldRemainingAmount = Number(oldInv.remaining_amount || 0);
+
+      // ۲. برگرداندن اثر موجودی اقلام فاکتور قبلی به انبار (دقیقا معکوس کسر قبلی)
+      for (const item of oldItems) {
+        if (item.productId && !item.productId.startsWith('srv_') && !(item as any).isService) {
+          await modifyLocationStock(client, {
+            productId: item.productId,
+            warehouseId: oldWarehouseId,
+            delta: item.quantity, // افزایش موجودی (برگشت به انبار)
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۳. لغو و معکوس‌سازی سند مالی / بستانکاری قبلی مشتری در صورت وجود نسیه
+      if (oldCustomerId && oldRemainingAmount > 0) {
+        await client.query(
+          `UPDATE customers SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
+          [oldRemainingAmount, oldCustomerId]
+        );
+        await client.query(
+          `DELETE FROM customer_transactions WHERE invoice_id = $1 AND type = 'credit_sale'`,
+          [id]
+        );
+      }
+
+      // ۴. کسر موجودی طبق اقلام جدید از انبار هدف و بررسی موجودی کافی (با rollback در صورت کسری)
+      const targetWhId = updatedData.warehouseId || oldWarehouseId || 'wh_central';
+      for (const item of updatedData.items) {
+        if (item.productId && !item.productId.startsWith('srv_') && !(item as any).isService) {
+          await modifyLocationStock(client, {
+            productId: item.productId,
+            warehouseId: targetWhId,
+            delta: -item.quantity, // کسر موجودی طبق اقلام جدید
+            allowNegative: false, // در صورت عدم موجودی، خطا داده شده و کل عملیات rollback می‌شود
+          });
+        }
+      }
+
+      // ۵. محاسبات مالی اقلام جدید
+      const subtotal = updatedData.items.reduce(
+        (acc, curr) => acc + (Number(curr.total) || (Number(curr.quantity) * Number(curr.unitPrice))),
+        0
+      );
+      const discount = Number(updatedData.discount !== undefined ? updatedData.discount : (oldInv.discount || 0));
+      const taxRate = Number(updatedData.taxRate !== undefined ? updatedData.taxRate : 0);
+      const taxableAmount = Math.max(0, subtotal - discount);
+      const tax = Math.round((taxableAmount * taxRate) / 100);
+      const finalAmount = taxableAmount + tax;
+
+      const paymentMethod = updatedData.paymentMethod || oldInv.payment_method || 'cash';
+      let paidAmount = Number(
+        updatedData.paidAmount !== undefined
+          ? updatedData.paidAmount
+          : (paymentMethod === 'credit' ? 0 : finalAmount)
+      );
+      const remainingAmount = Math.max(0, finalAmount - paidAmount);
+
+      let status: 'paid' | 'partial' | 'pending' = 'paid';
+      if (paidAmount <= 0) {
+        status = 'pending';
+      } else if (remainingAmount > 0) {
+        status = 'partial';
+      }
+
+      // ۶. مدیریت مشتری جدید و ثبت سند نسیه در صورت وجود مانده حساب
+      let finalCustomerId = updatedData.customerId !== undefined ? updatedData.customerId : oldCustomerId;
+      const customerName = updatedData.customerName || oldInv.customer_name || 'مشتری نقدی حضوری';
+      const customerMobile =
+        updatedData.customerMobile !== undefined ? updatedData.customerMobile : oldInv.customer_mobile;
+
+      if (!finalCustomerId && customerMobile) {
+        const custCheck = await client.query('SELECT id FROM customers WHERE mobile = $1', [customerMobile]);
+        if (custCheck.rows.length > 0) {
+          finalCustomerId = custCheck.rows[0].id;
+        } else if (customerName && customerName !== 'مشتری نقدی حضوری') {
+          finalCustomerId = `cst_${Date.now()}`;
+          await client.query(
+            `INSERT INTO customers (id, name, mobile, address, balance, created_at, updated_at)
+             VALUES ($1, $2, $3, 'ثبت شده در ویرایش فاکتور فروش', 0, NOW(), NOW())`,
+            [finalCustomerId, customerName, customerMobile]
+          );
+        }
+      }
+
+      if (finalCustomerId && remainingAmount > 0) {
+        await client.query(
+          `UPDATE customers SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
+          [remainingAmount, finalCustomerId]
+        );
+        await client.query(
+          `INSERT INTO customer_transactions (id, customer_id, type, amount, invoice_id, description, created_at)
+           VALUES ($1, $2, 'credit_sale', $3, $4, $5, NOW())`,
+          [
+            `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            finalCustomerId,
+            remainingAmount,
+            id,
+            `فروش نسیه/مانده فاکتور ${oldInv.invoice_number} (ویرایش شده)`,
+          ]
+        );
+      }
+
+      // ۷. آپدیت ردیف فاکتور فروش در جدول sales_invoices
+      const cashAmount = Number(
+        updatedData.cashAmount !== undefined
+          ? updatedData.cashAmount
+          : (paymentMethod === 'cash' ? paidAmount : 0)
+      );
+      const chequeAmount = Number(
+        updatedData.chequeAmount !== undefined ? updatedData.chequeAmount : (oldInv.cheque_amount || 0)
+      );
+      const chequeInfo = updatedData.chequeInfo !== undefined ? updatedData.chequeInfo : oldInv.cheque_info;
+      const notes = updatedData.notes !== undefined ? updatedData.notes : oldInv.notes;
+
+      await client.query(
+        `UPDATE sales_invoices SET
+           customer_id = $1,
+           customer_name = $2,
+           customer_mobile = $3,
+           items = $4,
+           subtotal = $5,
+           discount = $6,
+           tax = $7,
+           final_amount = $8,
+           payment_method = $9,
+           paid_amount = $10,
+           remaining_amount = $11,
+           cash_amount = $12,
+           cheque_amount = $13,
+           cheque_info = $14,
+           status = $15,
+           notes = $16,
+           warehouse_id = $17,
+           updated_at = NOW()
+         WHERE id = $18`,
+        [
+          finalCustomerId || null,
+          customerName,
+          customerMobile || null,
+          JSON.stringify(updatedData.items),
+          subtotal,
+          discount,
+          tax,
+          finalAmount,
+          paymentMethod,
+          paidAmount,
+          remainingAmount,
+          cashAmount,
+          chequeAmount,
+          chequeInfo ? (typeof chequeInfo === 'string' ? chequeInfo : JSON.stringify(chequeInfo)) : null,
+          status,
+          notes || null,
+          targetWhId,
+          id,
+        ]
+      );
+
+      // ۸. ثبت در جدول audit_logs
+      await client.query(
+        `INSERT INTO audit_logs (
+           id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+         ) VALUES ($1, $2, $3, $4, 'sales_invoices', $5, $6, $7, $8, 'success', NOW())`,
+        [
+          `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          updatedData.userId || null,
+          updatedData.userName || 'مدیر سیستم',
+          'UPDATE_SALES_INVOICE',
+          id,
+          JSON.stringify({
+            invoiceNumber: oldInv.invoice_number,
+            previous: {
+              itemsCount: oldItems.length,
+              subtotal: Number(oldInv.subtotal),
+              finalAmount: Number(oldInv.final_amount),
+              paidAmount: Number(oldInv.paid_amount),
+              remainingAmount: oldRemainingAmount,
+              paymentMethod: oldInv.payment_method,
+              warehouseId: oldWarehouseId,
+            },
+            updated: {
+              itemsCount: updatedData.items.length,
+              subtotal,
+              finalAmount,
+              paidAmount,
+              remainingAmount,
+              paymentMethod,
+              warehouseId: targetWhId,
+            },
+          }),
+          updatedData.ip || '127.0.0.1',
+          updatedData.userAgent || 'Web POS',
+        ]
+      );
+
+      // ۹. واکشی مجدد و بازگرداندن فاکتور ویرایش شده
+      const refreshed = await client.query('SELECT * FROM sales_invoices WHERE id = $1', [id]);
+      return formatSalesInvoice(refreshed.rows[0]);
+    });
   },
 
   async getPurchaseInvoices(): Promise<PurchaseInvoice[]> {
@@ -3502,6 +3737,130 @@ export const db = {
     }
 
     return this.getWebsiteSettings();
+  },
+
+  async getSmsGatewayConfig(): Promise<SmsProviderConfig & { orderCreatedPattern?: string; orderShippedPattern?: string; otpPattern?: string }> {
+    try {
+      const res = await query("SELECT * FROM sms_gateway_config WHERE id = 'default'");
+      if (res.rows.length === 0) {
+        return {
+          provider: 'kavenegar',
+          apiKey: 'khatinoo_kavenegar_live_api_key_sample',
+          senderNumber: '10008585',
+          isEnabled: true,
+          patternOrderPlaced: 'khatinoo-order-placed',
+          patternOrderShipped: 'khatinoo-order-shipped',
+          patternOtp: 'khatinoo-otp-auth',
+          lowStockAlertMobile: '09131234567',
+          isSimulated: true,
+          orderCreatedPattern: 'khatinoo-order-placed',
+          orderShippedPattern: 'khatinoo-order-shipped',
+          otpPattern: 'khatinoo-otp-auth',
+        };
+      }
+      const r = res.rows[0];
+      return {
+        provider: (r.provider as any) || 'kavenegar',
+        apiKey: r.api_key || '',
+        senderNumber: r.sender_number || '',
+        isEnabled: r.is_enabled !== false,
+        patternOrderPlaced: r.pattern_order_placed || '',
+        patternOrderShipped: r.pattern_order_shipped || '',
+        patternOtp: r.pattern_otp || '',
+        lowStockAlertMobile: r.low_stock_alert_mobile || '',
+        isSimulated: Boolean(r.is_simulated),
+        orderCreatedPattern: r.pattern_order_placed || '',
+        orderShippedPattern: r.pattern_order_shipped || '',
+        otpPattern: r.pattern_otp || '',
+      };
+    } catch (err) {
+      console.warn('⚠️ [getSmsGatewayConfig fallback]:', err);
+      return {
+        provider: 'kavenegar',
+        apiKey: 'khatinoo_kavenegar_live_api_key_sample',
+        senderNumber: '10008585',
+        isEnabled: true,
+        patternOrderPlaced: 'khatinoo-order-placed',
+        patternOrderShipped: 'khatinoo-order-shipped',
+        patternOtp: 'khatinoo-otp-auth',
+        lowStockAlertMobile: '09131234567',
+        isSimulated: true,
+        orderCreatedPattern: 'khatinoo-order-placed',
+        orderShippedPattern: 'khatinoo-order-shipped',
+        otpPattern: 'khatinoo-otp-auth',
+      };
+    }
+  },
+
+  async updateSmsGatewayConfig(newConfig: Partial<SmsProviderConfig> & { orderCreatedPattern?: string; orderShippedPattern?: string; otpPattern?: string }): Promise<SmsProviderConfig> {
+    const current = await this.getSmsGatewayConfig();
+
+    const patternOrderPlaced =
+      newConfig.patternOrderPlaced !== undefined
+        ? newConfig.patternOrderPlaced
+        : newConfig.orderCreatedPattern !== undefined
+        ? newConfig.orderCreatedPattern
+        : current.patternOrderPlaced;
+
+    const patternOrderShipped =
+      newConfig.patternOrderShipped !== undefined
+        ? newConfig.patternOrderShipped
+        : newConfig.orderShippedPattern !== undefined
+        ? newConfig.orderShippedPattern
+        : current.patternOrderShipped;
+
+    const patternOtp =
+      newConfig.patternOtp !== undefined
+        ? newConfig.patternOtp
+        : newConfig.otpPattern !== undefined
+        ? newConfig.otpPattern
+        : current.patternOtp;
+
+    const merged = {
+      provider: newConfig.provider ?? current.provider ?? 'kavenegar',
+      apiKey: newConfig.apiKey !== undefined ? String(newConfig.apiKey).trim() : current.apiKey,
+      senderNumber: newConfig.senderNumber !== undefined ? String(newConfig.senderNumber).trim() : current.senderNumber,
+      isEnabled: newConfig.isEnabled !== undefined ? Boolean(newConfig.isEnabled) : current.isEnabled,
+      patternOrderPlaced: patternOrderPlaced !== undefined ? String(patternOrderPlaced).trim() : current.patternOrderPlaced,
+      patternOrderShipped: patternOrderShipped !== undefined ? String(patternOrderShipped).trim() : current.patternOrderShipped,
+      patternOtp: patternOtp !== undefined ? String(patternOtp).trim() : current.patternOtp,
+      lowStockAlertMobile: newConfig.lowStockAlertMobile !== undefined ? String(newConfig.lowStockAlertMobile).trim() : current.lowStockAlertMobile,
+      isSimulated: newConfig.isSimulated !== undefined ? Boolean(newConfig.isSimulated) : current.isSimulated,
+    };
+
+    await query(
+      `INSERT INTO sms_gateway_config (
+        id, provider, api_key, sender_number, is_enabled,
+        pattern_order_placed, pattern_order_shipped, pattern_otp,
+        low_stock_alert_mobile, is_simulated, updated_at
+      ) VALUES (
+        'default', $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        provider = EXCLUDED.provider,
+        api_key = EXCLUDED.api_key,
+        sender_number = EXCLUDED.sender_number,
+        is_enabled = EXCLUDED.is_enabled,
+        pattern_order_placed = EXCLUDED.pattern_order_placed,
+        pattern_order_shipped = EXCLUDED.pattern_order_shipped,
+        pattern_otp = EXCLUDED.pattern_otp,
+        low_stock_alert_mobile = EXCLUDED.low_stock_alert_mobile,
+        is_simulated = EXCLUDED.is_simulated,
+        updated_at = CURRENT_TIMESTAMP`,
+      [
+        merged.provider,
+        merged.apiKey,
+        merged.senderNumber,
+        merged.isEnabled,
+        merged.patternOrderPlaced,
+        merged.patternOrderShipped,
+        merged.patternOtp,
+        merged.lowStockAlertMobile,
+        merged.isSimulated,
+      ]
+    );
+
+    return this.getSmsGatewayConfig();
   },
 
   async getPosConfig(): Promise<PosConfig> {

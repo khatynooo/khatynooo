@@ -216,7 +216,7 @@ export interface ChequeInfo {
   dueDate: string;
   sayadId?: string;
   shebaNumber?: string; // شمارهٔ شبای حساب صادرکننده چک (جدید)
-  amount?: number;
+  amount: number; // الزامی شود، چون با چند چک دیگر مبلغ هرکدام باید مشخص باشد
 }
 
 export interface SalesInvoice {

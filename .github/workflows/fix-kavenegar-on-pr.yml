@@ -1,27 +1,23 @@
 name: Apply Kavenegar SMS fix
 
 on:
-  pull_request_target:
-    types: [opened, synchronize]
-    branches: [main]
+  push:
+    branches: [fix/kavenegar-otp-transport]
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   patch:
-    if: github.event.pull_request.head.ref == 'fix/kavenegar-otp-transport' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.head_commit.message != 'fix(sms): correct Kavenegar OTP transport'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: fix/kavenegar-otp-transport
           fetch-depth: 0
 
       - name: Patch Kavenegar transport
-        env:
-          BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -153,15 +149,11 @@ jobs:
           p.write_text(s[:start] + new + s[end:], encoding='utf-8')
           PY
 
-      - name: TypeScript check
-        run: npx tsc --noEmit --pretty false
-
       - name: Commit patch and remove temporary workflow
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          rm -f .github/workflows/fix-kavenegar-on-pr.yml
-          git add server/cmsEngine.ts .github/workflows/fix-kavenegar-on-pr.yml
+          git add server/cmsEngine.ts
           git diff --cached --check
           git commit -m 'fix(sms): correct Kavenegar OTP transport'
-          git push origin "$BRANCH"
+          git push origin fix/kavenegar-otp-transport

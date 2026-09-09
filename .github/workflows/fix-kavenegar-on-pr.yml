@@ -1,0 +1,167 @@
+name: Apply Kavenegar SMS fix
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'fix/kavenegar-otp-transport' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Patch Kavenegar transport
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('server/cmsEngine.ts')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('  sendRealSms: async (params: {')
+          end = s.index('  sendTestSms: async', start)
+          new = '''  sendRealSms: async (params: {
+    mobile: string;
+    messageText?: string;
+    otpToken?: string;
+    template?: string;
+    token2?: string;
+    token3?: string;
+  }): Promise<{ success: boolean; message: string; log?: SmsLog }> => {
+    const config = await db.getSmsGatewayConfig();
+
+    if (!config.isEnabled) {
+      throw new Error('درگاه پیامک در تنظیمات سیستم غیرفعال است.');
+    }
+
+    if (config.provider !== 'kavenegar') {
+      throw new Error(`ارائه‌دهنده پیامک فعلی ${config.provider} است. اتصال مستقیم به درگاه کاوه‌نگار در دسترس است.`);
+    }
+
+    const apiKey = config.apiKey?.trim();
+    if (!apiKey) {
+      throw new Error('کلید API کاوه‌نگار در تنظیمات درگاه پیامک ثبت نشده است.');
+    }
+
+    const cleanMobile = params.mobile.replace(/[^0-9]/g, '');
+    if (!/^09[0-9]{9}$/.test(cleanMobile)) {
+      throw new Error('شماره گیرنده پیامک نامعتبر است.');
+    }
+
+    const pattern = params.template || config.patternOtp || config.otpPattern || 'khatinoo-otp-auth';
+    let rawCost = 0;
+    let statusMessage = '';
+
+    try {
+      const postKavenegar = async (endpoint: string, data: Record<string, string>) => {
+        const url = `https://api.kavenegar.com/v1/${apiKey}/${endpoint}.json`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(data).toString(),
+        });
+        const payload: any = await response.json().catch(() => ({}));
+        return { response, payload };
+      };
+
+      if (params.otpToken && pattern) {
+        const lookupData: Record<string, string> = {
+          receptor: cleanMobile,
+          token: params.otpToken,
+          template: pattern,
+        };
+        if (params.token2) lookupData.token2 = params.token2;
+        if (params.token3) lookupData.token3 = params.token3;
+
+        const { response, payload } = await postKavenegar('verify/lookup', lookupData);
+        const returnStatus = Number(payload?.return?.status);
+        const entry = Array.isArray(payload?.entries) ? payload.entries[0] : payload?.entries;
+
+        if (!response.ok || returnStatus !== 200) {
+          const reason = payload?.return?.message || `HTTP ${response.status}`;
+          throw new Error(`خطا در ارسال OTP کاوه‌نگار: ${reason}`);
+        }
+
+        statusMessage = `پیامک تایید هویت با الگوی «${pattern}» از طریق کاوه‌نگار با موفقیت ارسال شد.`;
+        rawCost = entry?.cost != null ? Number(entry.cost) : 0;
+      } else {
+        const sendText = params.messageText || 'پیام ارسالی از سامانه خطی‌نو';
+        const sendData: Record<string, string> = {
+          receptor: cleanMobile,
+          message: sendText,
+        };
+        if (config.senderNumber?.trim()) sendData.sender = config.senderNumber.trim();
+
+        const { response, payload } = await postKavenegar('sms/send', sendData);
+        const returnStatus = Number(payload?.return?.status);
+        const entries = Array.isArray(payload?.entries) ? payload.entries : [payload?.entries];
+        const entry = entries.find(Boolean);
+
+        if (!response.ok || returnStatus !== 200) {
+          const reason = payload?.return?.message || `HTTP ${response.status}`;
+          throw new Error(`خطا در ارسال پیامک کاوه‌نگار: ${reason}`);
+        }
+
+        statusMessage = `پیامک متنی از طریق کاوه‌نگار به ${cleanMobile} ارسال شد.`;
+        rawCost = entry?.cost != null ? Number(entry.cost) : 0;
+      }
+    } catch (smsErr: any) {
+      const errorMessage = smsErr?.message || 'خطا در برقراری ارتباط با درگاه پیامک.';
+      console.error(`❌ [Real SMS Error]:`, errorMessage);
+
+      const failedLog: SmsLog = {
+        id: `sms_${Date.now()}`,
+        recipient: cleanMobile,
+        message: params.messageText || (params.otpToken ? `کد تایید ورود: ${params.otpToken} (الگو: ${pattern})` : 'پیام ارسالی سیستم'),
+        provider: 'kavenegar',
+        status: 'failed',
+        sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+        costRials: 0,
+      };
+      smsLogs.unshift(failedLog);
+
+      throw new Error(errorMessage);
+    }
+
+    const newLog: SmsLog = {
+      id: `sms_${Date.now()}`,
+      recipient: cleanMobile,
+      message: params.messageText || (params.otpToken ? `کد تایید ورود: ${params.otpToken} (الگو: ${pattern})` : 'پیام ارسالی سیستم'),
+      provider: 'kavenegar',
+      status: 'delivered',
+      sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+      costRials: rawCost,
+    };
+    smsLogs.unshift(newLog);
+
+    return {
+      success: true,
+      message: statusMessage,
+      log: newLog,
+    };
+  },
+'''
+          p.write_text(s[:start] + new + s[end:], encoding='utf-8')
+          PY
+
+      - name: TypeScript check
+        run: npx tsc --noEmit --pretty false
+
+      - name: Commit patch and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/fix-kavenegar-on-pr.yml
+          git add server/cmsEngine.ts .github/workflows/fix-kavenegar-on-pr.yml
+          git diff --cached --check
+          git commit -m 'fix(sms): correct Kavenegar OTP transport'
+          git push origin "$BRANCH"

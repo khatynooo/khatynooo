@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS sms_gateway_config (
     pattern_order_shipped VARCHAR(100) DEFAULT 'khatinoo-order-shipped',
     pattern_otp VARCHAR(100) DEFAULT 'khatinoo-otp-auth',
     low_stock_alert_mobile VARCHAR(50) DEFAULT '09131234567',
-    is_simulated BOOLEAN DEFAULT TRUE,
+    is_simulated BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -29,13 +29,13 @@ INSERT INTO sms_gateway_config (
 ) VALUES (
     'default',
     'kavenegar',
-    'khatinoo_kavenegar_live_api_key_sample',
+    NULL,
     '10008585',
     TRUE,
     'khatinoo-order-placed',
     'khatinoo-order-shipped',
     'khatinoo-otp-auth',
     '09131234567',
-    TRUE
+    FALSE
 )
 ON CONFLICT (id) DO NOTHING;

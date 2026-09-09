@@ -138,9 +138,6 @@ export interface CustomerOtpResponse {
   success: boolean;
   message: string;
   expiresInSeconds: number;
-  isSimulated?: boolean;
-  simulatedCode?: string;
-  debugCode?: string;
 }
 
 export interface CustomerAuthResponse {

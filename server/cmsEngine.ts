@@ -479,9 +479,9 @@ let paymentGateways: PaymentGatewayConfig[] = [
     id: 'gw_zarinpal',
     name: 'درگاه پرداخت اینترنتی زرین‌پال (ZarinPal)',
     code: 'zarinpal',
-    isActive: true,
-    merchantId: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-    sandbox: true,
+    isActive: Boolean(process.env.ZARINPAL_MERCHANT_ID),
+    merchantId: process.env.ZARINPAL_MERCHANT_ID || '',
+    sandbox: process.env.NODE_ENV !== 'production',
     description: 'پرداخت امن با تمامی کارت‌های عضو شتاب از طریق درگاه پرداخت زرین‌پال',
     icon: 'Zap',
     feePercent: 0.01,
@@ -490,9 +490,9 @@ let paymentGateways: PaymentGatewayConfig[] = [
     id: 'gw_idpay',
     name: 'درگاه پرداخت آیدی‌پی (IDPay)',
     code: 'idpay',
-    isActive: true,
-    apiKey: 'sample_idpay_api_key_khatinoo',
-    sandbox: true,
+    isActive: Boolean(process.env.IDPAY_API_KEY),
+    apiKey: process.env.IDPAY_API_KEY || '',
+    sandbox: process.env.NODE_ENV !== 'production',
     description: 'درگاه واسط پرداخت آیدی‌پی با تسویه حساب سریع',
     icon: 'CreditCard',
     feePercent: 0.01,
@@ -501,9 +501,9 @@ let paymentGateways: PaymentGatewayConfig[] = [
     id: 'gw_behpardakht',
     name: 'به‌پرداخت ملت (درگاه مستقیم بانکی)',
     code: 'behpardakht',
-    isActive: false,
-    terminalId: '12345678',
-    merchantId: '87654321',
+    isActive: Boolean(process.env.BEHPARDAKHT_TERMINAL_ID && process.env.BEHPARDAKHT_MERCHANT_ID),
+    terminalId: process.env.BEHPARDAKHT_TERMINAL_ID || '',
+    merchantId: process.env.BEHPARDAKHT_MERCHANT_ID || '',
     sandbox: false,
     description: 'درگاه پرداخت اینترنتی بانک ملت (مستقیم و بدون کارمزد واسط)',
     icon: 'Building2',
@@ -512,9 +512,9 @@ let paymentGateways: PaymentGatewayConfig[] = [
     id: 'gw_zibal',
     name: 'درگاه پرداخت زیبال (Zibal)',
     code: 'zibal',
-    isActive: false,
-    merchantId: 'zibal_merchant_sample',
-    sandbox: true,
+    isActive: Boolean(process.env.ZIBAL_MERCHANT_ID),
+    merchantId: process.env.ZIBAL_MERCHANT_ID || '',
+    sandbox: process.env.NODE_ENV !== 'production',
     description: 'درگاه پرداخت زیبال با امکان تسهیم و تسویه خودکار',
     icon: 'ShieldCheck',
   },
@@ -754,57 +754,51 @@ export const cmsEngine = {
     token3?: string;
   }): Promise<{ success: boolean; message: string; log?: SmsLog }> => {
     const config = await db.getSmsGatewayConfig();
-    const cleanMobile = params.mobile.replace(/[^0-9]/g, '');
-    const apiKey = (config.apiKey && config.apiKey.trim() && config.apiKey !== 'khatinoo_kavenegar_live_api_key_sample')
-      ? config.apiKey.trim()
-      : (process.env.KAVENEGAR_API_KEY ? process.env.KAVENEGAR_API_KEY.trim() : config.apiKey);
 
-    const provider = config.provider || 'kavenegar';
+    if (!config.isEnabled) {
+      throw new Error('درگاه پیامک در تنظیمات سیستم غیرفعال است.');
+    }
+
+    if (config.provider !== 'kavenegar') {
+      throw new Error(`ارائه‌دهنده پیامک فعلی ${config.provider} است. اتصال مستقیم به درگاه کاوه‌نگار در دسترس است.`);
+    }
+
+    const apiKey = config.apiKey?.trim();
+    if (!apiKey) {
+      throw new Error('کلید API کاوه‌نگار در تنظیمات درگاه پیامک ثبت نشده است.');
+    }
+
+    const cleanMobile = params.mobile.replace(/[^0-9]/g, '');
+    if (!/^09[0-9]{9}$/.test(cleanMobile)) {
+      throw new Error('شماره گیرنده پیامک نامعتبر است.');
+    }
+
     const pattern = params.template || config.patternOtp || config.otpPattern || 'khatinoo-otp-auth';
-    let deliveryStatus: 'delivered' | 'failed' | 'pending' = 'delivered';
-    let statusMessage = 'پیامک با موفقیت ارسال شد.';
+    let deliveryStatus: 'delivered' | 'failed' = 'failed';
+    let statusMessage = '';
     let rawCost = 1850;
 
-    if (provider === 'kavenegar' && apiKey && apiKey !== 'khatinoo_kavenegar_live_api_key_sample') {
-      try {
-        // اگر توکن OTP و پترن موجود است، از متد اعتبارسنجی خدماتی (lookup) استفاده شود
-        if (params.otpToken && pattern) {
-          const lookupUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/verify/lookup.json`);
-          lookupUrl.searchParams.set('receptor', cleanMobile);
-          lookupUrl.searchParams.set('token', params.otpToken);
-          lookupUrl.searchParams.set('template', pattern);
-          if (params.token2) lookupUrl.searchParams.set('token2', params.token2);
-          if (params.token3) lookupUrl.searchParams.set('token3', params.token3);
+    try {
+      if (params.otpToken && pattern) {
+        // ۱. ارسال از طریق الگوی خدماتی و تایید هویت (Lookup) کاوه‌نگار
+        const lookupUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/verify/lookup.json`);
+        lookupUrl.searchParams.set('receptor', cleanMobile);
+        lookupUrl.searchParams.set('token', params.otpToken);
+        lookupUrl.searchParams.set('template', pattern);
+        if (params.token2) lookupUrl.searchParams.set('token2', params.token2);
+        if (params.token3) lookupUrl.searchParams.set('token3', params.token3);
 
-          const resp = await fetch(lookupUrl.toString(), { method: 'GET' });
-          const resData: any = await resp.json().catch(() => ({}));
-          if (resData?.return?.status === 200) {
-            statusMessage = `پیامک تایید هویت با الگوی «${pattern}» از طریق کاوه‌نگار با موفقیت به شماره ${cleanMobile} ارسال شد.`;
-            deliveryStatus = 'delivered';
-            rawCost = (resData.entries && resData.entries[0]?.cost) ? Number(resData.entries[0].cost) : 1850;
-          } else {
-            console.warn(`⚠️ [Kavenegar Lookup Warning]:`, resData);
-            // در صورت عدم ثبت یا تایید نشدن پترن در کاوه‌نگار، ارسال متنی ساده
-            const sendText = params.messageText || `کد تایید ورود به خطی‌نو: ${params.otpToken}\nاعتبار: ۲ دقیقه\nkhatynoo.ir`;
-            const sendUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/sms/send.json`);
-            sendUrl.searchParams.set('receptor', cleanMobile);
-            sendUrl.searchParams.set('message', sendText);
-            if (config.senderNumber) sendUrl.searchParams.set('sender', config.senderNumber);
+        const resp = await fetch(lookupUrl.toString(), { method: 'GET' });
+        const resData: any = await resp.json().catch(() => ({}));
 
-            const sendResp = await fetch(sendUrl.toString(), { method: 'GET' });
-            const sendData: any = await sendResp.json().catch(() => ({}));
-            if (sendData?.return?.status === 200) {
-              statusMessage = `پیامک متنی از خط ${config.senderNumber || 'اختصاصی'} کاوه‌نگار به ${cleanMobile} ارسال شد.`;
-              deliveryStatus = 'delivered';
-            } else {
-              deliveryStatus = 'failed';
-              statusMessage = sendData?.return?.message || 'خطا در ارسال پیامک از طریق کاوه‌نگار.';
-              throw new Error(statusMessage);
-            }
-          }
+        if (resData?.return?.status === 200) {
+          statusMessage = `پیامک تایید هویت با الگوی «${pattern}» از طریق کاوه‌نگار با موفقیت به شماره ${cleanMobile} ارسال شد.`;
+          deliveryStatus = 'delivered';
+          rawCost = resData.entries && resData.entries[0]?.cost ? Number(resData.entries[0].cost) : 1850;
         } else {
-          // ارسال متنی مستقیم
-          const sendText = params.messageText || `پیام ارسالی از سامانه خطی‌نو`;
+          console.warn(`⚠️ [Kavenegar Lookup Warning]:`, resData?.return?.message || resData);
+          // در صورت عدم تایید یا انقضای پترن در کاوه‌نگار، ارسال مستقیم متنی
+          const sendText = params.messageText || `کد تایید ورود به خطی‌نو: ${params.otpToken}\nاعتبار: ۲ دقیقه\nkhatynoo.ir`;
           const sendUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/sms/send.json`);
           sendUrl.searchParams.set('receptor', cleanMobile);
           sendUrl.searchParams.set('message', sendText);
@@ -812,31 +806,61 @@ export const cmsEngine = {
 
           const sendResp = await fetch(sendUrl.toString(), { method: 'GET' });
           const sendData: any = await sendResp.json().catch(() => ({}));
+
           if (sendData?.return?.status === 200) {
-            statusMessage = `پیامک متنی از طریق کاوه‌نگار به ${cleanMobile} ارسال شد.`;
+            statusMessage = `پیامک متنی از خط ${config.senderNumber || 'اختصاصی'} کاوه‌نگار به ${cleanMobile} ارسال شد.`;
             deliveryStatus = 'delivered';
           } else {
             deliveryStatus = 'failed';
-            statusMessage = sendData?.return?.message || 'خطا در برقراری ارتباط با کاوه‌نگار.';
+            const errorReason = sendData?.return?.message || resData?.return?.message || 'پاسخ ناموفق از وب‌سرویس کاوه‌نگار.';
+            statusMessage = `خطا در ارسال پیامک کاوه‌نگار: ${errorReason}`;
             throw new Error(statusMessage);
           }
         }
-      } catch (smsErr: any) {
-        deliveryStatus = 'failed';
-        statusMessage = `خطای وب‌سرویس کاوه‌نگار: ${smsErr.message}`;
-        console.error(`❌ [Real SMS Error]:`, smsErr);
-        throw smsErr;
+      } else {
+        // ۲. ارسال متنی مستقیم
+        const sendText = params.messageText || 'پیام ارسالی از سامانه خطی‌نو';
+        const sendUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/sms/send.json`);
+        sendUrl.searchParams.set('receptor', cleanMobile);
+        sendUrl.searchParams.set('message', sendText);
+        if (config.senderNumber) sendUrl.searchParams.set('sender', config.senderNumber);
+
+        const sendResp = await fetch(sendUrl.toString(), { method: 'GET' });
+        const sendData: any = await sendResp.json().catch(() => ({}));
+
+        if (sendData?.return?.status === 200) {
+          statusMessage = `پیامک متنی از طریق کاوه‌نگار به ${cleanMobile} ارسال شد.`;
+          deliveryStatus = 'delivered';
+        } else {
+          deliveryStatus = 'failed';
+          statusMessage = sendData?.return?.message || 'خطا در برقراری ارتباط با کاوه‌نگار.';
+          throw new Error(statusMessage);
+        }
       }
-    } else {
-      console.log(`ℹ️ [SMS Gateway] درگاه پیامک کاوه‌نگار در حالت تنظیم اولیه قرار دارد.`);
-      statusMessage = 'کد تایید ثبت شد (جهت ارسال بر خط، کلید اختصاصی کاوه‌نگار در پنل ادمین ثبت شود).';
+    } catch (smsErr: any) {
+      deliveryStatus = 'failed';
+      statusMessage = smsErr.message || 'خطا در برقراری ارتباط با درگاه پیامک.';
+      console.error(`❌ [Real SMS Error]:`, smsErr.message);
+
+      const failedLog: SmsLog = {
+        id: `sms_${Date.now()}`,
+        recipient: cleanMobile,
+        message: params.messageText || (params.otpToken ? `کد تایید ورود: ${params.otpToken} (الگو: ${pattern})` : 'پیام ارسالی سیستم'),
+        provider: 'kavenegar',
+        status: 'failed',
+        sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+        costRials: 0,
+      };
+      smsLogs.unshift(failedLog);
+
+      throw smsErr;
     }
 
     const newLog: SmsLog = {
       id: `sms_${Date.now()}`,
       recipient: cleanMobile,
       message: params.messageText || (params.otpToken ? `کد تایید ورود: ${params.otpToken} (الگو: ${pattern})` : 'پیام ارسالی سیستم'),
-      provider: provider,
+      provider: 'kavenegar',
       status: deliveryStatus,
       sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
       costRials: rawCost,
@@ -844,7 +868,7 @@ export const cmsEngine = {
     smsLogs.unshift(newLog);
 
     return {
-      success: deliveryStatus !== 'failed',
+      success: true,
       message: statusMessage,
       log: newLog,
     };

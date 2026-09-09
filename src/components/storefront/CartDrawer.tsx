@@ -131,9 +131,6 @@ export const CartDrawer: React.FC = () => {
       setIsOtpSent(true);
       setOtpCountdown(120);
       showToast(res.message || 'کد تایید پیامکی ارسال شد.', 'success');
-      if (res.debugCode) {
-        setOtpCode(res.debugCode);
-      }
     } catch (err: any) {
       showToast(err.message || 'خطا در ارسال پیامک', 'error');
     } finally {
@@ -144,8 +141,8 @@ export const CartDrawer: React.FC = () => {
   // Step 2: Verify OTP and proceed to Details
   const handleVerifyOtpAndProceed = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpCode.trim() || otpCode.trim().length < 4) {
-      showToast('لطفاً کد تایید ۴ یا ۶ رقمی دریافتی را وارد کنید.', 'warning');
+    if (!otpCode.trim() || otpCode.trim().length !== 5) {
+      showToast('لطفاً کد تایید ۵ رقمی دریافتی را وارد کنید.', 'warning');
       return;
     }
 

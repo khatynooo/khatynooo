@@ -79,12 +79,20 @@ const DEFAULT_INSECURE_DB_PASS = 'secure_khatinoo_db_password_2026';
 
 function resolveJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
+  const isProd = process.env.NODE_ENV === 'production';
 
   if (secret && secret.trim().length > 0) {
     if (secret.trim() === DEFAULT_INSECURE_JWT) {
+      if (isProd) {
+        throw new Error('FATAL: Production mode cannot use the default insecure JWT secret! Please configure a strong JWT_SECRET in your environment variables.');
+      }
       console.warn('⚠️ [Security Warning] از کلید JWT پیش‌فرض توسعه استفاده می‌شود. در صورت امکان یک کلید اختصاصی در .env تنظیم نمایید.');
     }
     return secret.trim();
+  }
+
+  if (isProd) {
+    throw new Error('FATAL: JWT_SECRET environment variable is required in production mode!');
   }
 
   const ephemeralSecret = crypto.randomBytes(32).toString('hex');
@@ -109,7 +117,41 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-app.use(cors());
+// تنظیمات امن و سازگار CORS
+const rawAllowedOrigins = process.env.ALLOWED_ORIGINS;
+const allowedOriginsList = rawAllowedOrigins
+  ? rawAllowedOrigins.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // اگر درخواست مبدا هدر ندارد (ابزارهای محلی، سرور یا درون کانتینر)
+    if (!origin) return callback(null, true);
+
+    // بررسی لیست دامنه‌های مجاز پیکربندی‌شده
+    if (allowedOriginsList.length > 0) {
+      if (allowedOriginsList.includes(origin) || allowedOriginsList.includes('*')) {
+        return callback(null, true);
+      }
+    }
+
+    // بررسی دامنه‌های پیش‌فرض محیط‌های محلی و پیش‌نمایش ابری
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    const isCloudPreview = /^https:\/\/[a-z0-9\-]+\.(run\.app|web\.app|firebaseapp\.com|github\.dev|gitpod\.io)$/.test(origin) ||
+                           origin.includes('ai.studio') || origin.includes('googleusercontent.com');
+
+    if (process.env.NODE_ENV !== 'production' || isLocalhost || isCloudPreview || allowedOriginsList.length === 0) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`دامنه مبدا (${origin}) طبق سیاست امنیتی CORS مجاز نمی‌باشد.`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use('/uploads', express.static(uploadsDir));
@@ -139,6 +181,10 @@ function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) 
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
+    // جلوگیری قاطع از ورود توکن مشتری (Customer JWT) به روت‌های پرسنلی و مدیریتی
+    if (decoded.type === 'customer' || !decoded.role || !decoded.username) {
+      return res.status(403).json({ error: 'دسترسی غیرمجاز: این بخش نیازمند حساب کاربری پرسنلی یا مدیریتی است.' });
+    }
     req.user = decoded;
     next();
   } catch (err) {
@@ -153,7 +199,9 @@ function optionalAuthenticateToken(req: AuthRequest, res: Response, next: NextFu
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      req.user = decoded;
+      if (decoded.role && decoded.type !== 'customer') {
+        req.user = decoded;
+      }
     } catch (err) {
       // Ignore token decode error for optional auth fallback
     }
@@ -745,21 +793,19 @@ app.post('/api/pos/send-transaction', optionalAuthenticateToken, async (req, res
 });
 
 app.post('/api/pos/checkout', optionalAuthenticateToken, async (req: AuthRequest, res) => {
-  const {
-    customerId,
-    customerName,
-    customerMobile,
-    items,
-    discount = 0,
-    paymentMethod = 'pos_pasargad',
-    paidAmount = 0,
-    cashAmount,
-    chequeAmount,
-    chequeInfo,
-    posResult,
-    notes,
-    warehouseId,
-  } = req.body;
+  const customerId = req.body.customerId || req.body.customer_id;
+  const customerName = req.body.customerName || req.body.customer_name;
+  const customerMobile = req.body.customerMobile || req.body.customer_mobile;
+  const items = req.body.items;
+  const discount = req.body.discount ?? req.body.discount_amount ?? 0;
+  const paymentMethod = req.body.paymentMethod || req.body.payment_method || 'pos_pasargad';
+  const paidAmount = req.body.paidAmount ?? req.body.paid_amount ?? 0;
+  const cashAmount = req.body.cashAmount ?? req.body.cash_amount;
+  const chequeAmount = req.body.chequeAmount ?? req.body.cheque_amount;
+  const chequeInfo = req.body.chequeInfo || req.body.cheque_info;
+  const posResult = req.body.posResult || req.body.pos_result;
+  const notes = req.body.notes;
+  const warehouseId = req.body.warehouseId || req.body.warehouse_id;
 
   if (!items || !items.length) {
     return res.status(400).json({ error: 'اقلام فاکتور خالی است.' });
@@ -848,6 +894,22 @@ app.put('/api/invoices/sales/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+app.delete('/api/invoices/sales/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.deleteSalesInvoice(id, {
+      userId: req.user?.id,
+      userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
+      ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'Web POS',
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ [Delete Sales Invoice Error]:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/invoices/purchase', authenticateToken, async (req, res) => {
   try {
     const invoices = await db.getPurchaseInvoices();
@@ -858,22 +920,21 @@ app.get('/api/invoices/purchase', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
-  const {
-    supplierId,
-    items,
-    paidAmount = 0,
-    cashAmount = 0,
-    chequeAmount = 0,
-    cheques = [],
-    receiptImageUrls = [],
-    paymentMethod = 'cash',
-    notes,
-    warehouseId,
-    invoiceNumber,
-    invoiceDate,
-    discount = 0,
-    receiptImageUrl,
-  } = req.body;
+  const supplierId = req.body.supplierId || req.body.supplier_id;
+  const items = req.body.items;
+  const paidAmount = req.body.paidAmount ?? req.body.paid_amount ?? 0;
+  const cashAmount = req.body.cashAmount ?? req.body.cash_amount ?? 0;
+  const chequeAmount = req.body.chequeAmount ?? req.body.cheque_amount ?? 0;
+  const cheques = req.body.cheques || [];
+  const receiptImageUrls = req.body.receiptImageUrls || req.body.receipt_image_urls || [];
+  const paymentMethod = req.body.paymentMethod || req.body.payment_method || 'cash';
+  const notes = req.body.notes;
+  const warehouseId = req.body.warehouseId || req.body.warehouse_id;
+  const invoiceNumber = req.body.invoiceNumber || req.body.invoice_number;
+  const invoiceDate = req.body.invoiceDate || req.body.invoice_date;
+  const discount = req.body.discount ?? 0;
+  const receiptImageUrl = req.body.receiptImageUrl || req.body.receipt_image_url;
+
   if (!supplierId || !items || !items.length) {
     return res.status(400).json({ error: 'انتخاب تامین‌کننده و ثبت اقلام فاکتور خرید الزامی است.' });
   }
@@ -910,12 +971,13 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
   }
 });
 
-app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
+app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req: AuthRequest, res) => {
   const { id } = req.params;
   const {
     supplierId,
     supplierName,
     items,
+    totalAmount,
     paidAmount,
     cashAmount,
     chequeAmount,
@@ -939,6 +1001,7 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
       supplierId,
       supplierName,
       items,
+      totalAmount: totalAmount !== undefined ? Number(totalAmount) : undefined,
       paidAmount: paidAmount !== undefined ? Number(paidAmount) : undefined,
       cashAmount: cashAmount !== undefined ? Number(cashAmount) : undefined,
       chequeAmount: chequeAmount !== undefined ? Number(chequeAmount) : undefined,
@@ -951,6 +1014,10 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
       invoiceDate,
       discount: discount !== undefined ? Number(discount) : undefined,
       receiptImageUrl,
+      userId: req.user?.id,
+      userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
+      ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'Web POS',
     });
 
     res.json({
@@ -964,10 +1031,15 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
   }
 });
 
-app.delete('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+app.delete('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req: AuthRequest, res) => {
   const { id } = req.params;
   try {
-    const result = await db.deletePurchaseInvoice(id);
+    const result = await db.deletePurchaseInvoice(id, {
+      userId: req.user?.id,
+      userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
+      ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'Web POS',
+    });
     res.json(result);
   } catch (err: any) {
     console.error('❌ [Delete Purchase Invoice Error]:', err);
@@ -988,20 +1060,18 @@ app.get('/api/invoices/returns', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, res) => {
-  const {
-    originalInvoiceId,
-    originalInvoiceNumber,
-    customerId,
-    customerName,
-    customerMobile,
-    type = 'sales_return',
-    reasonCategory, // 'defective' | 'unwanted'
-    reasonNote,
-    items,
-    totalRefundAmount,
-    refundMethod = 'cash',
-    warehouseId,
-  } = req.body;
+  const originalInvoiceId = req.body.originalInvoiceId || req.body.original_invoice_id;
+  const originalInvoiceNumber = req.body.originalInvoiceNumber || req.body.original_invoice_number;
+  const customerId = req.body.customerId || req.body.customer_id;
+  const customerName = req.body.customerName || req.body.customer_name;
+  const customerMobile = req.body.customerMobile || req.body.customer_mobile;
+  const type = req.body.type || 'sales_return';
+  const reasonCategory = req.body.reasonCategory || req.body.reason_category;
+  const reasonNote = req.body.reasonNote || req.body.reason_note;
+  const items = req.body.items;
+  const totalRefundAmount = req.body.totalRefundAmount ?? req.body.total_refund_amount ?? 0;
+  const refundMethod = req.body.refundMethod || req.body.refund_method || 'cash';
+  const warehouseId = req.body.warehouseId || req.body.warehouse_id;
 
   if (!items || !items.length) {
     return res.status(400).json({ error: 'حداقل یک قلم کالا برای مرجوعی باید مشخص شود.' });
@@ -1033,6 +1103,22 @@ app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, re
 
     res.json(result);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/invoices/returns/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.deleteReturnInvoice(id, {
+      userId: req.user?.id,
+      userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
+      ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+      userAgent: req.headers['user-agent'] || 'Web POS',
+    });
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ [Delete Return Invoice Error]:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1164,7 +1250,10 @@ app.get('/api/customers/:id/ledger', authenticateToken, async (req, res) => {
 
 app.post('/api/customers/:id/record-payment', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
   const { id } = req.params;
-  const { amount, paymentMethod, description, invoiceId } = req.body;
+  const amount = req.body.amount;
+  const paymentMethod = req.body.paymentMethod || req.body.payment_method;
+  const description = req.body.description;
+  const invoiceId = req.body.invoiceId || req.body.invoice_id;
 
   const parsedAmount = Number(amount);
   if (!parsedAmount || parsedAmount <= 0) {
@@ -1221,7 +1310,10 @@ app.get('/api/suppliers/:id/ledger', authenticateToken, async (req, res) => {
 
 app.post('/api/suppliers/:id/record-payment', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
   const { id } = req.params;
-  const { amount, paymentMethod, description, invoiceId } = req.body;
+  const amount = req.body.amount;
+  const paymentMethod = req.body.paymentMethod || req.body.payment_method;
+  const description = req.body.description;
+  const invoiceId = req.body.invoiceId || req.body.invoice_id;
 
   const parsedAmount = Number(amount);
   if (!parsedAmount || parsedAmount <= 0) {
@@ -2108,8 +2200,8 @@ app.post('/api/customer/auth/send-otp', async (req, res) => {
     rateData.count++;
     otpRateLimitMap.set(cleanMobile, rateData);
 
-    // تولید کد تصادفی ۵ رقمی امن
-    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
+    // تولید کد تصادفی ۵ رقمی امن بر پایه ماژول استاندارد crypto
+    const otpCode = crypto.randomInt(10000, 100000).toString();
 
     // ذخیره در دیتابیس با زمان انقضای ۲ دقیقه
     await db.saveOtpCode(cleanMobile, otpCode, 2);
@@ -2129,8 +2221,8 @@ app.post('/api/customer/auth/send-otp', async (req, res) => {
       expiresInSeconds: 120,
     });
   } catch (err: any) {
-    console.error('❌ [Send OTP Error]:', err);
-    res.status(500).json({ error: `خطا در ارسال کد تایید: ${err.message}` });
+    console.error('❌ [Send OTP Error]:', err.message || err);
+    res.status(400).json({ error: err.message || 'خطا در ارسال کد تایید پیامکی.' });
   }
 });
 

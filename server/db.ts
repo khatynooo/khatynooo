@@ -1106,10 +1106,6 @@ export const db = {
   },
 
   async verifyOtpCode(mobile: string, code: string): Promise<{ valid: boolean; message: string }> {
-    if (code === '12345' || code === '123456') {
-      return { valid: true, message: 'کد تایید با موفقیت اعتبارسنجی شد (حالت توسعه و شبیه‌ساز).' };
-    }
-
     const res = await query(
       `SELECT * FROM customer_otp_codes 
        WHERE mobile = $1 AND is_used = false AND expires_at > NOW() 
@@ -1118,15 +1114,30 @@ export const db = {
     );
 
     if (res.rows.length === 0) {
-      return { valid: false, message: 'کد تایید منقضی شده است یا وجود ندارد. لطفاً مجدداً درخواست کد کنید.' };
+      return { valid: false, message: 'کد تایید منقضی شده است یا وجود ندارد. لطفاً مجدداً درخواست کد نمایید.' };
     }
 
     const otpRecord = res.rows[0];
-    if (otpRecord.code !== code) {
-      await query('UPDATE customer_otp_codes SET attempts = attempts + 1 WHERE id = $1', [otpRecord.id]);
-      return { valid: false, message: 'کد تایید وارد شده اشتباه است.' };
+
+    // بررسی سقف تلاش‌های ناموفق مجاز
+    if (Number(otpRecord.attempts || 0) >= 5) {
+      await query('UPDATE customer_otp_codes SET is_used = true WHERE id = $1', [otpRecord.id]);
+      return { valid: false, message: 'تعداد تلاش‌های ورود بیش از حد مجاز است. لطفاً کد جدید دریافت نمایید.' };
     }
 
+    if (otpRecord.code !== code) {
+      const newAttempts = Number(otpRecord.attempts || 0) + 1;
+      await query('UPDATE customer_otp_codes SET attempts = $1 WHERE id = $2', [newAttempts, otpRecord.id]);
+      
+      const remainingAttempts = Math.max(0, 5 - newAttempts);
+      if (remainingAttempts === 0) {
+        await query('UPDATE customer_otp_codes SET is_used = true WHERE id = $1', [otpRecord.id]);
+        return { valid: false, message: 'کد تایید به دلیل ۵ بار ورود اشتباه باطل شد. لطفاً مجدداً درخواست کد نمایید.' };
+      }
+      return { valid: false, message: `کد تایید وارد شده نادرست است. (${remainingAttempts} فرصت باقی‌مانده)` };
+    }
+
+    // مصرف و باطل کردن یکباره کد تایید پس از تایید موفق
     await query('UPDATE customer_otp_codes SET is_used = true WHERE id = $1', [otpRecord.id]);
     return { valid: true, message: 'کد تایید با موفقیت تایید شد.' };
   },
@@ -1633,6 +1644,90 @@ export const db = {
     });
   },
 
+  async deleteSalesInvoice(
+    id: string,
+    context?: { userId?: string; userName?: string; ip?: string; userAgent?: string }
+  ): Promise<{ success: boolean; message: string }> {
+    return await withTransaction(async (client) => {
+      const checkRes = await client.query('SELECT * FROM sales_invoices WHERE id = $1 FOR UPDATE', [id]);
+      if (checkRes.rows.length === 0) {
+        throw new Error('فاکتور فروش مورد نظر یافت نشد.');
+      }
+      const inv = checkRes.rows[0];
+      const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
+      const whId = inv.warehouse_id || 'wh_central';
+      const remainingAmount = Number(inv.remaining_amount || 0);
+
+      // ۱. بازگرداندن اقلام فروخته شده به انبار (معکوس کردن خروج کالا)
+      for (const it of items) {
+        if (it.productId && !it.productId.startsWith('srv_') && it.quantity) {
+          await modifyLocationStock(client, {
+            productId: it.productId,
+            warehouseId: whId,
+            delta: Number(it.quantity),
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۲. معکوس کردن بدهی مشتری در صورت وجود مانده نسیه
+      if (remainingAmount > 0 && inv.customer_id) {
+        await client.query(
+          `UPDATE customers SET balance = balance + $1, updated_at = NOW() WHERE id = $2`,
+          [remainingAmount, inv.customer_id]
+        );
+        try {
+          await client.query('DELETE FROM customer_transactions WHERE invoice_id = $1', [id]);
+        } catch (e) {}
+      }
+
+      // ۳. لغو یا حذف تراکنش‌های خزانه و چک‌های متصل به این فاکتور
+      try {
+        await client.query("DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'invoices'", [id]);
+      } catch (e) {}
+
+      try {
+        await client.query("DELETE FROM cheques WHERE invoice_id = $1 AND (status = 'pending' OR status IS NULL)", [id]);
+      } catch (e) {}
+
+      // ۴. حذف فاکتور فروش
+      await client.query('DELETE FROM sales_invoices WHERE id = $1', [id]);
+
+      // ۵. ثبت در جدول audit_logs
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+             id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+           ) VALUES ($1, $2, $3, $4, 'sales_invoices', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            context?.userId || null,
+            context?.userName || 'مدیر سیستم',
+            'DELETE_SALES_INVOICE',
+            id,
+            JSON.stringify({
+              invoiceNumber: inv.invoice_number,
+              customerName: inv.customer_name,
+              customerId: inv.customer_id,
+              finalAmount: Number(inv.final_amount),
+              paidAmount: Number(inv.paid_amount || 0),
+              remainingAmount,
+              warehouseId: whId,
+              itemsCount: items.length,
+            }),
+            context?.ip || '127.0.0.1',
+            context?.userAgent || 'Web POS',
+          ]
+        );
+      } catch (auditErr) {}
+
+      return {
+        success: true,
+        message: `فاکتور فروش ${inv.invoice_number} با موفقیت حذف گردید و موجودی انبار، بستانکاری مشتری و سوابق مالی مرتبط معکوس شد.`,
+      };
+    });
+  },
+
   async getPurchaseInvoices(): Promise<PurchaseInvoice[]> {
     const res = await query('SELECT * FROM purchase_invoices ORDER BY created_at DESC');
     return res.rows.map((r: any) => {
@@ -1749,7 +1844,10 @@ export const db = {
     };
   },
 
-  async deletePurchaseInvoice(id: string): Promise<{ success: boolean; message: string }> {
+  async deletePurchaseInvoice(
+    id: string,
+    context?: { userId?: string; userName?: string; ip?: string; userAgent?: string }
+  ): Promise<{ success: boolean; message: string }> {
     return await withTransaction(async (client) => {
       const checkRes = await client.query('SELECT * FROM purchase_invoices WHERE id = $1 FOR UPDATE', [id]);
       if (checkRes.rows.length === 0) {
@@ -1760,7 +1858,7 @@ export const db = {
       const whId = inv.warehouse_id || 'wh_central';
       const remainingAmount = Number(inv.remaining_amount || 0);
 
-      // ۱. بازگشت و کسر موجودی اضافه شده به انبار
+      // ۱. بازگشت و کسر موجودی اضافه شده به انبار (معکوس کردن کامل موجودی)
       for (const it of items) {
         if (it.productId && it.quantity) {
           await modifyLocationStock(client, {
@@ -1775,7 +1873,7 @@ export const db = {
       // ۲. کاهش بدهی ثبت شده به تامین‌کننده در صورت وجود مانده
       if (remainingAmount > 0 && inv.supplier_id) {
         await client.query(
-          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1) WHERE id = $2`,
+          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
           [remainingAmount, inv.supplier_id]
         );
         try {
@@ -1785,15 +1883,48 @@ export const db = {
 
       // ۳. لغو یا حذف چک‌های ثبت شده و تراکنش‌های خزانه این فاکتور
       try {
-        await client.query('DELETE FROM treasury_transactions WHERE reference_id = $1', [id]);
+        await client.query("DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'purchases'", [id]);
+      } catch (e) {}
+
+      try {
+        await client.query("DELETE FROM cheques WHERE invoice_id = $1 AND (status = 'pending' OR status IS NULL)", [id]);
       } catch (e) {}
 
       // ۴. حذف فاکتور خرید
       await client.query('DELETE FROM purchase_invoices WHERE id = $1', [id]);
 
+      // ۵. ثبت در جدول audit_logs
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+             id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+           ) VALUES ($1, $2, $3, $4, 'purchase_invoices', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            context?.userId || null,
+            context?.userName || 'مدیر سیستم',
+            'DELETE_PURCHASE_INVOICE',
+            id,
+            JSON.stringify({
+              invoiceNumber: inv.invoice_number,
+              supplierName: inv.supplier_name,
+              supplierId: inv.supplier_id,
+              totalAmount: Number(inv.total_amount),
+              paidAmount: Number(inv.paid_amount || 0),
+              remainingAmount,
+              warehouseId: whId,
+              itemsCount: items.length,
+              items: items.map((x: any) => ({ productId: x.productId, name: x.productName, quantity: x.quantity })),
+            }),
+            context?.ip || '127.0.0.1',
+            context?.userAgent || 'Web POS',
+          ]
+        );
+      } catch (auditErr) {}
+
       return {
         success: true,
-        message: `فاکتور خرید ${inv.invoice_number} با موفقیت حذف گردید و اثرات انبار و بدهی حسابداری معکوس شد.`,
+        message: `فاکتور خرید ${inv.invoice_number} با موفقیت حذف گردید و اثرات انبار، چک‌ها، خزانه و بدهی حسابداری معکوس شد.`,
       };
     });
   },
@@ -1815,6 +1946,10 @@ export const db = {
     invoiceDate?: string;
     discount?: number;
     receiptImageUrl?: string;
+    userId?: string;
+    userName?: string;
+    ip?: string;
+    userAgent?: string;
   }): Promise<PurchaseInvoice> {
     return await withTransaction(async (client) => {
       const checkRes = await client.query('SELECT * FROM purchase_invoices WHERE id = $1 FOR UPDATE', [id]);
@@ -1825,59 +1960,121 @@ export const db = {
       const oldItems = typeof oldInv.items === 'string' ? JSON.parse(oldInv.items) : (oldInv.items || []);
       const oldWhId = oldInv.warehouse_id || 'wh_central';
       const oldRemaining = Number(oldInv.remaining_amount || 0);
+      const oldSupplierId = oldInv.supplier_id;
 
-      // ۱. معکوس کردن اقلام و موجودی انبار قبلی
-      for (const it of oldItems) {
-        if (it.productId && it.quantity) {
-          await modifyLocationStock(client, {
-            productId: it.productId,
-            warehouseId: oldWhId,
-            delta: -Number(it.quantity),
-            allowNegative: true,
-          });
-        }
-      }
-
-      // ۲. معکوس کردن مانده بدهی به تامین‌کننده قبلی
-      if (oldRemaining > 0 && oldInv.supplier_id) {
-        await client.query(
-          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1) WHERE id = $2`,
-          [oldRemaining, oldInv.supplier_id]
-        );
-      }
-
-      // ۳. پردازش داده‌های جدید
+      // ۱. آماده‌سازی داده‌های جدید
       const newItems = updateData.items || oldItems;
       const targetWhId = updateData.warehouseId || oldWhId;
-      const supplierId = updateData.supplierId || oldInv.supplier_id;
-      const supplierName = updateData.supplierName || oldInv.supplier_name;
+      const targetSupplierId = updateData.supplierId || oldSupplierId;
+      const targetSupplierName = updateData.supplierName || oldInv.supplier_name;
       const paymentMethod = updateData.paymentMethod || oldInv.payment_method;
       const invoiceNumber = updateData.invoiceNumber?.trim() || oldInv.invoice_number;
       const invoiceDate = updateData.invoiceDate || oldInv.invoice_date;
-      const discount = updateData.discount !== undefined ? Number(updateData.discount) : Number(oldInv.discount || 0);
+      const discount = Math.max(0, updateData.discount !== undefined ? Number(updateData.discount) : Number(oldInv.discount || 0));
       const notes = updateData.notes !== undefined ? updateData.notes : oldInv.notes;
 
-      const totalAmount = updateData.totalAmount !== undefined
-        ? Number(updateData.totalAmount)
-        : newItems.reduce((acc: number, curr: any) => acc + (curr.total || curr.quantity * curr.buyPrice), 0);
+      // ۲. مدیریت هوشمند دلتای موجودی انبار (Delta Stock Management)
+      if (oldWhId === targetWhId) {
+        // همان انبار: محاسبه دلتای تغییرات به تفکیک کالا (delta = newQty - previousQty)
+        const oldQtyMap = new Map<string, number>();
+        for (const it of oldItems) {
+          if (it.productId) {
+            oldQtyMap.set(it.productId, (oldQtyMap.get(it.productId) || 0) + Number(it.quantity || 0));
+          }
+        }
+        const newQtyMap = new Map<string, number>();
+        for (const it of newItems) {
+          if (it.productId) {
+            newQtyMap.set(it.productId, (newQtyMap.get(it.productId) || 0) + Number(it.quantity || 0));
+          }
+        }
+        const allProductIds = new Set([...oldQtyMap.keys(), ...newQtyMap.keys()]);
+        for (const prodId of allProductIds) {
+          const oldQty = oldQtyMap.get(prodId) || 0;
+          const newQty = newQtyMap.get(prodId) || 0;
+          const delta = newQty - oldQty;
+          if (delta !== 0) {
+            await modifyLocationStock(client, {
+              productId: prodId,
+              warehouseId: targetWhId,
+              delta: delta,
+              allowNegative: true,
+            });
+          }
+        }
+      } else {
+        // تغییر انبار: معکوس کردن کامل اقلام از انبار قبلی و افزودن اقلام جدید به انبار هدف
+        for (const it of oldItems) {
+          if (it.productId && it.quantity) {
+            await modifyLocationStock(client, {
+              productId: it.productId,
+              warehouseId: oldWhId,
+              delta: -Number(it.quantity),
+              allowNegative: true,
+            });
+          }
+        }
+        for (const it of newItems) {
+          if (it.productId && it.quantity) {
+            await modifyLocationStock(client, {
+              productId: it.productId,
+              warehouseId: targetWhId,
+              delta: Number(it.quantity),
+              allowNegative: true,
+            });
+          }
+        }
+      }
 
+      // به‌روزرسانی قیمت خرید محصولات جدید در جدول کالاها
+      for (const it of newItems) {
+        if (it.productId && it.buyPrice !== undefined) {
+          await client.query(
+            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
+            [Number(it.buyPrice), it.productId]
+          );
+        }
+      }
+
+      // ۳. اعتبارسنجی و محاسبه مجدد ارقام مالی در بک‌اند بدون اعتماد به کلاینت
+      const calculatedSubtotal = newItems.reduce(
+        (acc: number, curr: any) => acc + (Number(curr.quantity || 0) * Number(curr.buyPrice || 0)),
+        0
+      );
+      const totalAmount = updateData.totalAmount !== undefined && updateData.totalAmount > 0
+        ? Number(updateData.totalAmount)
+        : calculatedSubtotal;
       const finalPayable = Math.max(0, totalAmount - discount);
 
-      const cheques = Array.isArray(updateData.cheques) ? updateData.cheques : (oldInv.cheques ? JSON.parse(oldInv.cheques) : []);
-      const calculatedChequeAmount = updateData.chequeAmount !== undefined
-        ? Number(updateData.chequeAmount)
-        : cheques.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
-      const cashAmount = updateData.cashAmount !== undefined ? Number(updateData.cashAmount) : Number(oldInv.cash_amount || 0);
+      let rawCheques = Array.isArray(updateData.cheques)
+        ? updateData.cheques
+        : (oldInv.cheques ? (typeof oldInv.cheques === 'string' ? JSON.parse(oldInv.cheques) : oldInv.cheques) : []);
+      const cheques = Array.isArray(rawCheques) ? rawCheques : [];
+      const calculatedChequeAmount = cheques.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
 
+      let cashAmount = 0;
       let paidAmount = 0;
+      let chequeAmount = 0;
+
       if (paymentMethod === 'cash') {
-        paidAmount = cashAmount || (updateData.paidAmount !== undefined ? Number(updateData.paidAmount) : Number(oldInv.paid_amount || 0));
+        const inputPaid = updateData.cashAmount !== undefined
+          ? Number(updateData.cashAmount)
+          : (updateData.paidAmount !== undefined ? Number(updateData.paidAmount) : finalPayable);
+        paidAmount = Math.min(finalPayable, inputPaid);
+        cashAmount = paidAmount;
+        chequeAmount = 0;
       } else if (paymentMethod === 'cheque') {
-        paidAmount = calculatedChequeAmount;
+        chequeAmount = calculatedChequeAmount;
+        cashAmount = 0;
+        paidAmount = Math.min(finalPayable, chequeAmount);
       } else if (paymentMethod === 'mixed') {
-        paidAmount = cashAmount + calculatedChequeAmount;
+        cashAmount = Math.max(0, Number(updateData.cashAmount || 0));
+        chequeAmount = calculatedChequeAmount;
+        paidAmount = Math.min(finalPayable, cashAmount + chequeAmount);
       } else if (paymentMethod === 'credit') {
         paidAmount = 0;
+        cashAmount = 0;
+        chequeAmount = 0;
       } else {
         paidAmount = updateData.paidAmount !== undefined ? Number(updateData.paidAmount) : Number(oldInv.paid_amount || 0);
       }
@@ -1889,31 +2086,136 @@ export const db = {
         : (updateData.receiptImageUrl ? [updateData.receiptImageUrl] : (oldInv.receipt_image_url ? [oldInv.receipt_image_url] : []));
       const primaryReceipt = receiptUrls[0] || updateData.receiptImageUrl || oldInv.receipt_image_url || null;
 
-      // ۴. اعمال موجودی اقلام جدید در انبار هدف و به‌روزرسانی قیمت خرید
-      for (const it of newItems) {
-        if (it.productId && it.quantity) {
+      // ۴. تسویه و تطبیق حساب بدهی به تامین‌کننده
+      if (oldSupplierId && targetSupplierId && oldSupplierId !== targetSupplierId) {
+        if (oldRemaining > 0) {
           await client.query(
-            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
-            [it.buyPrice, it.productId]
+            `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
+            [oldRemaining, oldSupplierId]
           );
-          await modifyLocationStock(client, {
-            productId: it.productId,
-            warehouseId: targetWhId,
-            delta: Number(it.quantity),
-            allowNegative: true,
-          });
+          try {
+            await client.query(`DELETE FROM supplier_transactions WHERE invoice_id = $1`, [id]);
+          } catch (e) {}
         }
+        if (remainingAmount > 0) {
+          await client.query(
+            `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1, updated_at = NOW() WHERE id = $2`,
+            [remainingAmount, targetSupplierId]
+          );
+          try {
+            const supTxId = `sup_tx_${Date.now()}`;
+            await client.query(
+              `INSERT INTO supplier_transactions (id, supplier_id, type, amount, payment_method, invoice_id, description, created_at)
+               VALUES ($1, $2, 'purchase_credit', $3, $4, $5, $6, NOW())`,
+              [supTxId, targetSupplierId, remainingAmount, paymentMethod || 'credit', id, `بدهی بابت فاکتور خرید ${invoiceNumber} (ویرایش شده)`]
+            );
+          } catch (e) {}
+        }
+      } else if (targetSupplierId) {
+        const debtDelta = remainingAmount - oldRemaining;
+        if (debtDelta > 0) {
+          await client.query(
+            `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1, updated_at = NOW() WHERE id = $2`,
+            [debtDelta, targetSupplierId]
+          );
+        } else if (debtDelta < 0) {
+          await client.query(
+            `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
+            [Math.abs(debtDelta), targetSupplierId]
+          );
+        }
+
+        try {
+          if (remainingAmount > 0) {
+            const existingTx = await client.query(
+              `SELECT id FROM supplier_transactions WHERE invoice_id = $1 AND type = 'purchase_credit'`,
+              [id]
+            );
+            if (existingTx.rows.length > 0) {
+              await client.query(
+                `UPDATE supplier_transactions SET amount = $1, payment_method = $2, description = $3 WHERE id = $4`,
+                [remainingAmount, paymentMethod || 'credit', `بدهی بابت فاکتور خرید ${invoiceNumber} (ویرایش شده)`, existingTx.rows[0].id]
+              );
+            } else {
+              const supTxId = `sup_tx_${Date.now()}`;
+              await client.query(
+                `INSERT INTO supplier_transactions (id, supplier_id, type, amount, payment_method, invoice_id, description, created_at)
+                 VALUES ($1, $2, 'purchase_credit', $3, $4, $5, $6, NOW())`,
+                [supTxId, targetSupplierId, remainingAmount, paymentMethod || 'credit', id, `بدهی بابت فاکتور خرید ${invoiceNumber} (ویرایش شده)`]
+              );
+            }
+          } else {
+            await client.query(`DELETE FROM supplier_transactions WHERE invoice_id = $1 AND type = 'purchase_credit'`, [id]);
+          }
+        } catch (e) {}
       }
 
-      // ۵. اعمال مانده بدهی جدید به تامین‌کننده
-      if (remainingAmount > 0 && supplierId) {
+      // ۵. همگام‌سازی گردش صندوق خزانه
+      try {
+        await client.query(`DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'purchases'`, [id]);
+      } catch (e) {}
+
+      const actualCashSpent = (paymentMethod === 'cash' || paymentMethod === 'mixed') ? cashAmount : 0;
+      if (actualCashSpent > 0) {
+        const idTrx = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         await client.query(
-          `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1 WHERE id = $2`,
-          [remainingAmount, supplierId]
+          `INSERT INTO treasury_transactions (
+            id, transaction_type, source_module, reference_id, amount,
+            payment_method, account_title, description, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [
+            idTrx,
+            'purchase_expense',
+            'purchases',
+            id,
+            -actualCashSpent,
+            'cash',
+            'صندوق نقدی فروشگاه',
+            `پرداخت نقدی بابت فاکتور خرید ${invoiceNumber} (ویرایش شده) به تامین‌کننده «${targetSupplierName}»`,
+          ]
         );
       }
 
-      // ۶. به‌روزرسانی جدول فاکتورهای خرید
+      // ۶. همگام‌سازی چک‌های پرداختی در جدول چک‌ها
+      try {
+        await client.query(`DELETE FROM cheques WHERE invoice_id = $1 AND (status = 'pending' OR status IS NULL)`, [id]);
+
+        if ((paymentMethod === 'cheque' || paymentMethod === 'mixed') && cheques.length > 0) {
+          for (const chq of cheques) {
+            if (chq && Number(chq.amount) > 0) {
+              const chqId = chq.id || `chq_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+              await client.query(
+                `INSERT INTO cheques (
+                  id, cheque_number, sayad_id, type, bank_name, branch_code, amount,
+                  due_date, issue_date, drawer_name, contact_number, entity_id, entity_name,
+                  status, notes, sheba_number, invoice_id, invoice_number, created_at
+                ) VALUES ($1, $2, $3, 'paid', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())`,
+                [
+                  chqId,
+                  chq.chequeNumber || `CHQ-${Date.now().toString().slice(-6)}`,
+                  chq.sayadId || '0000000000000000',
+                  chq.bankName || 'بانک تجارت',
+                  chq.branchCode || '',
+                  Number(chq.amount),
+                  chq.dueDate || invoiceDate,
+                  chq.issueDate || invoiceDate,
+                  chq.drawerName || 'فروشگاه خطی‌نو',
+                  chq.contactNumber || '',
+                  targetSupplierId || null,
+                  targetSupplierName || 'تامین‌کننده',
+                  chq.status || 'pending',
+                  chq.notes || `بابت فاکتور خرید ${invoiceNumber}`,
+                  chq.shebaNumber || null,
+                  id,
+                  invoiceNumber,
+                ]
+              );
+            }
+          }
+        }
+      } catch (chqErr) {}
+
+      // ۷. به‌روزرسانی ردیف فاکتور خرید در جدول purchase_invoices
       await client.query(
         `UPDATE purchase_invoices SET
           supplier_id = $1,
@@ -1935,8 +2237,8 @@ export const db = {
           receipt_image_urls = $17
         WHERE id = $18`,
         [
-          supplierId,
-          supplierName,
+          targetSupplierId,
+          targetSupplierName,
           JSON.stringify(newItems),
           totalAmount,
           discount,
@@ -1949,25 +2251,66 @@ export const db = {
           invoiceDate,
           primaryReceipt,
           cashAmount,
-          calculatedChequeAmount,
+          chequeAmount,
           JSON.stringify(cheques),
           JSON.stringify(receiptUrls),
           id,
         ]
       );
 
+      // ۸. ثبت در جدول audit_logs
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+             id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+           ) VALUES ($1, $2, $3, $4, 'purchase_invoices', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            updateData.userId || null,
+            updateData.userName || 'مدیر سیستم',
+            'UPDATE_PURCHASE_INVOICE',
+            id,
+            JSON.stringify({
+              invoiceNumber,
+              previous: {
+                supplierId: oldInv.supplier_id,
+                supplierName: oldInv.supplier_name,
+                totalAmount: Number(oldInv.total_amount),
+                paidAmount: Number(oldInv.paid_amount || 0),
+                remainingAmount: oldRemaining,
+                paymentMethod: oldInv.payment_method,
+                warehouseId: oldWhId,
+                itemsCount: oldItems.length,
+              },
+              updated: {
+                supplierId: targetSupplierId,
+                supplierName: targetSupplierName,
+                totalAmount,
+                paidAmount,
+                remainingAmount,
+                paymentMethod,
+                warehouseId: targetWhId,
+                itemsCount: newItems.length,
+              },
+            }),
+            updateData.ip || '127.0.0.1',
+            updateData.userAgent || 'Web POS',
+          ]
+        );
+      } catch (auditErr) {}
+
       return {
         id,
         invoiceNumber,
         invoiceDate,
-        supplierId,
-        supplierName,
+        supplierId: targetSupplierId,
+        supplierName: targetSupplierName,
         items: newItems,
         totalAmount,
         discount,
         paidAmount,
         cashAmount,
-        chequeAmount: calculatedChequeAmount,
+        chequeAmount,
         cheques,
         chequeInfo: cheques[0] || undefined,
         receiptImageUrls: receiptUrls,
@@ -2323,6 +2666,87 @@ export const db = {
     });
   },
 
+  async deleteReturnInvoice(
+    id: string,
+    context?: { userId?: string; userName?: string; ip?: string; userAgent?: string }
+  ): Promise<{ success: boolean; message: string }> {
+    return await withTransaction(async (client) => {
+      const checkRes = await client.query('SELECT * FROM return_invoices WHERE id = $1 FOR UPDATE', [id]);
+      if (checkRes.rows.length === 0) {
+        throw new Error('سند مرجوعی مورد نظر یافت نشد.');
+      }
+      const rtn = checkRes.rows[0];
+      const items = typeof rtn.items === 'string' ? JSON.parse(rtn.items) : (rtn.items || []);
+      const mainWhId = rtn.warehouse_id || 'wh_central';
+      const isDefective = rtn.reason_category === 'defective';
+      const totalRefund = Number(rtn.total_refund_amount || 0);
+
+      // ۱. کسر مجدد اقلامی که قبلاً به انبار بازگردانده شده بودند (معکوس کردن انبار)
+      for (const it of items) {
+        const targetWh = (it.reasonCategory === 'defective' || isDefective)
+          ? 'wh_waste'
+          : (it.targetWarehouseId || mainWhId);
+
+        if (it.productId && !it.productId.startsWith('srv_') && it.quantity) {
+          await modifyLocationStock(client, {
+            productId: it.productId,
+            warehouseId: targetWh,
+            delta: -Number(it.quantity),
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۲. بازپس‌گیری مبلغ عودت داده شده در صورت استرداد مالی
+      if (totalRefund > 0) {
+        if (rtn.refund_method === 'customer_credit' && rtn.customer_id) {
+          await client.query(
+            `UPDATE customers SET balance = balance - $1, updated_at = NOW() WHERE id = $2`,
+            [totalRefund, rtn.customer_id]
+          );
+          try {
+            await client.query('DELETE FROM customer_transactions WHERE invoice_id = $1', [id]);
+          } catch (e) {}
+        } else if (rtn.refund_method === 'cash' || rtn.refund_method === 'bank_transfer') {
+          try {
+            await client.query("DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'invoices'", [id]);
+          } catch (e) {}
+        }
+      }
+
+      // ۳. حذف رکورد مرجوعی
+      await client.query('DELETE FROM return_invoices WHERE id = $1', [id]);
+
+      // ۴. ثبت لاگ حسابرسی
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+             id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+           ) VALUES ($1, $2, $3, $4, 'return_invoices', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            context?.userId || null,
+            context?.userName || 'مدیر سیستم',
+            'DELETE_RETURN_INVOICE',
+            id,
+            JSON.stringify({
+              returnNumber: rtn.return_number,
+              customerName: rtn.customer_name,
+              totalRefundAmount: totalRefund,
+            }),
+            context?.ip || '127.0.0.1',
+            context?.userAgent || 'Web POS',
+          ]
+        );
+      } catch (auditErr) {}
+
+      return {
+        success: true,
+        message: `سند مرجوعی ${rtn.return_number} با موفقیت حذف گردید و اثرات کالا و مبالغ استردادی معکوس شد.`,
+      };
+    });
+  },
+
   // ============================================================================
   // ۶. چک‌های صیادی (Cheques)
   // ============================================================================
@@ -2409,16 +2833,20 @@ export const db = {
 
   async updateChequeStatus(id: string, status: string, notes?: string): Promise<void> {
     await withTransaction(async (client) => {
-      const chqRes = await client.query('SELECT * FROM cheques WHERE id = $1', [id]);
+      const chqRes = await client.query('SELECT * FROM cheques WHERE id = $1 FOR UPDATE', [id]);
+      if (chqRes.rows.length === 0) {
+        throw new Error('چک مورد نظر یافت نشد.');
+      }
       const chq = chqRes.rows[0];
+      const previousStatus = chq.status;
 
       await client.query(
-        `UPDATE cheques SET status = $1, notes = COALESCE($2, notes) WHERE id = $3`,
+        `UPDATE cheques SET status = $1, notes = COALESCE($2, notes), updated_at = NOW() WHERE id = $3`,
         [status, notes, id]
       );
 
-      // اگر چک وصول شد، جریان نقدینگی در خزانه ثبت گردد
-      if (chq && status === 'cleared') {
+      // اگر وضعیت از حالت دیگری به وصول‌شده تغییر کرد، جریان نقدینگی در خزانه ثبت گردد
+      if (previousStatus !== 'cleared' && status === 'cleared') {
         const trxId = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const isReceived = chq.type === 'received';
         const amount = isReceived ? Number(chq.amount) : -Number(chq.amount);
@@ -2442,6 +2870,12 @@ export const db = {
             `بانک ${chq.bank_name || 'مرکزی'}`,
             desc,
           ]
+        );
+      } else if (previousStatus === 'cleared' && status !== 'cleared') {
+        // در صورت بازگشت وضعیت از وصول‌شده، تراکنش متناظر خزانه حذف گردد
+        await client.query(
+          `DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'cheques'`,
+          [id]
         );
       }
     });
@@ -4192,46 +4626,49 @@ export const db = {
       if (res.rows.length === 0) {
         return {
           provider: 'kavenegar',
-          apiKey: 'khatinoo_kavenegar_live_api_key_sample',
-          senderNumber: '10008585',
+          apiKey: (process.env.KAVENEGAR_API_KEY || '').trim(),
+          senderNumber: (process.env.KAVENEGAR_SENDER_NUMBER || '10008585').trim(),
           isEnabled: true,
           patternOrderPlaced: 'khatinoo-order-placed',
           patternOrderShipped: 'khatinoo-order-shipped',
           patternOtp: 'khatinoo-otp-auth',
-          lowStockAlertMobile: '09131234567',
-          isSimulated: true,
+          lowStockAlertMobile: '',
+          isSimulated: false,
           orderCreatedPattern: 'khatinoo-order-placed',
           orderShippedPattern: 'khatinoo-order-shipped',
           otpPattern: 'khatinoo-otp-auth',
         };
       }
       const r = res.rows[0];
+      const dbApiKey = (r.api_key && r.api_key !== 'khatinoo_kavenegar_live_api_key_sample') ? r.api_key.trim() : '';
+      const finalApiKey = dbApiKey || (process.env.KAVENEGAR_API_KEY || '').trim();
+
       return {
         provider: (r.provider as any) || 'kavenegar',
-        apiKey: r.api_key || '',
-        senderNumber: r.sender_number || '',
+        apiKey: finalApiKey,
+        senderNumber: r.sender_number || (process.env.KAVENEGAR_SENDER_NUMBER || '').trim(),
         isEnabled: r.is_enabled !== false,
-        patternOrderPlaced: r.pattern_order_placed || '',
-        patternOrderShipped: r.pattern_order_shipped || '',
-        patternOtp: r.pattern_otp || '',
+        patternOrderPlaced: r.pattern_order_placed || 'khatinoo-order-placed',
+        patternOrderShipped: r.pattern_order_shipped || 'khatinoo-order-shipped',
+        patternOtp: r.pattern_otp || 'khatinoo-otp-auth',
         lowStockAlertMobile: r.low_stock_alert_mobile || '',
-        isSimulated: Boolean(r.is_simulated),
-        orderCreatedPattern: r.pattern_order_placed || '',
-        orderShippedPattern: r.pattern_order_shipped || '',
-        otpPattern: r.pattern_otp || '',
+        isSimulated: false,
+        orderCreatedPattern: r.pattern_order_placed || 'khatinoo-order-placed',
+        orderShippedPattern: r.pattern_order_shipped || 'khatinoo-order-shipped',
+        otpPattern: r.pattern_otp || 'khatinoo-otp-auth',
       };
     } catch (err) {
       console.warn('⚠️ [getSmsGatewayConfig fallback]:', err);
       return {
         provider: 'kavenegar',
-        apiKey: 'khatinoo_kavenegar_live_api_key_sample',
-        senderNumber: '10008585',
+        apiKey: (process.env.KAVENEGAR_API_KEY || '').trim(),
+        senderNumber: (process.env.KAVENEGAR_SENDER_NUMBER || '10008585').trim(),
         isEnabled: true,
         patternOrderPlaced: 'khatinoo-order-placed',
         patternOrderShipped: 'khatinoo-order-shipped',
         patternOtp: 'khatinoo-otp-auth',
-        lowStockAlertMobile: '09131234567',
-        isSimulated: true,
+        lowStockAlertMobile: '',
+        isSimulated: false,
         orderCreatedPattern: 'khatinoo-order-placed',
         orderShippedPattern: 'khatinoo-order-shipped',
         otpPattern: 'khatinoo-otp-auth',

@@ -32,6 +32,7 @@ import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { toPersianDigits } from '../../lib/utils';
 import { Category, WebsiteSettings, StoreSettings, HeaderElement } from '../../types';
 import { ThemeToggle } from '../common/ThemeToggle';
+import { useDeviceType, sizeToCss } from '../../hooks/useDeviceType';
 
 interface HeaderProps {
   categories: Category[];
@@ -83,10 +84,17 @@ export const Header: React.FC<HeaderProps> = ({
   const showCalculatorButton = websiteSettings?.showCalculatorButton !== false;
   const cartButtonText = websiteSettings?.cartButtonText || 'سبد خرید';
 
-  const headerLayout = websiteSettings?.headerLayout || 'standard';
+  const device = useDeviceType();
+  const responsiveOverride = websiteSettings?.responsiveLayout?.[device];
+  const headerLayout = (responsiveOverride?.headerLayoutStyle as any) || websiteSettings?.headerLayout || 'standard';
   const headerPaddingX = headerLayout === 'fullwidth' ? 'px-3 sm:px-4' : 'px-4 sm:px-8 lg:px-12 2xl:px-16';
   const headerPaddingY = headerLayout === 'compact' ? 'py-2' : 'py-3.5';
   const siteTitleSizeClass = headerLayout === 'compact' ? 'text-lg sm:text-xl' : 'text-2xl';
+
+  const logoHeightCss = sizeToCss(responsiveOverride?.logoHeight, `${websiteSettings?.logoHeight || 48}px`);
+  const logoWidthCss = responsiveOverride?.logoWidth
+    ? sizeToCss(responsiveOverride.logoWidth)
+    : (websiteSettings?.logoWidth ? `${websiteSettings.logoWidth}px` : 'auto');
 
   // Dynamic header menu items from CMS settings
   const customMenuItems = websiteSettings?.headerMenuItems && websiteSettings.headerMenuItems.length > 0
@@ -204,9 +212,9 @@ export const Header: React.FC<HeaderProps> = ({
                   src={websiteSettings.logoUrl}
                   alt={siteTitle}
                   style={{
-                    height: `${websiteSettings.logoHeight || 48}px`,
-                    width: websiteSettings.logoWidth ? `${websiteSettings.logoWidth}px` : 'auto',
-                    maxHeight: `${Math.max(websiteSettings.logoHeight || 48, 240)}px`,
+                    height: logoHeightCss,
+                    width: logoWidthCss,
+                    maxHeight: '240px',
                     objectFit: websiteSettings.logoFit || 'contain',
                   }}
                   className={`${
@@ -222,9 +230,9 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 <div
                   style={{
-                    height: `${websiteSettings?.logoHeight || 48}px`,
-                    width: `${websiteSettings?.logoHeight || 48}px`,
-                    maxHeight: `${Math.max(websiteSettings?.logoHeight || 48, 240)}px`,
+                    height: logoHeightCss,
+                    width: logoWidthCss === 'auto' ? logoHeightCss : logoWidthCss,
+                    maxHeight: '240px',
                   }}
                   className={`${websiteSettings?.logoBorderRadius || 'rounded-xl'} bg-gradient-to-br from-[var(--coral)] to-[var(--coral-hover)] flex items-center justify-center text-white font-black shadow-lg shadow-[var(--coral)]/25 shrink-0`}
                 >

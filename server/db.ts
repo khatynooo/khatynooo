@@ -39,6 +39,8 @@ import {
   InventoryAdjustment,
   SystemAuditLog,
   SmsProviderConfig,
+  SubCategory,
+  ResponsiveLayoutSettings,
 } from '../src/types';
 
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
@@ -499,13 +501,24 @@ export const db = {
     });
   },
 
-  async createSubCategory(data: { categoryId: string; name: string; description?: string }): Promise<void> {
+  async createSubCategory(data: { categoryId: string; name: string; description?: string }): Promise<SubCategory> {
     const id = `sub_${Date.now()}`;
     await query(
       `INSERT INTO sub_categories (id, category_id, name, description, created_at)
        VALUES ($1, $2, $3, $4, NOW())`,
       [id, data.categoryId, data.name, data.description || null]
     );
+
+    const catRes = await query('SELECT name FROM categories WHERE id = $1', [data.categoryId]);
+    const categoryName = catRes.rows[0]?.name || '';
+
+    return {
+      id,
+      categoryId: data.categoryId,
+      categoryName,
+      name: data.name,
+      description: data.description || '',
+    };
   },
 
   async updateSubCategory(id: string, data: { name?: string; description?: string }): Promise<void> {
@@ -617,7 +630,20 @@ export const db = {
   async createProduct(p: Partial<Product>): Promise<Product> {
     const id = p.id || `prod_${Date.now()}`;
     const code = p.code || `KHAT-${Date.now().toString().slice(-6)}`;
-    const barcode = p.barcode || `${Math.floor(6260000000000 + Math.random() * 9999999999)}`;
+    
+    // تولید بارکد EAN-13 معتبر با پیشوند 626 و محاسبه چک‌سام
+    const generateServerEan13 = () => {
+      const raw12 = '626' + Math.floor(100000000 + Math.random() * 900000000).toString().slice(0, 9);
+      let sum = 0;
+      for (let i = 0; i < 12; i++) {
+        const d = parseInt(raw12[i], 10);
+        sum += i % 2 === 0 ? d * 1 : d * 3;
+      }
+      const check = (10 - (sum % 10)) % 10;
+      return raw12 + check.toString();
+    };
+
+    const barcode = p.barcode || generateServerEan13();
     const initialStock = Number(p.stock || 0);
 
     return await withTransaction(async (client) => {
@@ -1667,6 +1693,292 @@ export const db = {
       `UPDATE products SET last_market_price = $1, last_market_checked_at = $2, updated_at = NOW() WHERE id = $3`,
       [Math.round(marketPrice), at, id]
     );
+  },
+
+  async getPurchaseInvoiceById(id: string): Promise<PurchaseInvoice | null> {
+    const res = await query('SELECT * FROM purchase_invoices WHERE id = $1', [id]);
+    if (res.rows.length === 0) return null;
+    const r = res.rows[0];
+    let parsedCheques: any[] = [];
+    try {
+      parsedCheques = typeof r.cheques === 'string' ? JSON.parse(r.cheques) : (r.cheques || []);
+    } catch (e) {
+      parsedCheques = [];
+    }
+    let parsedChequeInfo: any = undefined;
+    try {
+      parsedChequeInfo = typeof r.cheque_info === 'string' ? JSON.parse(r.cheque_info) : r.cheque_info;
+    } catch (e) {
+      parsedChequeInfo = undefined;
+    }
+    const chequesList = Array.isArray(parsedCheques) && parsedCheques.length > 0
+      ? parsedCheques
+      : (parsedChequeInfo ? [parsedChequeInfo] : []);
+
+    let parsedReceiptUrls: string[] = [];
+    try {
+      parsedReceiptUrls = typeof r.receipt_image_urls === 'string' ? JSON.parse(r.receipt_image_urls) : (r.receipt_image_urls || []);
+    } catch (e) {
+      parsedReceiptUrls = [];
+    }
+    const receiptUrlsList = Array.isArray(parsedReceiptUrls) && parsedReceiptUrls.length > 0
+      ? parsedReceiptUrls
+      : (r.receipt_image_url ? [r.receipt_image_url] : []);
+
+    return {
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      invoiceDate: r.invoice_date || (r.created_at ? new Date(r.created_at).toLocaleDateString('fa-IR') : ''),
+      supplierId: r.supplier_id,
+      supplierName: r.supplier_name,
+      items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
+      totalAmount: Number(r.total_amount),
+      discount: Number(r.discount || 0),
+      paidAmount: Number(r.paid_amount || 0),
+      cashAmount: Number(r.cash_amount || 0),
+      chequeAmount: Number(r.cheque_amount || 0),
+      cheques: chequesList,
+      chequeInfo: chequesList[0] || parsedChequeInfo || undefined,
+      receiptImageUrls: receiptUrlsList,
+      receiptImageUrl: r.receipt_image_url || receiptUrlsList[0] || undefined,
+      remainingAmount: Number(r.remaining_amount || 0),
+      paymentMethod: r.payment_method,
+      warehouseId: r.warehouse_id || 'wh_central',
+      notes: r.notes,
+      createdAt: r.created_at,
+    };
+  },
+
+  async deletePurchaseInvoice(id: string): Promise<{ success: boolean; message: string }> {
+    return await withTransaction(async (client) => {
+      const checkRes = await client.query('SELECT * FROM purchase_invoices WHERE id = $1 FOR UPDATE', [id]);
+      if (checkRes.rows.length === 0) {
+        throw new Error('فاکتور خرید مورد نظر یافت نشد.');
+      }
+      const inv = checkRes.rows[0];
+      const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
+      const whId = inv.warehouse_id || 'wh_central';
+      const remainingAmount = Number(inv.remaining_amount || 0);
+
+      // ۱. بازگشت و کسر موجودی اضافه شده به انبار
+      for (const it of items) {
+        if (it.productId && it.quantity) {
+          await modifyLocationStock(client, {
+            productId: it.productId,
+            warehouseId: whId,
+            delta: -Number(it.quantity),
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۲. کاهش بدهی ثبت شده به تامین‌کننده در صورت وجود مانده
+      if (remainingAmount > 0 && inv.supplier_id) {
+        await client.query(
+          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1) WHERE id = $2`,
+          [remainingAmount, inv.supplier_id]
+        );
+        try {
+          await client.query('DELETE FROM supplier_transactions WHERE invoice_id = $1', [id]);
+        } catch (e) {}
+      }
+
+      // ۳. لغو یا حذف چک‌های ثبت شده و تراکنش‌های خزانه این فاکتور
+      try {
+        await client.query('DELETE FROM treasury_transactions WHERE reference_id = $1', [id]);
+      } catch (e) {}
+
+      // ۴. حذف فاکتور خرید
+      await client.query('DELETE FROM purchase_invoices WHERE id = $1', [id]);
+
+      return {
+        success: true,
+        message: `فاکتور خرید ${inv.invoice_number} با موفقیت حذف گردید و اثرات انبار و بدهی حسابداری معکوس شد.`,
+      };
+    });
+  },
+
+  async updatePurchaseInvoice(id: string, updateData: {
+    supplierId?: string;
+    supplierName?: string;
+    items: Array<{ productId: string; quantity: number; buyPrice: number; productName?: string }>;
+    totalAmount?: number;
+    paidAmount?: number;
+    cashAmount?: number;
+    chequeAmount?: number;
+    cheques?: any[];
+    receiptImageUrls?: string[];
+    paymentMethod?: string;
+    notes?: string;
+    warehouseId?: string;
+    invoiceNumber?: string;
+    invoiceDate?: string;
+    discount?: number;
+    receiptImageUrl?: string;
+  }): Promise<PurchaseInvoice> {
+    return await withTransaction(async (client) => {
+      const checkRes = await client.query('SELECT * FROM purchase_invoices WHERE id = $1 FOR UPDATE', [id]);
+      if (checkRes.rows.length === 0) {
+        throw new Error('فاکتور خرید مورد نظر یافت نشد.');
+      }
+      const oldInv = checkRes.rows[0];
+      const oldItems = typeof oldInv.items === 'string' ? JSON.parse(oldInv.items) : (oldInv.items || []);
+      const oldWhId = oldInv.warehouse_id || 'wh_central';
+      const oldRemaining = Number(oldInv.remaining_amount || 0);
+
+      // ۱. معکوس کردن اقلام و موجودی انبار قبلی
+      for (const it of oldItems) {
+        if (it.productId && it.quantity) {
+          await modifyLocationStock(client, {
+            productId: it.productId,
+            warehouseId: oldWhId,
+            delta: -Number(it.quantity),
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۲. معکوس کردن مانده بدهی به تامین‌کننده قبلی
+      if (oldRemaining > 0 && oldInv.supplier_id) {
+        await client.query(
+          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1) WHERE id = $2`,
+          [oldRemaining, oldInv.supplier_id]
+        );
+      }
+
+      // ۳. پردازش داده‌های جدید
+      const newItems = updateData.items || oldItems;
+      const targetWhId = updateData.warehouseId || oldWhId;
+      const supplierId = updateData.supplierId || oldInv.supplier_id;
+      const supplierName = updateData.supplierName || oldInv.supplier_name;
+      const paymentMethod = updateData.paymentMethod || oldInv.payment_method;
+      const invoiceNumber = updateData.invoiceNumber?.trim() || oldInv.invoice_number;
+      const invoiceDate = updateData.invoiceDate || oldInv.invoice_date;
+      const discount = updateData.discount !== undefined ? Number(updateData.discount) : Number(oldInv.discount || 0);
+      const notes = updateData.notes !== undefined ? updateData.notes : oldInv.notes;
+
+      const totalAmount = updateData.totalAmount !== undefined
+        ? Number(updateData.totalAmount)
+        : newItems.reduce((acc: number, curr: any) => acc + (curr.total || curr.quantity * curr.buyPrice), 0);
+
+      const finalPayable = Math.max(0, totalAmount - discount);
+
+      const cheques = Array.isArray(updateData.cheques) ? updateData.cheques : (oldInv.cheques ? JSON.parse(oldInv.cheques) : []);
+      const calculatedChequeAmount = updateData.chequeAmount !== undefined
+        ? Number(updateData.chequeAmount)
+        : cheques.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0);
+      const cashAmount = updateData.cashAmount !== undefined ? Number(updateData.cashAmount) : Number(oldInv.cash_amount || 0);
+
+      let paidAmount = 0;
+      if (paymentMethod === 'cash') {
+        paidAmount = cashAmount || (updateData.paidAmount !== undefined ? Number(updateData.paidAmount) : Number(oldInv.paid_amount || 0));
+      } else if (paymentMethod === 'cheque') {
+        paidAmount = calculatedChequeAmount;
+      } else if (paymentMethod === 'mixed') {
+        paidAmount = cashAmount + calculatedChequeAmount;
+      } else if (paymentMethod === 'credit') {
+        paidAmount = 0;
+      } else {
+        paidAmount = updateData.paidAmount !== undefined ? Number(updateData.paidAmount) : Number(oldInv.paid_amount || 0);
+      }
+
+      const remainingAmount = Math.max(0, finalPayable - paidAmount);
+
+      const receiptUrls = Array.isArray(updateData.receiptImageUrls) && updateData.receiptImageUrls.length > 0
+        ? updateData.receiptImageUrls
+        : (updateData.receiptImageUrl ? [updateData.receiptImageUrl] : (oldInv.receipt_image_url ? [oldInv.receipt_image_url] : []));
+      const primaryReceipt = receiptUrls[0] || updateData.receiptImageUrl || oldInv.receipt_image_url || null;
+
+      // ۴. اعمال موجودی اقلام جدید در انبار هدف و به‌روزرسانی قیمت خرید
+      for (const it of newItems) {
+        if (it.productId && it.quantity) {
+          await client.query(
+            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
+            [it.buyPrice, it.productId]
+          );
+          await modifyLocationStock(client, {
+            productId: it.productId,
+            warehouseId: targetWhId,
+            delta: Number(it.quantity),
+            allowNegative: true,
+          });
+        }
+      }
+
+      // ۵. اعمال مانده بدهی جدید به تامین‌کننده
+      if (remainingAmount > 0 && supplierId) {
+        await client.query(
+          `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1 WHERE id = $2`,
+          [remainingAmount, supplierId]
+        );
+      }
+
+      // ۶. به‌روزرسانی جدول فاکتورهای خرید
+      await client.query(
+        `UPDATE purchase_invoices SET
+          supplier_id = $1,
+          supplier_name = $2,
+          items = $3,
+          total_amount = $4,
+          discount = $5,
+          paid_amount = $6,
+          remaining_amount = $7,
+          payment_method = $8,
+          notes = $9,
+          warehouse_id = $10,
+          invoice_number = $11,
+          invoice_date = $12,
+          receipt_image_url = $13,
+          cash_amount = $14,
+          cheque_amount = $15,
+          cheques = $16,
+          receipt_image_urls = $17
+        WHERE id = $18`,
+        [
+          supplierId,
+          supplierName,
+          JSON.stringify(newItems),
+          totalAmount,
+          discount,
+          paidAmount,
+          remainingAmount,
+          paymentMethod,
+          notes || null,
+          targetWhId,
+          invoiceNumber,
+          invoiceDate,
+          primaryReceipt,
+          cashAmount,
+          calculatedChequeAmount,
+          JSON.stringify(cheques),
+          JSON.stringify(receiptUrls),
+          id,
+        ]
+      );
+
+      return {
+        id,
+        invoiceNumber,
+        invoiceDate,
+        supplierId,
+        supplierName,
+        items: newItems,
+        totalAmount,
+        discount,
+        paidAmount,
+        cashAmount,
+        chequeAmount: calculatedChequeAmount,
+        cheques,
+        chequeInfo: cheques[0] || undefined,
+        receiptImageUrls: receiptUrls,
+        receiptImageUrl: primaryReceipt || undefined,
+        remainingAmount,
+        paymentMethod: paymentMethod as any,
+        warehouseId: targetWhId,
+        notes: notes || undefined,
+        createdAt: oldInv.created_at,
+      };
+    });
   },
 
   async createPurchaseInvoice(invoice: {
@@ -3340,6 +3652,129 @@ export const db = {
     }));
   },
 
+  async getCustomerSalesInvoices(customerId: string, mobile?: string): Promise<any[]> {
+    let res;
+    if (mobile) {
+      res = await query(
+        `SELECT * FROM sales_invoices 
+         WHERE customer_id = $1 OR customer_mobile = $2 
+         ORDER BY created_at DESC`,
+        [customerId, mobile]
+      );
+    } else {
+      res = await query(
+        `SELECT * FROM sales_invoices 
+         WHERE customer_id = $1 
+         ORDER BY created_at DESC`,
+        [customerId]
+      );
+    }
+    return res.rows.map((r: any) => ({
+      id: r.id,
+      invoiceNumber: r.invoice_number,
+      customerId: r.customer_id,
+      customerName: r.customer_name,
+      customerMobile: r.customer_mobile,
+      items: typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []),
+      subtotal: Number(r.subtotal || 0),
+      discount: Number(r.discount || 0),
+      tax: Number(r.tax || 0),
+      finalAmount: Number(r.final_amount || 0),
+      paidAmount: Number(r.paid_amount || 0),
+      remainingAmount: Number(r.remaining_amount || 0),
+      paymentMethod: r.payment_method,
+      orderType: r.order_type || 'pos',
+      createdByName: r.created_by_name,
+      createdAt: r.created_at,
+    }));
+  },
+
+  async getCustomerFullActivities(customerId: string, mobile?: string): Promise<any[]> {
+    const orders = await this.getCustomerOrders(customerId, mobile);
+    const invoices = await this.getCustomerSalesInvoices(customerId, mobile);
+    const customer = await this.getCustomerById(customerId);
+
+    const activities: Array<{
+      id: string;
+      type: 'order' | 'invoice' | 'profile' | 'club';
+      title: string;
+      description: string;
+      date: string;
+      amount?: number;
+      status?: string;
+      linkId?: string;
+      metadata?: any;
+    }> = [];
+
+    // ۱. افزودن سفارش‌های آنلاین
+    for (const ord of orders) {
+      activities.push({
+        id: `act_ord_${ord.id}`,
+        type: 'order',
+        title: `ثبت سفارش اینترنتی #${ord.orderNumber}`,
+        description: `سفارش آنلاین با ${ord.items.length} قلم کالا به ارزش ${ord.finalAmount.toLocaleString('fa-IR')} تومان ثبت گردید (وضعیت: ${ord.orderStatus}).`,
+        date: ord.createdAt,
+        amount: ord.finalAmount,
+        status: ord.orderStatus,
+        linkId: ord.id,
+        metadata: {
+          trackingCode: ord.trackingCode,
+          shippingMethod: ord.shippingMethod,
+          paymentStatus: ord.paymentStatus,
+        },
+      });
+    }
+
+    // ۲. افزودن فاکتورهای فروش متصل به مشتری (حضوری یا آنلاین)
+    for (const inv of invoices) {
+      activities.push({
+        id: `act_inv_${inv.id}`,
+        type: 'invoice',
+        title: `صدور فاکتور فروشگاهی #${inv.invoiceNumber}`,
+        description: `فاکتور فروش به مبلغ ${inv.finalAmount.toLocaleString('fa-IR')} تومان ثبت گردید (${inv.remainingAmount === 0 ? 'تسویه کامل' : `مانده: ${inv.remainingAmount.toLocaleString('fa-IR')} تومان`}).`,
+        date: inv.createdAt,
+        amount: inv.finalAmount,
+        status: inv.remainingAmount === 0 ? 'تسویه کامل' : 'بدهکار',
+        linkId: inv.id,
+        metadata: {
+          itemsCount: inv.items.length,
+          paymentMethod: inv.paymentMethod,
+        },
+      });
+    }
+
+    // ۳. فعالیت پروفایل و عضویت در باشگاه مشتریان
+    if (customer) {
+      if (customer.createdAt) {
+        activities.push({
+          id: `act_join_${customer.id}`,
+          type: 'club',
+          title: 'عضویت در پورتال مشتریان و باشگاه خطی‌نو',
+          description: `حساب کاربری با شماره ${customer.mobile} با موفقیت در سامانه فعال شد.`,
+          date: customer.createdAt,
+          metadata: {
+            clubTier: customer.clubTier,
+            loyaltyPoints: customer.loyaltyPoints,
+          },
+        });
+      }
+      if (customer.updatedAt && customer.updatedAt !== customer.createdAt) {
+        activities.push({
+          id: `act_profile_upd_${customer.id}`,
+          type: 'profile',
+          title: 'به‌روزرسانی اطلاعات حساب و نشانی',
+          description: 'مشخصات فردی و نشانی پستی مشتری ویرایش و ذخیره شد.',
+          date: customer.updatedAt,
+        });
+      }
+    }
+
+    // مرتب‌سازی بر اساس تاریخ به صورت نزولی
+    activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return activities;
+  },
+
   async getCustomerOrderById(orderId: string, customerId?: string, mobile?: string): Promise<OnlineOrder | null> {
     const res = await query(
       `SELECT * FROM online_orders 
@@ -3534,6 +3969,15 @@ export const db = {
         headerElements = [];
       }
     }
+
+    let responsiveLayout: ResponsiveLayoutSettings = {};
+    if (r.responsive_layout) {
+      try {
+        responsiveLayout = typeof r.responsive_layout === 'string' ? JSON.parse(r.responsive_layout) : r.responsive_layout;
+      } catch {
+        responsiveLayout = {};
+      }
+    }
     if (!headerElements || headerElements.length === 0) {
       headerElements = [
         { id: 'logo', type: 'logo', title: 'لوگو و برند فروشگاه', enabled: true, order: 1, alignment: 'start', showOnMobile: true },
@@ -3601,6 +4045,7 @@ export const db = {
       locationTitle: r.location_title || '',
       productsPerRow: r.products_per_row ? Number(r.products_per_row) : 4,
       containerWidth: r.container_width || 'wide',
+      responsiveLayout: responsiveLayout || {},
     };
   },
 
@@ -3660,7 +4105,8 @@ export const db = {
         show_location_map = COALESCE($51, show_location_map),
         location_title = COALESCE($52, location_title),
         products_per_row = COALESCE($53, products_per_row),
-        container_width = COALESCE($54, container_width)
+        container_width = COALESCE($54, container_width),
+        responsive_layout = COALESCE($55, responsive_layout)
        WHERE id = 'default'`,
       [
         w.siteTitle,
@@ -3717,6 +4163,7 @@ export const db = {
         w.locationTitle,
         w.productsPerRow,
         w.containerWidth,
+        w.responsiveLayout !== undefined ? (typeof w.responsiveLayout === 'string' ? w.responsiveLayout : JSON.stringify(w.responsiveLayout)) : null,
       ]
     );
 
@@ -4809,6 +5256,68 @@ export const db = {
       latestInvoices,
       dailySales,
     };
+  },
+
+  // ============================================================================
+  // ۱۰. پیش‌نویس فاکتورهای خرید و فاکتورهای فروش معلق (Invoice Drafts)
+  // ============================================================================
+  // --- فاکتور خرید: تکی، بر اساس کاربر ---
+  async getPurchaseDraft(userId: string): Promise<{ id: string; payload: any; updatedAt: string } | null> {
+    const res = await query(
+      `SELECT id, payload, updated_at FROM invoice_drafts WHERE created_by_user_id = $1 AND draft_type = 'purchase'`,
+      [userId]
+    );
+    return res.rows[0] ? { id: res.rows[0].id, payload: res.rows[0].payload, updatedAt: res.rows[0].updated_at } : null;
+  },
+
+  async savePurchaseDraft(userId: string, payload: any): Promise<void> {
+    const id = `draft_purchase_${userId}`;
+    await query(
+      `INSERT INTO invoice_drafts (id, draft_type, created_by_user_id, payload, updated_at)
+       VALUES ($1, 'purchase', $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+      [id, userId, JSON.stringify(payload)]
+    );
+  },
+
+  async deletePurchaseDraft(userId: string): Promise<void> {
+    await query(`DELETE FROM invoice_drafts WHERE created_by_user_id = $1 AND draft_type = 'purchase'`, [userId]);
+  },
+
+  // --- فروش/POS: چندتایی، هرکدام با id مستقل ---
+  async listSalesDrafts(userId: string): Promise<Array<{ id: string; label: string | null; payload: any; updatedAt: string }>> {
+    const res = await query(
+      `SELECT id, label, payload, updated_at FROM invoice_drafts
+       WHERE created_by_user_id = $1 AND draft_type = 'sales_pos'
+       ORDER BY updated_at DESC`,
+      [userId]
+    );
+    return res.rows.map((r) => ({ id: r.id, label: r.label, payload: r.payload, updatedAt: r.updated_at }));
+  },
+
+  async createSalesDraft(userId: string, label: string | null, payload: any): Promise<string> {
+    const id = `draft_sales_${userId}_${Date.now()}`;
+    await query(
+      `INSERT INTO invoice_drafts (id, draft_type, created_by_user_id, label, payload, updated_at)
+       VALUES ($1, 'sales_pos', $2, $3, $4, NOW())`,
+      [id, userId, label, JSON.stringify(payload)]
+    );
+    return id;
+  },
+
+  async updateSalesDraft(id: string, userId: string, payload: any): Promise<void> {
+    await query(
+      `UPDATE invoice_drafts SET payload = $1, updated_at = NOW()
+       WHERE id = $2 AND created_by_user_id = $3 AND draft_type = 'sales_pos'`,
+      [JSON.stringify(payload), id, userId]
+    );
+  },
+
+  async deleteSalesDraft(id: string, userId: string): Promise<void> {
+    await query(
+      `DELETE FROM invoice_drafts WHERE id = $1 AND created_by_user_id = $2 AND draft_type = 'sales_pos'`,
+      [id, userId]
+    );
   },
 };
 

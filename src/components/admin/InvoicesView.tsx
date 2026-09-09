@@ -62,6 +62,7 @@ export const InvoicesView: React.FC = () => {
 
   // New Purchase Invoice Modal States
   const [showNewPurchaseModal, setShowNewPurchaseModal] = useState(false);
+  const [purchaseDraftBanner, setPurchaseDraftBanner] = useState<any>(null); // payload پیش‌نویس پیداشده، یا null
   const [purchaseSupplierId, setPurchaseSupplierId] = useState('');
   const [purchaseInvoiceNumber, setPurchaseInvoiceNumber] = useState('');
   const [purchaseInvoiceDate, setPurchaseInvoiceDate] = useState(
@@ -114,6 +115,26 @@ export const InvoicesView: React.FC = () => {
   const [editProductSearchTerm, setEditProductSearchTerm] = useState('');
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
+  // Edit Purchase Invoice Modal States
+  const [editingPurchaseInvoice, setEditingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
+  const [editPurchaseSupplierId, setEditPurchaseSupplierId] = useState('');
+  const [editPurchaseInvoiceNumber, setEditPurchaseInvoiceNumber] = useState('');
+  const [editPurchaseInvoiceDate, setEditPurchaseInvoiceDate] = useState('');
+  const [editPurchaseWarehouseId, setEditPurchaseWarehouseId] = useState('wh_central');
+  const [editPurchaseDiscount, setEditPurchaseDiscount] = useState<number | ''>(0);
+  const [editPurchasePaymentMethod, setEditPurchasePaymentMethod] = useState<'cash' | 'cheque' | 'mixed' | 'credit'>('cash');
+  const [editPurchaseCashAmount, setEditPurchaseCashAmount] = useState<number | ''>(0);
+  const [editPurchasePaidAmount, setEditPurchasePaidAmount] = useState<number | ''>(0);
+  const [editPurchaseCheques, setEditPurchaseCheques] = useState<ChequeInfo[]>([]);
+  const [editPurchaseNotes, setEditPurchaseNotes] = useState('');
+  const [editPurchaseReceiptImages, setEditPurchaseReceiptImages] = useState<string[]>([]);
+  const [editPurchaseItems, setEditPurchaseItems] = useState<
+    Array<{ productId: string; productName: string; quantity: number; buyPrice: number; total: number }>
+  >([]);
+  const [editPurchaseProductSearch, setEditPurchaseProductSearch] = useState('');
+  const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
+  const [isDeletingPurchaseInvoice, setIsDeletingPurchaseInvoice] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -147,6 +168,55 @@ export const InvoicesView: React.FC = () => {
       console.error(err);
     }
   }
+
+  // ۱. بررسی و بارگذاری پیش‌نویس ذخیره‌شده هنگام باز شدن مودال فاکتور خرید
+  useEffect(() => {
+    if (!showNewPurchaseModal) return;
+    api.getPurchaseDraft()
+      .then((res) => {
+        if (res?.draft?.payload && Object.keys(res.draft.payload).length > 0) {
+          setPurchaseDraftBanner(res.draft.payload);
+        }
+      })
+      .catch(() => {});
+  }, [showNewPurchaseModal]);
+
+  // ۲. ذخیره خودکار پیش‌نویس فاکتور خرید در پس‌زمینه با Debounce
+  useEffect(() => {
+    if (!showNewPurchaseModal || purchaseDraftBanner) return;
+    const isDirty = purchaseItems.length > 0 || Boolean(purchaseSupplierId);
+    if (!isDirty) return;
+
+    const payload = {
+      purchaseSupplierId,
+      purchaseInvoiceNumber,
+      purchaseInvoiceDate,
+      purchaseDiscount,
+      purchasePaymentMethod,
+      purchaseCashAmount,
+      purchaseCheques,
+      purchaseReceiptImages,
+      purchaseItems,
+      purchaseWarehouseId,
+    };
+    const t = setTimeout(() => {
+      api.savePurchaseDraft(payload).catch(() => {});
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [
+    showNewPurchaseModal,
+    purchaseDraftBanner,
+    purchaseSupplierId,
+    purchaseInvoiceNumber,
+    purchaseInvoiceDate,
+    purchaseDiscount,
+    purchasePaymentMethod,
+    purchaseCashAmount,
+    purchaseCheques,
+    purchaseReceiptImages,
+    purchaseItems,
+    purchaseWarehouseId,
+  ]);
 
   const handleReceiptFilesUpload = async (files: FileList | File[]) => {
     const fileArray = Array.from(files);
@@ -368,6 +438,7 @@ export const InvoicesView: React.FC = () => {
         'فاکتور خرید با موفقیت ثبت، موجودی انبار به‌روزرسانی، و چک‌های مربوطه در ماژول چک‌ها درج شدند.',
         'success'
       );
+      api.deletePurchaseDraft().catch(() => {});
       setShowNewPurchaseModal(false);
       setPurchaseItems([]);
       setPurchaseCashAmount(0);
@@ -525,6 +596,155 @@ export const InvoicesView: React.FC = () => {
     }
   };
 
+  const handleOpenEditPurchaseInvoice = (inv: PurchaseInvoice) => {
+    setEditingPurchaseInvoice(inv);
+    setEditPurchaseSupplierId(inv.supplierId || '');
+    setEditPurchaseInvoiceNumber(inv.invoiceNumber || '');
+    setEditPurchaseInvoiceDate(inv.invoiceDate || new Date(inv.createdAt).toLocaleDateString('fa-IR'));
+    setEditPurchaseWarehouseId(inv.warehouseId || 'wh_central');
+    setEditPurchaseDiscount(inv.discount || 0);
+    setEditPurchasePaymentMethod((inv.paymentMethod as any) || 'cash');
+    setEditPurchaseCashAmount(inv.cashAmount || 0);
+    setEditPurchasePaidAmount(inv.paidAmount ?? inv.totalAmount);
+    setEditPurchaseCheques(Array.isArray(inv.cheques) ? inv.cheques : []);
+    setEditPurchaseNotes(inv.notes || '');
+    setEditPurchaseReceiptImages(
+      inv.receiptImageUrls && inv.receiptImageUrls.length > 0
+        ? inv.receiptImageUrls
+        : inv.receiptImageUrl
+        ? [inv.receiptImageUrl]
+        : []
+    );
+    setEditPurchaseItems(
+      (inv.items || []).map((it: any) => ({
+        productId: it.productId,
+        productName: it.productName,
+        quantity: Number(it.quantity) || 1,
+        buyPrice: Number(it.buyPrice) || 0,
+        total: Number(it.total) || (Number(it.quantity) * Number(it.buyPrice)),
+      }))
+    );
+    setEditPurchaseProductSearch('');
+  };
+
+  const handleEditPurchaseItemQuantity = (index: number, newQty: number) => {
+    if (newQty <= 0) return;
+    setEditPurchaseItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, quantity: newQty, total: newQty * it.buyPrice } : it
+      )
+    );
+  };
+
+  const handleEditPurchaseItemPrice = (index: number, newPrice: number) => {
+    if (newPrice < 0) return;
+    setEditPurchaseItems((prev) =>
+      prev.map((it, i) =>
+        i === index ? { ...it, buyPrice: newPrice, total: it.quantity * newPrice } : it
+      )
+    );
+  };
+
+  const handleRemoveEditPurchaseItem = (index: number) => {
+    setEditPurchaseItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddEditPurchaseItem = (product: Product) => {
+    const existingIndex = editPurchaseItems.findIndex((it) => it.productId === product.id);
+    if (existingIndex >= 0) {
+      handleEditPurchaseItemQuantity(existingIndex, editPurchaseItems[existingIndex].quantity + 1);
+    } else {
+      const defaultBuyPrice = product.buyPrice || 0;
+      setEditPurchaseItems((prev) => [
+        ...prev,
+        {
+          productId: product.id,
+          productName: product.name,
+          quantity: 1,
+          buyPrice: defaultBuyPrice,
+          total: defaultBuyPrice,
+        },
+      ]);
+    }
+    setEditPurchaseProductSearch('');
+  };
+
+  const handleDeletePurchaseInvoice = async (inv: PurchaseInvoice) => {
+    const confirmMessage = `آیا از حذف کامل فاکتور خرید شماره ${inv.invoiceNumber} به مبلغ ${formatToman(inv.totalAmount)} از تامین‌کننده «${inv.supplierName}» اطمینان دارید؟\n\nبا حذف این فاکتور:\n۱. موجودی انبار اقلام این فاکتور به میزان خریداری‌شده کسر می‌گردد.\n۲. مانده‌حساب بستانکاری تامین‌کننده کسر می‌شود.\n۳. تراکنش‌های مالی و اسناد چک مرتبط باطل و تصحیح خواهند شد.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsDeletingPurchaseInvoice(true);
+    try {
+      const res = await api.deletePurchaseInvoice(inv.id);
+      showToast(res.message || 'فاکتور خرید با موفقیت حذف شد و انبار و اسناد مالی برگشت داده شدند.', 'success');
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف فاکتور خرید', 'error');
+    } finally {
+      setIsDeletingPurchaseInvoice(false);
+    }
+  };
+
+  const handleSaveEditPurchaseInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPurchaseInvoice) return;
+    if (editPurchaseItems.length === 0) {
+      showToast('حداقل یک قلم کالا در فاکتور خرید الزامی است.', 'warning');
+      return;
+    }
+    const sup = suppliers.find((s) => s.id === editPurchaseSupplierId);
+
+    setIsSubmittingEditPurchase(true);
+    try {
+      const subtotal = editPurchaseItems.reduce((acc, it) => acc + it.total, 0);
+      const disc = Number(editPurchaseDiscount) || 0;
+      const finalAmount = Math.max(0, subtotal - disc);
+
+      let computedPaid = 0;
+      let computedCash = 0;
+      let computedCheque = 0;
+
+      if (editPurchasePaymentMethod === 'cash') {
+        computedPaid = Number(editPurchasePaidAmount) || finalAmount;
+        computedCash = computedPaid;
+      } else if (editPurchasePaymentMethod === 'cheque') {
+        computedCheque = editPurchaseCheques.reduce((sum, c) => sum + (c.amount || 0), 0);
+        computedPaid = computedCheque;
+      } else if (editPurchasePaymentMethod === 'mixed') {
+        computedCash = Number(editPurchaseCashAmount) || 0;
+        computedCheque = editPurchaseCheques.reduce((sum, c) => sum + (c.amount || 0), 0);
+        computedPaid = computedCash + computedCheque;
+      } else if (editPurchasePaymentMethod === 'credit') {
+        computedPaid = 0;
+      }
+
+      const res = await api.updatePurchaseInvoice(editingPurchaseInvoice.id, {
+        supplierId: editPurchaseSupplierId,
+        supplierName: sup?.name || editingPurchaseInvoice.supplierName,
+        items: editPurchaseItems,
+        paidAmount: computedPaid,
+        cashAmount: computedCash,
+        chequeAmount: computedCheque,
+        cheques: editPurchaseCheques,
+        receiptImageUrls: editPurchaseReceiptImages,
+        paymentMethod: editPurchasePaymentMethod,
+        notes: editPurchaseNotes,
+        warehouseId: editPurchaseWarehouseId,
+        invoiceNumber: editPurchaseInvoiceNumber,
+        invoiceDate: editPurchaseInvoiceDate,
+        discount: disc,
+      });
+
+      showToast(res.message || 'فاکتور خرید با موفقیت ویرایش شد و تغییرات انبار و اسناد مالی اعمال گردید.', 'success');
+      setEditingPurchaseInvoice(null);
+      await loadData();
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ویرایش فاکتور خرید', 'error');
+    } finally {
+      setIsSubmittingEditPurchase(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Top Tabs & Actions */}
@@ -661,6 +881,7 @@ export const InvoicesView: React.FC = () => {
                   <th className="p-3.5">مبلغ پرداخت شده</th>
                   <th className="p-3.5">باقی‌مانده (بدهی ما)</th>
                   <th className="p-3.5 text-center">برگه فاکتور / رسید</th>
+                  <th className="p-3.5 text-center">عملیات</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -740,6 +961,29 @@ export const InvoicesView: React.FC = () => {
                           </button>
                         );
                       })()}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditPurchaseInvoice(inv)}
+                          className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer"
+                          title="ویرایش فاکتور خرید"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>ویرایش</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePurchaseInvoice(inv)}
+                          disabled={isDeletingPurchaseInvoice}
+                          className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer disabled:opacity-50"
+                          title="حذف فاکتور خرید"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -868,6 +1112,48 @@ export const InvoicesView: React.FC = () => {
                 ✕
               </button>
             </div>
+
+            {/* بنر بازیابی پیش‌نویس فاکتور خرید */}
+            {purchaseDraftBanner && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs shrink-0">
+                <span className="font-bold text-amber-800">
+                  یک فاکتور خرید نیمه‌کاره از قبل ذخیره شده است. ادامه می‌دهید یا فاکتور جدید شروع می‌کنید؟
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = purchaseDraftBanner;
+                      if (d.purchaseSupplierId !== undefined) setPurchaseSupplierId(d.purchaseSupplierId);
+                      if (d.purchaseInvoiceNumber !== undefined) setPurchaseInvoiceNumber(d.purchaseInvoiceNumber);
+                      if (d.purchaseInvoiceDate !== undefined) setPurchaseInvoiceDate(d.purchaseInvoiceDate);
+                      if (d.purchaseDiscount !== undefined) setPurchaseDiscount(d.purchaseDiscount);
+                      if (d.purchasePaymentMethod !== undefined) setPurchasePaymentMethod(d.purchasePaymentMethod);
+                      if (d.purchaseCashAmount !== undefined) setPurchaseCashAmount(d.purchaseCashAmount);
+                      if (d.purchaseCheques !== undefined) setPurchaseCheques(d.purchaseCheques);
+                      if (d.purchaseReceiptImages !== undefined) setPurchaseReceiptImages(d.purchaseReceiptImages);
+                      if (d.purchaseItems !== undefined) setPurchaseItems(d.purchaseItems);
+                      if (d.purchaseWarehouseId !== undefined) setPurchaseWarehouseId(d.purchaseWarehouseId);
+                      setPurchaseDraftBanner(null);
+                      showToast('پیش‌نویس فاکتور خرید بازیابی شد.', 'success');
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer"
+                  >
+                    ادامه بده
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      api.deletePurchaseDraft().catch(() => {});
+                      setPurchaseDraftBanner(null);
+                    }}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-xl cursor-pointer"
+                  >
+                    فاکتور جدید
+                  </button>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSavePurchaseInvoice} className="space-y-4 text-xs overflow-y-auto pr-1">
               {/* Top metadata grid: Supplier, Warehouse, Invoice Number, Invoice Date */}
@@ -2307,6 +2593,363 @@ export const InvoicesView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setEditingSalesInvoice(null)}
+                    className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Edit Purchase Invoice Modal */}
+      {editingPurchaseInvoice && (() => {
+        const subtotal = editPurchaseItems.reduce((acc, it) => acc + (it.total || it.quantity * it.buyPrice), 0);
+        const disc = Number(editPurchaseDiscount) || 0;
+        const finalAmount = Math.max(0, subtotal - disc);
+
+        let computedPaid = 0;
+        if (editPurchasePaymentMethod === 'cash') {
+          computedPaid = Number(editPurchasePaidAmount) || finalAmount;
+        } else if (editPurchasePaymentMethod === 'cheque') {
+          computedPaid = editPurchaseCheques.reduce((sum, c) => sum + (c.amount || 0), 0);
+        } else if (editPurchasePaymentMethod === 'mixed') {
+          computedPaid = (Number(editPurchaseCashAmount) || 0) + editPurchaseCheques.reduce((sum, c) => sum + (c.amount || 0), 0);
+        } else if (editPurchasePaymentMethod === 'credit') {
+          computedPaid = 0;
+        }
+
+        const remainingDebt = Math.max(0, finalAmount - computedPaid);
+
+        const filteredProducts = editPurchaseProductSearch.trim()
+          ? products.filter((p) =>
+              p.name.toLowerCase().includes(editPurchaseProductSearch.toLowerCase()) ||
+              (p.code && p.code.toLowerCase().includes(editPurchaseProductSearch.toLowerCase()))
+            ).slice(0, 5)
+          : [];
+
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-white rounded-2xl w-full max-w-4xl border border-slate-200 shadow-2xl overflow-hidden max-h-[92vh] flex flex-col text-xs">
+              {/* Header */}
+              <div className="p-4 bg-amber-500/10 border-b border-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-amber-500 text-white">
+                    <Pencil className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <span>ویرایش فاکتور خرید شماره:</span>
+                      <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-300 text-amber-900">
+                        {editingPurchaseInvoice.invoiceNumber}
+                      </span>
+                    </h3>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      تامین‌کننده: {editingPurchaseInvoice.supplierName} | تغییرات اقلام مستقیماً در موجودی انبار و دفاتر مالی اعمال می‌گردد.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingPurchaseInvoice(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white transition-colors cursor-pointer"
+                >
+                  <AlertCircle className="w-5 h-5 rotate-45" />
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <form onSubmit={handleSaveEditPurchaseInvoice} className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Meta Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      تامین‌کننده / شرکت پخش:
+                    </label>
+                    <select
+                      value={editPurchaseSupplierId}
+                      onChange={(e) => setEditPurchaseSupplierId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800 outline-none"
+                    >
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      شماره فاکتور خرید:
+                    </label>
+                    <input
+                      type="text"
+                      value={editPurchaseInvoiceNumber}
+                      onChange={(e) => setEditPurchaseInvoiceNumber(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-slate-800 outline-none"
+                      placeholder="INV-..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      تاریخ فاکتور:
+                    </label>
+                    <input
+                      type="text"
+                      value={editPurchaseInvoiceDate}
+                      onChange={(e) => setEditPurchaseInvoiceDate(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none"
+                      placeholder="۱۴۰۳/۰۶/..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      انبار مقصد تحویل:
+                    </label>
+                    <select
+                      value={editPurchaseWarehouseId}
+                      onChange={(e) => setEditPurchaseWarehouseId(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800 outline-none"
+                    >
+                      {warehouses.map((wh) => (
+                        <option key={wh.id} value={wh.id}>
+                          {wh.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Items Section */}
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="font-bold text-slate-800 text-xs">
+                      اقلام و کالاهای خریداری‌شده ({toPersianDigits(editPurchaseItems.length)} قلم):
+                    </label>
+
+                    {/* Quick Add Search */}
+                    <div className="relative w-full sm:w-72">
+                      <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                        <Search className="w-3.5 h-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          value={editPurchaseProductSearch}
+                          onChange={(e) => setEditPurchaseProductSearch(e.target.value)}
+                          placeholder="افزودن کالای دیگر به فاکتور..."
+                          className="w-full bg-transparent text-xs outline-none text-slate-800"
+                        />
+                      </div>
+
+                      {filteredProducts.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 overflow-hidden divide-y divide-slate-100">
+                          {filteredProducts.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => handleAddEditPurchaseItem(p)}
+                              className="w-full p-2 text-right hover:bg-amber-50 flex items-center justify-between text-xs transition-colors cursor-pointer"
+                            >
+                              <span className="font-bold text-slate-800">{p.name}</span>
+                              <span className="text-[11px] font-mono text-emerald-600">
+                                {formatToman(p.buyPrice || 0)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Items Table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                    <table className="w-full text-xs text-right">
+                      <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5">نام کالا</th>
+                          <th className="p-2.5 w-36">قیمت خرید واحد (تومان)</th>
+                          <th className="p-2.5 w-28 text-center">تعداد</th>
+                          <th className="p-2.5 w-32">مجموع سطر</th>
+                          <th className="p-2.5 w-12 text-center">حذف</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editPurchaseItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/60">
+                            <td className="p-2.5 font-bold text-slate-900">{item.productName}</td>
+                            <td className="p-2.5">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.buyPrice}
+                                onChange={(e) => handleEditPurchaseItemPrice(idx, Number(e.target.value))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-xs outline-none"
+                              />
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditPurchaseItemQuantity(idx, item.quantity - 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) => handleEditPurchaseItemQuantity(idx, Math.max(1, Number(e.target.value)))}
+                                  className="w-10 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditPurchaseItemQuantity(idx, item.quantity + 1)}
+                                  className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-2.5 font-bold font-mono text-slate-800">
+                              {formatToman(item.total || item.quantity * item.buyPrice)}
+                            </td>
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEditPurchaseItem(idx)}
+                                className="p-1 rounded-md text-rose-500 hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Financial & Settlement Options */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      تخفیف دریافت شده از تامین‌کننده (تومان):
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editPurchaseDiscount}
+                      onChange={(e) => setEditPurchaseDiscount(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      شیوه تسویه حساب:
+                    </label>
+                    <select
+                      value={editPurchasePaymentMethod}
+                      onChange={(e) => setEditPurchasePaymentMethod(e.target.value as any)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800 outline-none"
+                    >
+                      <option value="cash">نقدی کامل (صندوق / تنخواه / کارت به کارت)</option>
+                      <option value="cheque">پرداخت با چک صیادی</option>
+                      <option value="mixed">ترکیبی (بخشی نقد + بخشی چک)</option>
+                      <option value="credit">نسیه کامل (دفتری و امانی)</option>
+                    </select>
+                  </div>
+
+                  {(editPurchasePaymentMethod === 'cash' || editPurchasePaymentMethod === 'mixed') && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        مبلغ پرداخت نقدی (تومان):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editPurchasePaymentMethod === 'mixed' ? editPurchaseCashAmount : editPurchasePaidAmount}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? '' : Number(e.target.value);
+                          if (editPurchasePaymentMethod === 'mixed') {
+                            setEditPurchaseCashAmount(val);
+                          } else {
+                            setEditPurchasePaidAmount(val);
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none"
+                      />
+                    </div>
+                  )}
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      توضیحات و یادداشت فاکتور خرید:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editPurchaseNotes}
+                      onChange={(e) => setEditPurchaseNotes(e.target.value)}
+                      placeholder="یادداشت‌های داخلی..."
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Summary Box */}
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-1.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-600">جمع کل اقلام:</span>
+                    <span className="font-mono font-bold text-slate-800">{formatToman(subtotal)}</span>
+                  </div>
+                  {disc > 0 && (
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-emerald-700">تخفیف:</span>
+                      <span className="font-mono font-bold text-emerald-700">-{formatToman(disc)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-xs border-t border-amber-200/80 pt-1.5">
+                    <span className="font-bold text-slate-900">مبلغ نهایی فاکتور:</span>
+                    <span className="font-mono font-black text-slate-900">{formatToman(finalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-emerald-700">مبلغ پرداخت شده:</span>
+                    <span className="font-mono font-bold text-emerald-700">{formatToman(computedPaid)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs border-t border-amber-200/80 pt-1.5">
+                    <span className="font-bold text-rose-700">باقی‌مانده بدهی ما به تامین‌کننده:</span>
+                    <span className="font-mono font-black text-rose-700">{formatToman(remainingDebt)}</span>
+                  </div>
+                </div>
+
+                {/* Submit & Cancel Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingEditPurchase}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {isSubmittingEditPurchase ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>در حال ذخیره و به‌روزرسانی انبار...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>ذخیره تغییرات فاکتور خرید و به‌روزرسانی انبار</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingPurchaseInvoice(null)}
                     className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
                   >
                     انصراف

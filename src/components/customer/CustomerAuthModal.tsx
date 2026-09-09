@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Phone, ShieldCheck, X, ArrowRight, RefreshCw, KeyRound, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Phone, X, ArrowRight, RefreshCw, KeyRound, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
 import { toPersianDigits } from '../../lib/utils';
 import { useToast } from '../common/Toast';
@@ -23,7 +23,6 @@ export const CustomerAuthModal: React.FC = () => {
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [simulatedCode, setSimulatedCode] = useState<string | null>(null);
 
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -68,7 +67,6 @@ export const CustomerAuthModal: React.FC = () => {
       const res = await sendOtp(clean);
       if (res.success) {
         setMobile(clean);
-        setSimulatedCode(res.simulatedCode || null);
         setStep('otp');
         setTimer(res.expiresInSeconds || 120);
         setIsTimerActive(true);
@@ -151,12 +149,6 @@ export const CustomerAuthModal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Quick fill helper for demonstration
-  const handleQuickFillDemo = (num: string) => {
-    setMobile(num);
-    handleSendOtp(undefined, num);
   };
 
   if (!isAuthModalOpen) return null;
@@ -258,56 +250,12 @@ export const CustomerAuthModal: React.FC = () => {
                   </>
                 )}
               </button>
-
-              {/* Quick Demo Options */}
-              <div className="pt-3 border-t border-slate-100 dark:border-[#1E1E22] text-center">
-                <div className="text-[11px] text-slate-400 dark:text-[#8E9299] mb-2 flex items-center justify-center gap-1">
-                  <Sparkles className="w-3 h-3 text-[var(--teal)]" />
-                  <span>تست سریع با شماره‌های نمونه:</span>
-                </div>
-                <div className="flex flex-wrap justify-center gap-1.5">
-                  {['09121112233', '09359876543', '09195554433'].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => handleQuickFillDemo(num)}
-                      className="text-[11px] font-mono bg-slate-100 dark:bg-[#1C1C20] hover:bg-[var(--teal)]/10 hover:text-[var(--teal)] px-2.5 py-1 rounded-lg text-slate-600 dark:text-[#8E9299] transition-colors border border-slate-200 dark:border-[#2D2D33] cursor-pointer"
-                    >
-                      {toPersianDigits(num)}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </form>
           )}
 
           {/* Step 2: OTP Verification */}
           {step === 'otp' && (
             <div className="space-y-5">
-              {/* Simulated Code Helper (for AI preview / sandbox) */}
-              {simulatedCode && (
-                <div className="p-3 rounded-xl bg-[var(--sunshine)]/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs text-center space-y-1">
-                  <div className="font-bold flex items-center justify-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>کد شبیه‌سازی شده پیامک (محیط تست):</span>
-                  </div>
-                  <div className="font-mono text-base font-black text-amber-800 dark:text-amber-200 tracking-widest">
-                    {simulatedCode}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const splitted = simulatedCode.split('');
-                      setOtpCode(splitted);
-                      handleVerifyCode(simulatedCode);
-                    }}
-                    className="text-[11px] underline text-amber-800 dark:text-amber-300 hover:text-amber-900 cursor-pointer"
-                  >
-                    درج خودکار کد تست و ورود
-                  </button>
-                </div>
-              )}
-
               {/* 5-digit inputs */}
               <div className="flex justify-center gap-2.5" dir="ltr" onPaste={handleOtpPaste}>
                 {otpCode.map((digit, idx) => (

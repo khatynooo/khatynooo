@@ -23,12 +23,13 @@ import {
   Percent,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum, generateValidEan13 } from '../../lib/utils';
 import { Product, Category, SubCategory, UnitDefinition } from '../../types';
 import { useToast } from '../common/Toast';
 import { CurrencyInput } from '../common/CurrencyInput';
 import { ProductGalleryManager } from '../common/ProductGalleryManager';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
+import { InlineCategoryCreator } from '../common/InlineCategoryCreator';
 
 type ModalTabType = 'general' | 'pricing' | 'gallery' | 'details';
 
@@ -54,6 +55,15 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
 
   // تب فعال در مودال
   const [modalTab, setModalTab] = useState<ModalTabType>('general');
+
+  // دسته‌بندی‌های محلی برای پشتیبانی از افزودن سریع
+  const [localCategories, setLocalCategories] = useState<Category[]>(categories || []);
+
+  useEffect(() => {
+    if (categories && categories.length > 0) {
+      setLocalCategories(categories);
+    }
+  }, [categories]);
 
   // واحدهای سنجش سیستم
   const [unitDefs, setUnitDefs] = useState<UnitDefinition[]>(propUnitDefs || []);
@@ -101,18 +111,6 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
     showOnWebsite: true,
     onlyAccounting: false,
   });
-
-  // تولید بارکد استاندارد EAN-13 معتبر با رقم کنترلی دقیق ریاضی
-  const generateValidEan13 = () => {
-    const raw12 = '626' + Math.floor(100000000 + Math.random() * 900000000).toString().slice(0, 9);
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      const d = parseInt(raw12[i], 10);
-      sum += i % 2 === 0 ? d * 1 : d * 3;
-    }
-    const check = (10 - (sum % 10)) % 10;
-    return raw12 + check.toString();
-  };
 
   // تولید کد استاندارد کالا
   const generateProductCode = () => `KHAT-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -173,7 +171,7 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
   if (!isOpen) return null;
 
   // زیردسته‌های مربوط به دسته‌بندی انتخاب‌شده
-  const currentCategory = categories.find((c) => c.id === formData.categoryId);
+  const currentCategory = localCategories.find((c) => c.id === formData.categoryId);
   const currentSubcategories: SubCategory[] = currentCategory?.subcategories || [];
 
   // محاسبه هوشمند قیمت‌های سطوح ۵گانه بر اساس بهای خرید
@@ -691,14 +689,33 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
               {/* دسته‌بندی اصلی و زیردسته‌بندی */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">دسته‌بندی اصلی:</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700 text-xs">دسته‌بندی اصلی:</label>
+                    <InlineCategoryCreator
+                      mode="category"
+                      theme="light"
+                      onCreated={(res) => {
+                        if (res.category) {
+                          setLocalCategories((prev) => {
+                            const exists = prev.some((c) => c.id === res.category!.id);
+                            return exists ? prev : [...prev, res.category!];
+                          });
+                          setFormData((prev) => ({
+                            ...prev,
+                            categoryId: res.category!.id,
+                            subCategoryId: '',
+                          }));
+                        }
+                      }}
+                    />
+                  </div>
                   <select
                     value={formData.categoryId || ''}
                     onChange={(e) => setFormData({ ...formData, categoryId: e.target.value, subCategoryId: '' })}
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-slate-800 font-bold focus:border-amber-500 focus:outline-hidden focus:ring-2 focus:ring-amber-200 transition bg-white"
                   >
                     <option value="">-- بدون دسته‌بندی / عمومی --</option>
-                    {categories.map((c) => (
+                    {localCategories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -707,7 +724,37 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="mb-1 block font-bold text-slate-700 text-xs">زیردسته‌بندی تخصصی:</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700 text-xs">زیردسته‌بندی تخصصی:</label>
+                    <InlineCategoryCreator
+                      mode="subcategory"
+                      parentCategoryId={formData.categoryId}
+                      disabled={!formData.categoryId}
+                      disabledReason="ابتدا دسته‌بندی اصلی را انتخاب کنید"
+                      theme="light"
+                      onCreated={(res) => {
+                        if (res.subcategory && formData.categoryId) {
+                          setLocalCategories((prev) =>
+                            prev.map((c) => {
+                              if (c.id === formData.categoryId) {
+                                const subs = c.subcategories || [];
+                                const exists = subs.some((s) => s.id === res.subcategory!.id);
+                                return {
+                                  ...c,
+                                  subcategories: exists ? subs : [...subs, res.subcategory!],
+                                };
+                              }
+                              return c;
+                            })
+                          );
+                          setFormData((prev) => ({
+                            ...prev,
+                            subCategoryId: res.subcategory!.id,
+                          }));
+                        }
+                      }}
+                    />
+                  </div>
                   <select
                     value={formData.subCategoryId || ''}
                     onChange={(e) => setFormData({ ...formData, subCategoryId: e.target.value })}

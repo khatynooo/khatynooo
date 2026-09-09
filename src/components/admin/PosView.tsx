@@ -117,10 +117,19 @@ export const PosView: React.FC = () => {
   // Box Scan or Unit Quantity Modal
   const [quantityModal, setQuantityModal] = useState<{ product: Product; mode: 'box' | 'unit' } | null>(null);
 
+  // Held Invoices (فاکتورهای معلق)
+  const [activeSalesDraftId, setActiveSalesDraftId] = useState<string | null>(null);
+  const [heldInvoices, setHeldInvoices] = useState<Array<{ id: string; label: string | null; payload: any; updatedAt: string }>>([]);
+  const [showHeldList, setShowHeldList] = useState(false);
+
+  // Continuous Scan Mode (اسکن پیوسته)
+  const [continuousScanMode, setContinuousScanMode] = useState<boolean>(true);
+
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
+    api.listSalesDrafts().then((res) => setHeldInvoices(res?.drafts || [])).catch(() => {});
     barcodeRef.current?.focus();
   }, []);
 
@@ -175,6 +184,128 @@ export const PosView: React.FC = () => {
     setSelectedCustomerId(id);
     const found = customers.find((c) => c.id === id);
     setSelectedCustomer(found || (id === 'cst_walkin' ? DEFAULT_WALKIN_CUSTOMER : null));
+  };
+
+  // ساخت payload استاندارد فاکتور فروش فعلی
+  const buildCurrentSalesPayload = () => ({
+    cartItems: cartItems.map((i) => ({
+      productId: i.product.id,
+      quantity: i.quantity,
+      selectedPrice: i.selectedPrice,
+      priceTier: i.priceTier,
+      unit: i.unit,
+      discount: i.discount,
+      boxScans: i.boxScans,
+    })),
+    selectedCustomerId,
+    selectedWarehouseId,
+    overallDiscount,
+    paymentMethod,
+    activeTier,
+  });
+
+  // ذخیره خودکار در پس‌زمینه با Debounce (۱۵۰۰ میلی‌ثانیه)
+  useEffect(() => {
+    if (cartItems.length === 0) return;
+    const payload = buildCurrentSalesPayload();
+    const t = setTimeout(() => {
+      if (activeSalesDraftId) {
+        api.updateSalesDraft(activeSalesDraftId, payload).catch(() => {});
+      } else {
+        api.createSalesDraft(null, payload)
+          .then((res) => {
+            if (res?.id) setActiveSalesDraftId(res.id);
+          })
+          .catch(() => {});
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartItems, selectedCustomerId, selectedWarehouseId, overallDiscount, paymentMethod, activeTier]);
+
+  // دکمه نگهدار و فاکتور جدید
+  const handleHoldAndStartNew = async () => {
+    if (cartItems.length === 0) {
+      showToast('سبد خالی است؛ چیزی برای نگهداری وجود ندارد.', 'warning');
+      return;
+    }
+    const payload = buildCurrentSalesPayload();
+    try {
+      if (activeSalesDraftId) {
+        await api.updateSalesDraft(activeSalesDraftId, payload);
+      } else {
+        await api.createSalesDraft(null, payload);
+      }
+      setCartItems([]);
+      setSelectedCustomerId('cst_walkin');
+      setSelectedCustomer(DEFAULT_WALKIN_CUSTOMER);
+      setOverallDiscount(0);
+      setActiveSalesDraftId(null);
+      const res = await api.listSalesDrafts();
+      setHeldInvoices(res?.drafts || []);
+      showToast('فاکتور فعلی نگهداشته شد. می‌توانید فاکتور جدید بزنید.', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'خطا در نگهداری فاکتور', 'error');
+    }
+  };
+
+  // بازیابی یک فاکتور معلق
+  const handleResumeDraft = async (draft: { id: string; payload: any }) => {
+    if (cartItems.length > 0 && activeSalesDraftId !== draft.id) {
+      try {
+        const currentPayload = buildCurrentSalesPayload();
+        if (activeSalesDraftId) {
+          await api.updateSalesDraft(activeSalesDraftId, currentPayload);
+        } else {
+          await api.createSalesDraft(null, currentPayload);
+        }
+      } catch {
+        // نادیده گرفتن خطا
+      }
+    }
+
+    const p = draft.payload || {};
+    const restoredCart = (p.cartItems || [])
+      .map((ci: any) => {
+        const prod = products.find((pp) => pp.id === ci.productId);
+        if (!prod) return null;
+        return {
+          product: prod,
+          quantity: ci.quantity,
+          selectedPrice: ci.selectedPrice,
+          priceTier: ci.priceTier,
+          unit: ci.unit,
+          discount: ci.discount,
+          boxScans: ci.boxScans,
+        };
+      })
+      .filter(Boolean);
+
+    setCartItems(restoredCart);
+    if (p.selectedCustomerId) {
+      setSelectedCustomerId(p.selectedCustomerId);
+      const foundCust = customers.find((c) => c.id === p.selectedCustomerId);
+      if (foundCust) setSelectedCustomer(foundCust);
+    }
+    if (p.selectedWarehouseId) setSelectedWarehouseId(p.selectedWarehouseId);
+    if (p.overallDiscount !== undefined) setOverallDiscount(p.overallDiscount);
+    if (p.paymentMethod) setPaymentMethod(p.paymentMethod);
+    if (p.activeTier) setActiveTier(p.activeTier);
+    setActiveSalesDraftId(draft.id);
+    setShowHeldList(false);
+    showToast('فاکتور معلق بازیابی شد.', 'success');
+  };
+
+  // حذف فاکتور معلق
+  const handleDeleteHeldDraft = async (id: string) => {
+    try {
+      await api.deleteSalesDraft(id);
+      setHeldInvoices((prev) => prev.filter((d) => d.id !== id));
+      if (activeSalesDraftId === id) setActiveSalesDraftId(null);
+      showToast('فاکتور معلق حذف شد.', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'خطا در حذف فاکتور معلق', 'error');
+    }
   };
 
   const getPriceByTier = (product: Product, tier: PriceTier): number => {
@@ -281,9 +412,15 @@ export const PosView: React.FC = () => {
       }
       setQuantityModal({ product: match, mode: 'box' });
     } else {
-      setQuantityModal({ product: match, mode: 'unit' });
+      // اسکن ساده: بدون پنجره تایید، مستقیم به فاکتور اضافه کن
+      addToPosCart(match, 1);
+      showToast(`«${match.name}» ${successPrefix || 'اسکن و به فاکتور اضافه شد.'}`, 'success');
     }
     setBarcodeInput('');
+
+    if (continuousScanMode) {
+      requestAnimationFrame(() => barcodeRef.current?.focus());
+    }
   };
 
   const handleBarcodeSubmit = (e: React.FormEvent) => {
@@ -297,7 +434,7 @@ export const PosView: React.FC = () => {
     onScan: (scannedCode) => {
       processBarcodeScan(scannedCode, 'با اسکنر سخت‌افزاری اضافه شد.');
     },
-    enabled: true,
+    enabled: continuousScanMode,
   });
 
   const updateItemQty = (productId: string, delta: number) => {
@@ -423,6 +560,10 @@ export const PosView: React.FC = () => {
 
             if (checkoutRes.success) {
               setCompletedInvoice(checkoutRes.invoice);
+              if (activeSalesDraftId) {
+                api.deleteSalesDraft(activeSalesDraftId).catch(() => {});
+                setActiveSalesDraftId(null);
+              }
               setTimeout(() => {
                 setIsPosProcessing(false);
                 setShowReceiptModal(true);
@@ -464,6 +605,10 @@ export const PosView: React.FC = () => {
 
           if (checkoutRes.success) {
             setCompletedInvoice(checkoutRes.invoice);
+            if (activeSalesDraftId) {
+              api.deleteSalesDraft(activeSalesDraftId).catch(() => {});
+              setActiveSalesDraftId(null);
+            }
             setShowReceiptModal(true);
             setCartItems([]);
             setOverallDiscount(0);
@@ -543,6 +688,52 @@ export const PosView: React.FC = () => {
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs cursor-pointer"
           >
             ثبت دستی
+          </button>
+
+          {/* کلید اسکن پیوسته */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = !continuousScanMode;
+              setContinuousScanMode(next);
+              if (next) requestAnimationFrame(() => barcodeRef.current?.focus());
+              else barcodeRef.current?.blur();
+            }}
+            className={`px-2.5 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 cursor-pointer ${
+              continuousScanMode
+                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+            }`}
+            title={continuousScanMode ? 'اسکن پیوسته فعال است؛ برای توقف کلیک کنید' : 'اسکن متوقف است؛ برای فعال‌سازی دوباره کلیک کنید'}
+          >
+            {continuousScanMode ? '● اسکن پیوسته فعال' : '⏹ پایان اسکن'}
+          </button>
+
+          {/* دکمه‌های فاکتورهای معلق */}
+          <button
+            type="button"
+            onClick={handleHoldAndStartNew}
+            className="bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold text-xs px-3 py-2 rounded-xl transition-colors shrink-0 cursor-pointer"
+            title="فاکتور فعلی را نگه می‌دارد و صفحه را برای مشتری بعدی خالی می‌کند"
+          >
+            نگهدار و فاکتور جدید
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const res = await api.listSalesDrafts().catch(() => null);
+              setHeldInvoices(res?.drafts || []);
+              setShowHeldList(true);
+            }}
+            className="relative bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-colors shrink-0 cursor-pointer"
+          >
+            فاکتورهای معلق
+            {heldInvoices.length > 0 && (
+              <span className="absolute -top-1.5 -left-1.5 bg-rose-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                {toPersianDigits(heldInvoices.length)}
+              </span>
+            )}
           </button>
         </form>
 
@@ -1233,7 +1424,10 @@ export const PosView: React.FC = () => {
         <BoxScanQuantityModal
           product={quantityModal.product}
           mode={quantityModal.mode}
-          onCancel={() => setQuantityModal(null)}
+          onCancel={() => {
+            setQuantityModal(null);
+            if (continuousScanMode) requestAnimationFrame(() => barcodeRef.current?.focus());
+          }}
           onConfirmBox={(boxCount, extraUnits) => {
             const factor = Number(quantityModal.product.conversionFactor || 1);
             const totalUnits = boxCount * factor + extraUnits;
@@ -1244,13 +1438,93 @@ export const PosView: React.FC = () => {
               'success'
             );
             setQuantityModal(null);
+            if (continuousScanMode) requestAnimationFrame(() => barcodeRef.current?.focus());
           }}
           onConfirmUnit={(qty) => {
             addToPosCart(quantityModal.product, qty);
             showToast(`${toPersianDigits(qty)} عدد از «${quantityModal.product.name}» اضافه شد.`, 'success');
             setQuantityModal(null);
+            if (continuousScanMode) requestAnimationFrame(() => barcodeRef.current?.focus());
           }}
         />
+      )}
+
+      {/* مودال لیست فاکتورهای معلق */}
+      {showHeldList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-black text-slate-900">فاکتورهای معلق فروش (نگهداشته‌شده)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHeldList(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg text-base leading-none cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-2 flex-1">
+              {heldInvoices.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-xs">
+                  هیچ فاکتور معلقی وجود ندارد.
+                </div>
+              ) : (
+                heldInvoices.map((d) => {
+                  const p = d.payload || {};
+                  const itemCount = p.cartItems?.length || 0;
+                  const totalUnits = (p.cartItems || []).reduce((acc: number, item: any) => acc + (item.quantity || 0), 0);
+                  const isCurrent = activeSalesDraftId === d.id;
+                  return (
+                    <div
+                      key={d.id}
+                      className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs transition-colors ${
+                        isCurrent
+                          ? 'border-indigo-300 bg-indigo-50/50'
+                          : 'border-slate-200 bg-slate-50/50 hover:bg-slate-100/60'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>{d.label || 'فاکتور بدون نام'}</span>
+                          {isCurrent && (
+                            <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded-md font-bold">
+                              در حال ویرایش
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {toPersianDigits(itemCount)} ردیف کالا ({toPersianDigits(totalUnits)} عدد) • آخرین تغییر: {new Date(d.updatedAt).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleResumeDraft(d)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl cursor-pointer"
+                        >
+                          ادامه فاکتور
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteHeldDraft(d.id)}
+                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1.5 rounded-xl transition-colors cursor-pointer"
+                          title="حذف پیش‌نویس"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

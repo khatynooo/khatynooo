@@ -526,6 +526,29 @@ export interface WebsiteSettings {
   showLocationMap?: boolean;
   locationTitle?: string;
   addressNotes?: string;
+  responsiveLayout?: ResponsiveLayoutSettings;
+}
+
+export type SizeUnit = 'px' | 'rem' | '%' | 'vw' | 'vh';
+
+export interface SizeValue {
+  value: number;
+  unit: SizeUnit;
+}
+
+export interface DeviceLayoutOverrides {
+  logoHeight?: SizeValue;
+  logoWidth?: SizeValue;
+  catalogLayoutMode?: 'grid' | 'list' | 'compact';
+  headerLayoutStyle?: string;
+  footerLayoutStyle?: string;
+  buttonBorderRadius?: string;
+}
+
+export interface ResponsiveLayoutSettings {
+  desktop?: DeviceLayoutOverrides;
+  tablet?: DeviceLayoutOverrides;
+  mobile?: DeviceLayoutOverrides;
 }
 
 export interface StoreSettings {

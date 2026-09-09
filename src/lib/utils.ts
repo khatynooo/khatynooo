@@ -35,6 +35,20 @@ export function toEnglishDigits(str: string | number | null | undefined): string
 }
 
 /**
+ * تولید بارکد استاندارد EAN-13 معتبر ایرانی (پیشوند ۶۲۶) با محاسبه‌ی دقیق رقم کنترلی
+ */
+export function generateValidEan13(): string {
+  const raw12 = '626' + Math.floor(100000000 + Math.random() * 900000000).toString().slice(0, 9);
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const d = parseInt(raw12[i], 10);
+    sum += i % 2 === 0 ? d * 1 : d * 3;
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return raw12 + check.toString();
+}
+
+/**
  * بررسی و اعتبارسنجی دقیق رقم کنترلی بارکدهای استاندارد (EAN-13, EAN-8, UPC-A, ITF-14)
  * قانون مهم: اعتبارسنجی Checksum فقط برای فرمت‌هایی اعمال می‌شود که استاندارد ریاضی دارند (مثل EAN-13 یا UPC-A).
  * برای Code-128، Code-39، Code-93، QR Code و سایر فرمت‌هایی که رمزگشا صحت داده را بررسی کرده است، نتیجه نباید اشتباهاً رد شود.

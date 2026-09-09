@@ -745,19 +745,115 @@ export const cmsEngine = {
   updateSmsConfig: async (newConfig: Partial<SmsProviderConfig>): Promise<SmsProviderConfig> => {
     return await db.updateSmsGatewayConfig(newConfig);
   },
-  sendTestSms: async (mobile: string, messageText: string) => {
-    const currentConfig = await db.getSmsGatewayConfig();
+  sendRealSms: async (params: {
+    mobile: string;
+    messageText?: string;
+    otpToken?: string;
+    template?: string;
+    token2?: string;
+    token3?: string;
+  }): Promise<{ success: boolean; message: string; log?: SmsLog }> => {
+    const config = await db.getSmsGatewayConfig();
+    const cleanMobile = params.mobile.replace(/[^0-9]/g, '');
+    const apiKey = (config.apiKey && config.apiKey.trim() && config.apiKey !== 'khatinoo_kavenegar_live_api_key_sample')
+      ? config.apiKey.trim()
+      : (process.env.KAVENEGAR_API_KEY ? process.env.KAVENEGAR_API_KEY.trim() : config.apiKey);
+
+    const provider = config.provider || 'kavenegar';
+    const pattern = params.template || config.patternOtp || config.otpPattern || 'khatinoo-otp-auth';
+    let deliveryStatus: 'delivered' | 'failed' | 'pending' = 'delivered';
+    let statusMessage = 'پیامک با موفقیت ارسال شد.';
+    let rawCost = 1850;
+
+    if (provider === 'kavenegar' && apiKey && apiKey !== 'khatinoo_kavenegar_live_api_key_sample') {
+      try {
+        // اگر توکن OTP و پترن موجود است، از متد اعتبارسنجی خدماتی (lookup) استفاده شود
+        if (params.otpToken && pattern) {
+          const lookupUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/verify/lookup.json`);
+          lookupUrl.searchParams.set('receptor', cleanMobile);
+          lookupUrl.searchParams.set('token', params.otpToken);
+          lookupUrl.searchParams.set('template', pattern);
+          if (params.token2) lookupUrl.searchParams.set('token2', params.token2);
+          if (params.token3) lookupUrl.searchParams.set('token3', params.token3);
+
+          const resp = await fetch(lookupUrl.toString(), { method: 'GET' });
+          const resData: any = await resp.json().catch(() => ({}));
+          if (resData?.return?.status === 200) {
+            statusMessage = `پیامک تایید هویت با الگوی «${pattern}» از طریق کاوه‌نگار با موفقیت به شماره ${cleanMobile} ارسال شد.`;
+            deliveryStatus = 'delivered';
+            rawCost = (resData.entries && resData.entries[0]?.cost) ? Number(resData.entries[0].cost) : 1850;
+          } else {
+            console.warn(`⚠️ [Kavenegar Lookup Warning]:`, resData);
+            // در صورت عدم ثبت یا تایید نشدن پترن در کاوه‌نگار، ارسال متنی ساده
+            const sendText = params.messageText || `کد تایید ورود به خطی‌نو: ${params.otpToken}\nاعتبار: ۲ دقیقه\nkhatynoo.ir`;
+            const sendUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/sms/send.json`);
+            sendUrl.searchParams.set('receptor', cleanMobile);
+            sendUrl.searchParams.set('message', sendText);
+            if (config.senderNumber) sendUrl.searchParams.set('sender', config.senderNumber);
+
+            const sendResp = await fetch(sendUrl.toString(), { method: 'GET' });
+            const sendData: any = await sendResp.json().catch(() => ({}));
+            if (sendData?.return?.status === 200) {
+              statusMessage = `پیامک متنی از خط ${config.senderNumber || 'اختصاصی'} کاوه‌نگار به ${cleanMobile} ارسال شد.`;
+              deliveryStatus = 'delivered';
+            } else {
+              deliveryStatus = 'failed';
+              statusMessage = sendData?.return?.message || 'خطا در ارسال پیامک از طریق کاوه‌نگار.';
+              throw new Error(statusMessage);
+            }
+          }
+        } else {
+          // ارسال متنی مستقیم
+          const sendText = params.messageText || `پیام ارسالی از سامانه خطی‌نو`;
+          const sendUrl = new URL(`https://api.kavenegar.com/v1/${apiKey}/sms/send.json`);
+          sendUrl.searchParams.set('receptor', cleanMobile);
+          sendUrl.searchParams.set('message', sendText);
+          if (config.senderNumber) sendUrl.searchParams.set('sender', config.senderNumber);
+
+          const sendResp = await fetch(sendUrl.toString(), { method: 'GET' });
+          const sendData: any = await sendResp.json().catch(() => ({}));
+          if (sendData?.return?.status === 200) {
+            statusMessage = `پیامک متنی از طریق کاوه‌نگار به ${cleanMobile} ارسال شد.`;
+            deliveryStatus = 'delivered';
+          } else {
+            deliveryStatus = 'failed';
+            statusMessage = sendData?.return?.message || 'خطا در برقراری ارتباط با کاوه‌نگار.';
+            throw new Error(statusMessage);
+          }
+        }
+      } catch (smsErr: any) {
+        deliveryStatus = 'failed';
+        statusMessage = `خطای وب‌سرویس کاوه‌نگار: ${smsErr.message}`;
+        console.error(`❌ [Real SMS Error]:`, smsErr);
+        throw smsErr;
+      }
+    } else {
+      console.log(`ℹ️ [SMS Gateway] درگاه پیامک کاوه‌نگار در حالت تنظیم اولیه قرار دارد.`);
+      statusMessage = 'کد تایید ثبت شد (جهت ارسال بر خط، کلید اختصاصی کاوه‌نگار در پنل ادمین ثبت شود).';
+    }
+
     const newLog: SmsLog = {
       id: `sms_${Date.now()}`,
-      recipient: mobile,
-      message: messageText || 'پیامک تستی از پرتال خطی‌نو',
-      provider: currentConfig.provider || 'kavenegar',
-      status: 'delivered',
+      recipient: cleanMobile,
+      message: params.messageText || (params.otpToken ? `کد تایید ورود: ${params.otpToken} (الگو: ${pattern})` : 'پیام ارسالی سیستم'),
+      provider: provider,
+      status: deliveryStatus,
       sentAt: new Date().toLocaleDateString('fa-IR') + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-      costRials: 1850,
+      costRials: rawCost,
     };
     smsLogs.unshift(newLog);
-    return { success: true, log: newLog, message: 'پیامک تستی با موفقیت ارسال و در لاگ ثبت شد.' };
+
+    return {
+      success: deliveryStatus !== 'failed',
+      message: statusMessage,
+      log: newLog,
+    };
+  },
+  sendTestSms: async (mobile: string, messageText: string) => {
+    return await cmsEngine.sendRealSms({
+      mobile,
+      messageText,
+    });
   },
   getSmsLogs: () => smsLogs,
 

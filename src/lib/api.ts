@@ -217,6 +217,19 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handleResponse),
 
+  updatePurchaseInvoice: (id: string, data: any) =>
+    fetch(`${API_BASE}/invoices/purchase/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  deletePurchaseInvoice: (id: string) =>
+    fetch(`${API_BASE}/invoices/purchase/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
   // Return Invoices
   getReturnInvoices: () =>
     fetch(`${API_BASE}/invoices/returns`, {
@@ -903,6 +916,16 @@ export const api = {
       headers: getCustomerAuthHeader(),
     }).then(handleResponse),
 
+  getCustomerActivities: () =>
+    fetch(`${API_BASE}/customer/activities`, {
+      headers: getCustomerAuthHeader(),
+    }).then(handleResponse),
+
+  getCustomerSalesInvoices: () =>
+    fetch(`${API_BASE}/customer/sales-invoices`, {
+      headers: getCustomerAuthHeader(),
+    }).then(handleResponse),
+
   // ==========================================
   // MULTI-WAREHOUSE & INVENTORY OPERATIONS
   // ==========================================
@@ -1010,6 +1033,52 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(payload),
+    }).then(handleResponse),
+
+  // ==========================================
+  // INVOICE DRAFTS (PURCHASE & SALES POS)
+  // ==========================================
+  getPurchaseDraft: () =>
+    fetch(`${API_BASE}/invoice-drafts/purchase`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  savePurchaseDraft: (payload: any) =>
+    fetch(`${API_BASE}/invoice-drafts/purchase`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ payload }),
+    }).then(handleResponse),
+
+  deletePurchaseDraft: () =>
+    fetch(`${API_BASE}/invoice-drafts/purchase`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  listSalesDrafts: () =>
+    fetch(`${API_BASE}/invoice-drafts/sales`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  createSalesDraft: (label: string | null, payload: any) =>
+    fetch(`${API_BASE}/invoice-drafts/sales`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ label, payload }),
+    }).then(handleResponse),
+
+  updateSalesDraft: (id: string, payload: any) =>
+    fetch(`${API_BASE}/invoice-drafts/sales/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ payload }),
+    }).then(handleResponse),
+
+  deleteSalesDraft: (id: string) =>
+    fetch(`${API_BASE}/invoice-drafts/sales/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
     }).then(handleResponse),
 };
 

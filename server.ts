@@ -637,8 +637,8 @@ app.post('/api/categories/:categoryId/subcategories', authenticateToken, require
   const { name, description } = req.body;
   if (!name) return res.status(400).json({ error: 'نام زیردسته الزامی است.' });
   try {
-    await db.createSubCategory({ categoryId: req.params.categoryId, name, description });
-    res.json({ message: 'زیردسته جدید اضافه شد.' });
+    const subcategory = await db.createSubCategory({ categoryId: req.params.categoryId, name, description });
+    res.json({ subcategory, message: 'زیردسته جدید اضافه شد.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -910,6 +910,71 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
   }
 });
 
+app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant']), async (req, res) => {
+  const { id } = req.params;
+  const {
+    supplierId,
+    supplierName,
+    items,
+    paidAmount,
+    cashAmount,
+    chequeAmount,
+    cheques,
+    receiptImageUrls,
+    paymentMethod,
+    notes,
+    warehouseId,
+    invoiceNumber,
+    invoiceDate,
+    discount,
+    receiptImageUrl,
+  } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'حداقل یک قلم کالا باید در فاکتور خرید وجود داشته باشد.' });
+  }
+
+  try {
+    const updatedInvoice = await db.updatePurchaseInvoice(id, {
+      supplierId,
+      supplierName,
+      items,
+      paidAmount: paidAmount !== undefined ? Number(paidAmount) : undefined,
+      cashAmount: cashAmount !== undefined ? Number(cashAmount) : undefined,
+      chequeAmount: chequeAmount !== undefined ? Number(chequeAmount) : undefined,
+      cheques: Array.isArray(cheques) ? cheques : undefined,
+      receiptImageUrls: Array.isArray(receiptImageUrls) ? receiptImageUrls : undefined,
+      paymentMethod,
+      notes,
+      warehouseId,
+      invoiceNumber,
+      invoiceDate,
+      discount: discount !== undefined ? Number(discount) : undefined,
+      receiptImageUrl,
+    });
+
+    res.json({
+      success: true,
+      invoice: updatedInvoice,
+      message: 'فاکتور خرید با موفقیت ویرایش شد و تغییرات انبار و مانده‌حساب اعمال گردید.',
+    });
+  } catch (err: any) {
+    console.error('❌ [Update Purchase Invoice Error]:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.deletePurchaseInvoice(id);
+    res.json(result);
+  } catch (err: any) {
+    console.error('❌ [Delete Purchase Invoice Error]:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 5.1. RETURN INVOICES (مرجوعی کالا - خرابی یا انصراف)
 // -------------------------------------------------------------
@@ -970,6 +1035,60 @@ app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, re
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ============================================================================
+// پیش‌نویس فاکتورهای خرید و فاکتورهای فروش معلق (Invoice Drafts)
+// ============================================================================
+// فاکتور خرید (تکی)
+app.get('/api/invoice-drafts/purchase', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const draft = await db.getPurchaseDraft(req.user!.id);
+    res.json({ draft });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/invoice-drafts/purchase', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await db.savePurchaseDraft(req.user!.id, req.body.payload ?? {});
+    res.json({ message: 'پیش‌نویس فاکتور خرید ذخیره شد.' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/invoice-drafts/purchase', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await db.deletePurchaseDraft(req.user!.id);
+    res.json({ message: 'پیش‌نویس فاکتور خرید حذف شد.' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// فاکتورهای فروش معلق (چندتایی)
+app.get('/api/invoice-drafts/sales', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const drafts = await db.listSalesDrafts(req.user!.id);
+    res.json({ drafts });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/invoice-drafts/sales', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const id = await db.createSalesDraft(req.user!.id, req.body.label ?? null, req.body.payload ?? {});
+    res.json({ id, message: 'فاکتور معلق ذخیره شد.' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/invoice-drafts/sales/:id', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await db.updateSalesDraft(req.params.id, req.user!.id, req.body.payload ?? {});
+    res.json({ message: 'فاکتور معلق به‌روزرسانی شد.' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/invoice-drafts/sales/:id', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await db.deleteSalesDraft(req.params.id, req.user!.id);
+    res.json({ message: 'فاکتور معلق حذف شد.' });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 // -------------------------------------------------------------
@@ -1995,18 +2114,19 @@ app.post('/api/customer/auth/send-otp', async (req, res) => {
     // ذخیره در دیتابیس با زمان انقضای ۲ دقیقه
     await db.saveOtpCode(cleanMobile, otpCode, 2);
 
-    // ارسال پیامک از طریق ماژول پیامک سیستم
-    const smsMessage = `کد تایید ورود به فروشگاه خطی‌نو: ${otpCode}\n(اعتبار ۲ دقیقه)\nkhatynoo.ir`;
-    await cmsEngine.sendTestSms(cleanMobile, smsMessage);
+    // ارسال واقعی پیامک بر اساس تنظیمات درگاه کاوه‌نگار در دیتابیس
+    const smsResult = await cmsEngine.sendRealSms({
+      mobile: cleanMobile,
+      otpToken: otpCode,
+      messageText: `کد تایید ورود به خطی‌نو: ${otpCode}\n(اعتبار ۲ دقیقه)\nkhatynoo.ir`,
+    });
 
-    console.log(`📱 [Customer OTP] کد پیامکی ورود برای ${cleanMobile}: ${otpCode}`);
+    console.log(`📱 [Customer OTP] پیامک ورود به شماره ${cleanMobile} ارسال گردید.`);
 
     res.json({
       success: true,
-      message: 'کد تایید پیامکی با موفقیت ارسال گردید.',
+      message: smsResult.message || 'کد تایید پیامکی با موفقیت ارسال گردید.',
       expiresInSeconds: 120,
-      isSimulated: true,
-      simulatedCode: otpCode, // در محیط پیش‌نمایش جهت تست سریع در اختیار کاربر قرار می‌گیرد
     });
   } catch (err: any) {
     console.error('❌ [Send OTP Error]:', err);
@@ -2118,6 +2238,25 @@ app.get('/api/customer/orders/:id', authenticateCustomerToken, async (req: Custo
       return res.status(404).json({ error: 'سفارش مورد نظر یافت نشد.' });
     }
     res.json({ success: true, order });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer/activities', authenticateCustomerToken, async (req: CustomerAuthRequest, res) => {
+  try {
+    const customer = await db.getCustomerById(req.customer!.id);
+    const activities = await db.getCustomerFullActivities(req.customer!.id, req.customer!.mobile);
+    res.json({ success: true, activities, customer });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer/sales-invoices', authenticateCustomerToken, async (req: CustomerAuthRequest, res) => {
+  try {
+    const invoices = await db.getCustomerSalesInvoices(req.customer!.id, req.customer!.mobile);
+    res.json({ success: true, invoices });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

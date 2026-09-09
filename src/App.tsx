@@ -14,6 +14,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { api } from './lib/api';
 import { Product, Category, Banner, WebsiteSettings, StoreSettings, PageBuilderBlock } from './types';
 import { toPersianDigits } from './lib/utils';
+import { useDeviceType } from './hooks/useDeviceType';
 
 // Storefront Components
 import { Header } from './components/storefront/Header';
@@ -195,6 +196,10 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
     : cols === 6
     ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
     : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
+
+  const device = useDeviceType();
+  const responsiveOverride = websiteSettings?.responsiveLayout?.[device];
+  const activeCatalogLayoutMode = responsiveOverride?.catalogLayoutMode || websiteSettings?.catalogLayoutMode || 'grid';
 
   return (
     <div
@@ -406,9 +411,9 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
 
               return (
                 <div className={
-                  websiteSettings?.catalogLayoutMode === 'list'
+                  activeCatalogLayoutMode === 'list'
                     ? "flex flex-col gap-3"
-                    : websiteSettings?.catalogLayoutMode === 'compact'
+                    : activeCatalogLayoutMode === 'compact'
                     ? "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 2xl:grid-cols-8 gap-3"
                     : `grid ${gridColsClass} gap-4 sm:gap-6`
                 }>
@@ -417,7 +422,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                       key={product.id}
                       product={product}
                       websiteSettings={websiteSettings}
-                      layoutMode={websiteSettings?.catalogLayoutMode || 'grid'}
+                      layoutMode={activeCatalogLayoutMode}
                       onQuickView={(p) => setSelectedProduct(p)}
                     />
                   ))}

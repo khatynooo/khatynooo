@@ -383,7 +383,8 @@ CREATE TABLE IF NOT EXISTS website_settings (
     show_logo_text BOOLEAN DEFAULT TRUE,
     favicon_url TEXT,
     header_menu_items JSONB,
-    header_elements JSONB
+    header_elements JSONB,
+    responsive_layout JSONB DEFAULT '{}'::jsonb
 );
 
 CREATE TABLE IF NOT EXISTS store_settings (
@@ -550,6 +551,23 @@ INSERT INTO sms_gateway_config (
     '09131234567', TRUE
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- پیش‌نویس فاکتورهای خرید و فاکتورهای فروش معلق (Invoice Drafts)
+CREATE TABLE IF NOT EXISTS invoice_drafts (
+    id VARCHAR(64) PRIMARY KEY,
+    draft_type VARCHAR(20) NOT NULL CHECK (draft_type IN ('purchase', 'sales_pos')),
+    created_by_user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label VARCHAR(100),
+    payload JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoice_drafts_user_type ON invoice_drafts(created_by_user_id, draft_type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_purchase_draft_per_user
+    ON invoice_drafts (created_by_user_id)
+    WHERE draft_type = 'purchase';
 
 
 

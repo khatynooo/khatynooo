@@ -36,13 +36,14 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum, generateValidEan13 } from '../../lib/utils';
 import { Product, Category, SubCategory, UnitDefinition } from '../../types';
 import { useToast } from '../common/Toast';
 import { BarcodePrintModal } from './BarcodePrintModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { CurrencyInput } from '../common/CurrencyInput';
+import { InlineCategoryCreator } from '../common/InlineCategoryCreator';
 import { ProductGalleryManager } from '../common/ProductGalleryManager';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 
@@ -138,18 +139,6 @@ export const ProductsView: React.FC = () => {
       setIsLoading(false);
     }
   }
-
-  // تولید بارکد استاندارد EAN-13 معتبر با رقم کنترلی دقیق ریاضی
-  const generateValidEan13 = () => {
-    const raw12 = '626' + Math.floor(100000000 + Math.random() * 900000000).toString().slice(0, 9);
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      const d = parseInt(raw12[i], 10);
-      sum += i % 2 === 0 ? d * 1 : d * 3;
-    }
-    const check = (10 - (sum % 10)) % 10;
-    return raw12 + check.toString();
-  };
 
   const handleOpenCreate = () => {
     setEditingProduct(null);
@@ -948,7 +937,26 @@ export const ProductsView: React.FC = () => {
 
                     {/* Main Category */}
                     <div>
-                      <label className="font-bold text-[#8E9299] block mb-1">دسته‌بندی اصلی:</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-[#8E9299] block text-xs">دسته‌بندی اصلی:</label>
+                        <InlineCategoryCreator
+                          mode="category"
+                          theme="dark"
+                          onCreated={(res) => {
+                            if (res.category) {
+                              setCategories((prev) => {
+                                const exists = prev.some((c) => c.id === res.category!.id);
+                                return exists ? prev : [...prev, res.category!];
+                              });
+                              setFormData((prev) => ({
+                                ...prev,
+                                categoryId: res.category!.id,
+                                subCategoryId: '',
+                              }));
+                            }
+                          }}
+                        />
+                      </div>
                       <select
                         value={formData.categoryId || ''}
                         onChange={(e) => setFormData({ ...formData, categoryId: e.target.value, subCategoryId: '' })}
@@ -965,7 +973,37 @@ export const ProductsView: React.FC = () => {
 
                     {/* Sub Category */}
                     <div>
-                      <label className="font-bold text-[#8E9299] block mb-1">زیردسته‌بندی تخصصی:</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-[#8E9299] block text-xs">زیردسته‌بندی تخصصی:</label>
+                        <InlineCategoryCreator
+                          mode="subcategory"
+                          parentCategoryId={formData.categoryId}
+                          disabled={!formData.categoryId}
+                          disabledReason="ابتدا دسته‌بندی اصلی را انتخاب کنید"
+                          theme="dark"
+                          onCreated={(res) => {
+                            if (res.subcategory && formData.categoryId) {
+                              setCategories((prev) =>
+                                prev.map((c) => {
+                                  if (c.id === formData.categoryId) {
+                                    const subs = c.subcategories || [];
+                                    const exists = subs.some((s) => s.id === res.subcategory!.id);
+                                    return {
+                                      ...c,
+                                      subcategories: exists ? subs : [...subs, res.subcategory!],
+                                    };
+                                  }
+                                  return c;
+                                })
+                              );
+                              setFormData((prev) => ({
+                                ...prev,
+                                subCategoryId: res.subcategory!.id,
+                              }));
+                            }
+                          }}
+                        />
+                      </div>
                       <select
                         value={formData.subCategoryId || ''}
                         onChange={(e) => setFormData({ ...formData, subCategoryId: e.target.value })}

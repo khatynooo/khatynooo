@@ -2,6 +2,7 @@ import React from 'react';
 import { BookOpen, Phone, MapPin, Clock, ShieldCheck, Truck, Headphones, Instagram, MessageCircle } from 'lucide-react';
 import { toPersianDigits } from '../../lib/utils';
 import { WebsiteSettings, StoreSettings } from '../../types';
+import { useDeviceType, sizeToCss } from '../../hooks/useDeviceType';
 
 interface FooterProps {
   onOpenCalculator: () => void;
@@ -11,12 +12,14 @@ interface FooterProps {
 }
 
 export const Footer: React.FC<FooterProps> = ({ onOpenCalculator, onOpenTracker, websiteSettings, storeSettings }) => {
+  const device = useDeviceType();
+  const responsiveOverride = websiteSettings?.responsiveLayout?.[device];
   const siteTitle = websiteSettings?.siteTitle || storeSettings?.storeName || 'خطی‌نو';
   const address = websiteSettings?.address || storeSettings?.address || 'دفتر و فروشگاه خطی‌نو';
   const phone = websiteSettings?.supportPhone || storeSettings?.phone || '۰۳۱۵۲۴۰۸۳۹۰';
   const workingHours = websiteSettings?.workingHours || 'شنبه تا پنج‌شنبه ۹ الی ۲۱';
 
-  const footerLayout = websiteSettings?.footerLayout || 'multi_column';
+  const footerLayout = (responsiveOverride?.footerLayoutStyle as any) || websiteSettings?.footerLayout || 'multi_column';
   const isCompact = footerLayout === 'compact' || footerLayout === 'simple';
   const isDetailed = footerLayout === 'detailed';
   const isTwoColumn = footerLayout === 'default';

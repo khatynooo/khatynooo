@@ -45,10 +45,28 @@ import {
   HardDrive,
   Database,
   Type,
+  Monitor,
+  Tablet,
+  Smartphone,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
-import { OnlineOrder, Banner, PaymentGatewayConfig, ShippingMethod, WebsiteSettings, HeaderMenuItem, CustomSymbol, CustomBadge, HeaderElement, HeaderElementType } from '../../types';
+import {
+  OnlineOrder,
+  Banner,
+  PaymentGatewayConfig,
+  ShippingMethod,
+  WebsiteSettings,
+  HeaderMenuItem,
+  CustomSymbol,
+  CustomBadge,
+  HeaderElement,
+  HeaderElementType,
+  DeviceLayoutOverrides,
+  SizeUnit,
+  SizeValue,
+  ResponsiveLayoutSettings,
+} from '../../types';
 import { useToast } from '../common/Toast';
 import { BackupRestoreSection } from './BackupRestoreSection';
 
@@ -70,10 +88,157 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
   const [trackingCodeInput, setTrackingCodeInput] = useState('');
 
   const [settingsSubTab, setSettingsSubTab] = useState<'appearance' | 'layout' | 'header' | 'branding' | 'contact' | 'backup'>('appearance');
+  const [activeDevice, setActiveDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isUploadingEnamad, setIsUploadingEnamad] = useState(false);
   const [isUploadingSamandehi, setIsUploadingSamandehi] = useState(false);
   const [isUploadingCustomSymbol, setIsUploadingCustomSymbol] = useState(false);
+
+  // Helper to read responsive logo height
+  const getResponsiveLogoHeight = (device: 'desktop' | 'tablet' | 'mobile'): SizeValue => {
+    const override = webSettings?.responsiveLayout?.[device]?.logoHeight;
+    if (override && typeof override.value === 'number') {
+      return { value: override.value, unit: override.unit || 'px' };
+    }
+    const fallbackVal = device === 'mobile' ? 38 : device === 'tablet' ? 44 : (webSettings?.logoHeight || 48);
+    return { value: fallbackVal, unit: 'px' };
+  };
+
+  // Helper to read responsive logo width
+  const getResponsiveLogoWidth = (device: 'desktop' | 'tablet' | 'mobile'): SizeValue => {
+    const override = webSettings?.responsiveLayout?.[device]?.logoWidth;
+    if (override && typeof override.value === 'number') {
+      return { value: override.value, unit: override.unit || 'px' };
+    }
+    return { value: webSettings?.logoWidth || 0, unit: 'px' };
+  };
+
+  // Helper to update responsive logo height
+  const setResponsiveLogoHeight = (device: 'desktop' | 'tablet' | 'mobile', value: number, unit: SizeUnit) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    const updatedResp: ResponsiveLayoutSettings = {
+      ...currentResp,
+      [device]: {
+        ...currentDev,
+        logoHeight: { value, unit },
+      },
+    };
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' && unit === 'px' ? { logoHeight: value } : {}),
+      responsiveLayout: updatedResp,
+    });
+  };
+
+  // Helper to update responsive logo width
+  const setResponsiveLogoWidth = (device: 'desktop' | 'tablet' | 'mobile', value: number, unit: SizeUnit) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    const updatedResp: ResponsiveLayoutSettings = {
+      ...currentResp,
+      [device]: {
+        ...currentDev,
+        logoWidth: { value, unit },
+      },
+    };
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' && unit === 'px' ? { logoWidth: value } : {}),
+      responsiveLayout: updatedResp,
+    });
+  };
+
+  // Helper to get responsive catalogLayoutMode
+  const getResponsiveCatalogLayoutMode = (device: 'desktop' | 'tablet' | 'mobile'): 'grid' | 'list' | 'compact' => {
+    const override = webSettings?.responsiveLayout?.[device]?.catalogLayoutMode;
+    if (override) return override as any;
+    return webSettings?.catalogLayoutMode || 'grid';
+  };
+
+  // Helper to update responsive catalogLayoutMode
+  const setResponsiveCatalogLayoutMode = (device: 'desktop' | 'tablet' | 'mobile', mode: 'grid' | 'list' | 'compact') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    const updatedResp: ResponsiveLayoutSettings = {
+      ...currentResp,
+      [device]: {
+        ...currentDev,
+        catalogLayoutMode: mode,
+      },
+    };
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { catalogLayoutMode: mode } : {}),
+      responsiveLayout: updatedResp,
+    });
+  };
+
+  // Helper to get responsive headerLayoutStyle
+  const getResponsiveHeaderLayout = (device: 'desktop' | 'tablet' | 'mobile'): string => {
+    const override = webSettings?.responsiveLayout?.[device]?.headerLayoutStyle;
+    if (override) return override;
+    return webSettings?.headerLayout || 'standard';
+  };
+
+  const setResponsiveHeaderLayout = (device: 'desktop' | 'tablet' | 'mobile', layout: string) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { headerLayout: layout as any } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, headerLayoutStyle: layout },
+      },
+    });
+  };
+
+  // Helper to get responsive footerLayoutStyle
+  const getResponsiveFooterLayout = (device: 'desktop' | 'tablet' | 'mobile'): string => {
+    const override = webSettings?.responsiveLayout?.[device]?.footerLayoutStyle;
+    if (override) return override;
+    return webSettings?.footerLayout || 'multi_column';
+  };
+
+  const setResponsiveFooterLayout = (device: 'desktop' | 'tablet' | 'mobile', layout: string) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { footerLayout: layout as any } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, footerLayoutStyle: layout },
+      },
+    });
+  };
+
+  // Helper to get responsive buttonBorderRadius
+  const getResponsiveButtonRadius = (device: 'desktop' | 'tablet' | 'mobile'): string => {
+    const override = webSettings?.responsiveLayout?.[device]?.buttonBorderRadius;
+    if (override) return override;
+    return webSettings?.buttonBorderRadius || 'rounded-xl';
+  };
+
+  const setResponsiveButtonRadius = (device: 'desktop' | 'tablet' | 'mobile', radius: string) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { buttonBorderRadius: radius as any } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, buttonBorderRadius: radius },
+      },
+    });
+  };
 
   // New Custom Symbol Form
   const [newSymbol, setNewSymbol] = useState<CustomSymbol>({
@@ -916,6 +1081,152 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
             </div>
           </div>
 
+          {/* RESPONSIVE DEVICE SWITCHER & LIVE PREVIEW BAR */}
+          <div className="bg-[#161619] p-4 rounded-2xl border border-[#2D2D33] space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-[#F3F4F6] text-xs">تنظیمات چیدمان اختصاصی بر اساس نوع دستگاه:</span>
+                <span className="text-[11px] text-[#8E9299]">
+                  (در حال ویرایش: <span className="text-[#C9A227] font-bold">
+                    {activeDevice === 'desktop' ? 'دسکتاپ 🖥️' : activeDevice === 'tablet' ? 'تبلت 📱' : 'موبایل 📱'}
+                  </span>)
+                </span>
+              </div>
+              <div className="flex items-center gap-1 bg-[#111113] p-1 rounded-xl border border-[#222225]">
+                <button
+                  type="button"
+                  onClick={() => setActiveDevice('desktop')}
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activeDevice === 'desktop'
+                      ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                      : 'text-[#8E9299] hover:text-[#E0E0E0]'
+                  }`}
+                >
+                  <Monitor className="w-4 h-4" />
+                  <span>دسکتاپ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDevice('tablet')}
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activeDevice === 'tablet'
+                      ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                      : 'text-[#8E9299] hover:text-[#E0E0E0]'
+                  }`}
+                >
+                  <Tablet className="w-4 h-4" />
+                  <span>تبلت</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveDevice('mobile')}
+                  className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activeDevice === 'mobile'
+                      ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                      : 'text-[#8E9299] hover:text-[#E0E0E0]'
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4" />
+                  <span>موبایل</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Simulated Live Preview Box */}
+            <div className="p-3 bg-[#111113] rounded-xl border border-[#222225] flex flex-col items-center gap-2">
+              <div className="w-full flex items-center justify-between text-[11px] text-[#8E9299] px-1">
+                <div className="flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5 text-[#C9A227]" />
+                  <span>پیش‌نمایش شبیه‌سازی زنده ظاهر برای: </span>
+                  <span className="text-[#F3F4F6] font-bold">
+                    {activeDevice === 'desktop' ? 'نمایشگر رایانه (عرض ۱۲۰۰px)' : activeDevice === 'tablet' ? 'تبلت (عرض ۷۶۸px)' : 'گوشی موبایل (عرض ۳۷۵px)'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span>ارتفاع لوگو: <b className="text-[#C9A227] font-mono">{getResponsiveLogoHeight(activeDevice).value}{getResponsiveLogoHeight(activeDevice).unit}</b></span>
+                  <span>چیدمان: <b className="text-[#C9A227]">{getResponsiveCatalogLayoutMode(activeDevice)}</b></span>
+                </div>
+              </div>
+
+              {/* Responsive Container simulation */}
+              <div
+                className={`transition-all duration-300 bg-[#161619] border border-[#2D2D33] rounded-2xl p-3 shadow-inner overflow-hidden flex flex-col gap-3 ${
+                  activeDevice === 'desktop'
+                    ? 'w-full max-w-2xl'
+                    : activeDevice === 'tablet'
+                    ? 'w-full max-w-[440px]'
+                    : 'w-full max-w-[320px]'
+                }`}
+              >
+                {/* Simulated Header */}
+                <div className="flex items-center justify-between border-b border-[#222225] pb-2">
+                  <div className="flex items-center gap-2">
+                    {webSettings.logoUrl ? (
+                      <img
+                        src={webSettings.logoUrl}
+                        alt="لوگو"
+                        style={{
+                          height: `${getResponsiveLogoHeight(activeDevice).value}${getResponsiveLogoHeight(activeDevice).unit}`,
+                          width: getResponsiveLogoWidth(activeDevice).value ? `${getResponsiveLogoWidth(activeDevice).value}${getResponsiveLogoWidth(activeDevice).unit}` : 'auto',
+                          maxHeight: '80px',
+                          objectFit: (webSettings.logoFit as any) || 'contain',
+                        }}
+                        className={`${webSettings.logoBorderRadius || 'rounded-none'} shrink-0`}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          height: `${getResponsiveLogoHeight(activeDevice).value}${getResponsiveLogoHeight(activeDevice).unit}`,
+                          width: `${getResponsiveLogoHeight(activeDevice).value}${getResponsiveLogoHeight(activeDevice).unit}`,
+                          maxHeight: '80px',
+                        }}
+                        className="bg-[#C9A227] text-slate-950 font-black flex items-center justify-center rounded-lg text-[10px] shrink-0"
+                      >
+                        لوگو
+                      </div>
+                    )}
+                    <span className="font-black text-[#F3F4F6] text-xs truncate">{webSettings.siteTitle || 'خطی‌نو'}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`px-2.5 py-1 text-[10px] font-bold bg-[#C9A227] text-slate-950 ${getResponsiveButtonRadius(activeDevice)}`}
+                  >
+                    سبد خرید
+                  </button>
+                </div>
+
+                {/* Simulated Catalog Mode */}
+                <div className="text-[10px] text-[#8E9299]">
+                  {getResponsiveCatalogLayoutMode(activeDevice) === 'list' ? (
+                    <div className="space-y-1">
+                      <div className="p-1.5 bg-[#111113] rounded border border-[#222225] flex justify-between items-center">
+                        <span>دفتر ۱۰۰ برگ سیمی (حالت سطری)</span>
+                        <span className="text-[#C9A227] font-mono">۴۵,۰۰۰ ت</span>
+                      </div>
+                      <div className="p-1.5 bg-[#111113] rounded border border-[#222225] flex justify-between items-center">
+                        <span>خودکار پنتر آبی ۰.۷</span>
+                        <span className="text-[#C9A227] font-mono">۱۸,۰۰۰ ت</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`grid gap-1.5 ${getResponsiveCatalogLayoutMode(activeDevice) === 'compact' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                      <div className="p-2 bg-[#111113] rounded border border-[#222225] text-center space-y-1">
+                        <div className="h-8 bg-[#222225] rounded flex items-center justify-center text-[9px] text-[#8E9299]">تصویر کالا</div>
+                        <div className="font-bold text-[#F3F4F6] truncate">دفتر مشق</div>
+                        <div className="text-[#C9A227] font-mono text-[9px]">۳۵,۰۰۰ ت</div>
+                      </div>
+                      <div className="p-2 bg-[#111113] rounded border border-[#222225] text-center space-y-1">
+                        <div className="h-8 bg-[#222225] rounded flex items-center justify-center text-[9px] text-[#8E9299]">تصویر کالا</div>
+                        <div className="font-bold text-[#F3F4F6] truncate">ماژیک هایلایتر</div>
+                        <div className="text-[#C9A227] font-mono text-[9px]">۲۴,۰۰۰ ت</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* SUB-TAB 0: APPEARANCE & THEME & BADGES */}
           {settingsSubTab === 'appearance' && (
             <div className="space-y-6">
@@ -926,7 +1237,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   <span>تغییر رنگ دکمه‌ها، گردی گوشه‌ها و حالت نمایش محصولات</span>
                 </div>
                 <p className="text-[11px] text-[#8E9299]">
-                  رنگ دکمه‌های خرید و عملیاتی سایت، گردی لبه‌ها (Border Radius) و نحوه چیدمان پیش‌فرض محصولات را تنظیم کنید.
+                  رنگ دکمه‌های خرید و عملیاتی سایت، گردی لبه‌ها (Border Radius) و نحوه چیدمان پیش‌فرض محصولات را برای <span className="text-[#C9A227] font-bold">دستگاه انتخاب‌شده ({activeDevice})</span> تنظیم کنید.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
@@ -947,14 +1258,19 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     </select>
                   </div>
 
-                  {/* Button Border Radius */}
+                  {/* Button Border Radius (Responsive) */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block">میزان گردی گوشه دکمه‌ها و کارت‌ها:</label>
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-[#8E9299] block">میزان گردی گوشه دکمه‌ها:</label>
+                      <span className="text-[10px] text-[#C9A227] font-bold">برای {activeDevice}</span>
+                    </div>
                     <select
-                      value={webSettings.buttonBorderRadius || 'rounded-xl'}
-                      onChange={(e) => setWebSettings({ ...webSettings, buttonBorderRadius: e.target.value as any })}
+                      value={getResponsiveButtonRadius(activeDevice)}
+                      onChange={(e) => setResponsiveButtonRadius(activeDevice, e.target.value)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none"
                     >
+                      <option value="rounded-none">صاف بدون گردی (Rounded None - 0px)</option>
+                      <option value="rounded-md">خیلی کم (Rounded MD - 6px)</option>
                       <option value="rounded-lg">کم (Rounded Small - 8px)</option>
                       <option value="rounded-xl">متوسط و استاندارد (Rounded Medium - 12px)</option>
                       <option value="rounded-2xl">بزرگ (Rounded Large - 16px)</option>
@@ -963,12 +1279,15 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     </select>
                   </div>
 
-                  {/* Catalog Layout Mode */}
+                  {/* Catalog Layout Mode (Responsive) */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block">نحوه نمایش پیش‌فرض محصولات (Layout):</label>
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-[#8E9299] block">نحوه نمایش محصولات (Layout):</label>
+                      <span className="text-[10px] text-[#C9A227] font-bold">برای {activeDevice}</span>
+                    </div>
                     <select
-                      value={webSettings.catalogLayoutMode || 'grid'}
-                      onChange={(e) => setWebSettings({ ...webSettings, catalogLayoutMode: e.target.value as any })}
+                      value={getResponsiveCatalogLayoutMode(activeDevice)}
+                      onChange={(e) => setResponsiveCatalogLayoutMode(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none"
                     >
                       <option value="grid">شبکه‌ای استاندارد (Grid)</option>
@@ -995,10 +1314,13 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان هدر (Header Layout):</label>
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان هدر (Header Layout):</label>
+                      <span className="text-[10px] text-[#C9A227] font-bold">برای {activeDevice}</span>
+                    </div>
                     <select
-                      value={webSettings.headerLayout || 'standard'}
-                      onChange={(e) => setWebSettings({ ...webSettings, headerLayout: e.target.value as any })}
+                      value={getResponsiveHeaderLayout(activeDevice)}
+                      onChange={(e) => setResponsiveHeaderLayout(activeDevice, e.target.value)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="standard">استاندارد تجاری (لوگو راست، سرچ وسط، ابزارها چپ)</option>
@@ -1009,10 +1331,13 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان فوتر و پاورقی (Footer Layout):</label>
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان فوتر و پاورقی (Footer Layout):</label>
+                      <span className="text-[10px] text-[#C9A227] font-bold">برای {activeDevice}</span>
+                    </div>
                     <select
-                      value={webSettings.footerLayout || 'multi_column'}
-                      onChange={(e) => setWebSettings({ ...webSettings, footerLayout: e.target.value as any })}
+                      value={getResponsiveFooterLayout(activeDevice)}
+                      onChange={(e) => setResponsiveFooterLayout(activeDevice, e.target.value)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="multi_column">چندستونه کامل (شامل مجوزها، نقشه، لینک‌ها و تماس)</option>
@@ -1939,7 +2264,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-[#F3F4F6] text-xs">لوگوی اصلی فروشگاه</span>
                       <span className="text-[10px] text-[#C9A227] font-mono font-bold">
-                        {webSettings.logoHeight || 48}px
+                        {getResponsiveLogoHeight(activeDevice).value}{getResponsiveLogoHeight(activeDevice).unit} ({activeDevice})
                       </span>
                     </div>
 
@@ -1949,8 +2274,8 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                           src={webSettings.logoUrl}
                           alt="لوگوی فروشگاه"
                           style={{
-                            height: `${Math.min(Math.max(webSettings.logoHeight || 48, 24), 130)}px`,
-                            width: webSettings.logoWidth ? `${Math.min(webSettings.logoWidth, 240)}px` : 'auto',
+                            height: `${getResponsiveLogoHeight(activeDevice).value}${getResponsiveLogoHeight(activeDevice).unit}`,
+                            width: getResponsiveLogoWidth(activeDevice).value ? `${getResponsiveLogoWidth(activeDevice).value}${getResponsiveLogoWidth(activeDevice).unit}` : 'auto',
                             maxHeight: '100%',
                             maxWidth: '100%',
                             objectFit: (webSettings.logoFit as any) || 'contain',
@@ -1993,55 +2318,135 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                       className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2.5 py-1.5 text-[10px] text-center font-mono outline-none text-[#E0E0E0]"
                     />
 
-                    {/* Logo Size Presets & Slider */}
+                    {/* Logo Size Presets & Unit Controls */}
                     <div className="pt-2 border-t border-[#222225] space-y-3">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-[#8E9299] font-bold">اندازه و ارتفاع آرم (پیکسل):</span>
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              min="20"
-                              max="240"
-                              value={webSettings.logoHeight || 48}
-                              onChange={(e) => setWebSettings({ ...webSettings, logoHeight: Number(e.target.value) })}
-                              className="w-14 bg-[#161619] border border-[#2D2D33] text-[#C9A227] font-mono font-bold text-center text-xs rounded px-1 py-0.5 outline-none"
-                            />
-                            <span className="text-[10px] text-[#8E9299]">px</span>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-6 gap-1">
-                          {[
-                            { label: 'کوچک', size: 36 },
-                            { label: 'عادی', size: 48 },
-                            { label: 'بزرگ', size: 72 },
-                            { label: 'خیلی‌بزرگ', size: 100 },
-                            { label: 'ماکزیمم', size: 140 },
-                            { label: 'غول‌آسا', size: 180 },
-                          ].map((preset) => (
+                      {/* Device Selector for Logo */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-[#8E9299] font-bold">دستگاه هدف:</span>
+                        <div className="flex items-center gap-1 bg-[#161619] p-0.5 rounded-lg border border-[#2D2D33]">
+                          {(['desktop', 'tablet', 'mobile'] as const).map((d) => (
                             <button
-                              key={preset.size}
+                              key={d}
                               type="button"
-                              onClick={() => setWebSettings({ ...webSettings, logoHeight: preset.size })}
-                              className={`py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                                (webSettings.logoHeight || 48) === preset.size
+                              onClick={() => setActiveDevice(d)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                activeDevice === d
                                   ? 'bg-[#C9A227] text-slate-950 shadow-xs'
-                                  : 'bg-[#161619] text-[#8E9299] hover:text-[#E0E0E0] border border-[#2D2D33]'
+                                  : 'text-[#8E9299] hover:text-[#E0E0E0]'
                               }`}
                             >
-                              {preset.label}
+                              {d === 'desktop' ? 'دسکتاپ' : d === 'tablet' ? 'تبلت' : 'موبایل'}
                             </button>
                           ))}
                         </div>
-                        <input
-                          type="range"
-                          min="20"
-                          max="240"
-                          step="2"
-                          value={webSettings.logoHeight || 48}
-                          onChange={(e) => setWebSettings({ ...webSettings, logoHeight: Number(e.target.value) })}
-                          className="w-full accent-[#C9A227] cursor-pointer h-1.5 bg-[#222225] rounded-lg"
-                        />
+                      </div>
+
+                      {/* Height and Unit */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-[#8E9299] font-bold">ارتفاع لوگو در {activeDevice}:</span>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="1"
+                              max="300"
+                              value={getResponsiveLogoHeight(activeDevice).value}
+                              onChange={(e) => {
+                                const current = getResponsiveLogoHeight(activeDevice);
+                                setResponsiveLogoHeight(activeDevice, Number(e.target.value), current.unit);
+                              }}
+                              className="w-14 bg-[#161619] border border-[#2D2D33] text-[#C9A227] font-mono font-bold text-center text-xs rounded px-1 py-0.5 outline-none"
+                            />
+                            <select
+                              value={getResponsiveLogoHeight(activeDevice).unit}
+                              onChange={(e) => {
+                                const current = getResponsiveLogoHeight(activeDevice);
+                                setResponsiveLogoHeight(activeDevice, current.value, e.target.value as SizeUnit);
+                              }}
+                              className="bg-[#161619] border border-[#2D2D33] text-[#E0E0E0] text-[10px] rounded px-1 py-0.5 outline-none font-mono"
+                            >
+                              <option value="px">px</option>
+                              <option value="rem">rem</option>
+                              <option value="%">%</option>
+                              <option value="vw">vw</option>
+                              <option value="vh">vh</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {getResponsiveLogoHeight(activeDevice).unit === 'px' && (
+                          <>
+                            <div className="grid grid-cols-6 gap-1">
+                              {[
+                                { label: 'کوچک', size: 36 },
+                                { label: 'عادی', size: 48 },
+                                { label: 'بزرگ', size: 72 },
+                                { label: 'خیلی‌بزرگ', size: 100 },
+                                { label: 'ماکزیمم', size: 140 },
+                                { label: 'غول‌آسا', size: 180 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.size}
+                                  type="button"
+                                  onClick={() => setResponsiveLogoHeight(activeDevice, preset.size, 'px')}
+                                  className={`py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                    getResponsiveLogoHeight(activeDevice).value === preset.size
+                                      ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                                      : 'bg-[#161619] text-[#8E9299] hover:text-[#E0E0E0] border border-[#2D2D33]'
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                            <input
+                              type="range"
+                              min="20"
+                              max="240"
+                              step="2"
+                              value={getResponsiveLogoHeight(activeDevice).value}
+                              onChange={(e) => setResponsiveLogoHeight(activeDevice, Number(e.target.value), 'px')}
+                              className="w-full accent-[#C9A227] cursor-pointer h-1.5 bg-[#222225] rounded-lg"
+                            />
+                          </>
+                        )}
+                      </div>
+
+                      {/* Width and Unit */}
+                      <div className="space-y-1.5 pt-2 border-t border-[#222225]">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div>
+                            <span className="text-[#8E9299] font-bold">عرض لوگو در {activeDevice}:</span>
+                            <span className="text-[9px] text-slate-500 mr-1">(۰ = خودکار)</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              max="600"
+                              value={getResponsiveLogoWidth(activeDevice).value}
+                              onChange={(e) => {
+                                const current = getResponsiveLogoWidth(activeDevice);
+                                setResponsiveLogoWidth(activeDevice, Number(e.target.value), current.unit);
+                              }}
+                              className="w-14 bg-[#161619] border border-[#2D2D33] text-[#C9A227] font-mono font-bold text-center text-xs rounded px-1 py-0.5 outline-none"
+                            />
+                            <select
+                              value={getResponsiveLogoWidth(activeDevice).unit}
+                              onChange={(e) => {
+                                const current = getResponsiveLogoWidth(activeDevice);
+                                setResponsiveLogoWidth(activeDevice, current.value, e.target.value as SizeUnit);
+                              }}
+                              className="bg-[#161619] border border-[#2D2D33] text-[#E0E0E0] text-[10px] rounded px-1 py-0.5 outline-none font-mono"
+                            >
+                              <option value="px">px</option>
+                              <option value="rem">rem</option>
+                              <option value="%">%</option>
+                              <option value="vw">vw</option>
+                              <option value="vh">vh</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Frame / Border Toggle & Corner Rounding */}

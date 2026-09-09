@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -23,8 +23,11 @@ import {
   RefreshCw,
   Copy,
   Eye,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
-import { formatToman, toPersianDigits } from '../../lib/utils';
+import { api } from '../../lib/api';
+import { formatToman, toPersianDigits, generateValidEan13, isValidBarcodeChecksum, toEnglishDigits } from '../../lib/utils';
 import { Product, PriceTier } from '../../types';
 import { BarcodeSvg } from '../common/BarcodeSvg';
 
@@ -98,6 +101,23 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
   // Barcode & QR Code Format
   const [barcodeType, setBarcodeType] = useState<'barcode' | 'qrcode' | 'both'>('barcode');
+  const [barcodeFormat, setBarcodeFormat] = useState<'CODE128' | 'EAN13'>('CODE128');
+  const [showEanConfirmDialog, setShowEanConfirmDialog] = useState<boolean>(false);
+  const [productsToFix, setProductsToFix] = useState<LabelItemConfig[]>([]);
+  const [isFixingEan, setIsFixingEan] = useState<boolean>(false);
+  const tempEanMapRef = useRef<Map<string, string>>(new Map());
+
+  // Function to resolve barcode for printing (EAN13 or CODE128)
+  const resolvePrintBarcode = (p: Product, format: 'CODE128' | 'EAN13'): { value: string; needsFix: boolean } => {
+    const raw = toEnglishDigits(p.barcode || '');
+    if (format === 'CODE128') return { value: raw || p.code || p.id, needsFix: false };
+    if (isValidBarcodeChecksum(raw, 'EAN13')) return { value: raw, needsFix: false };
+    if (!tempEanMapRef.current.has(p.id)) {
+      tempEanMapRef.current.set(p.id, generateValidEan13());
+    }
+    return { value: tempEanMapRef.current.get(p.id)!, needsFix: true };
+  };
+
   const [barcodeHeight, setBarcodeHeight] = useState<number>(24); // in px
   const [barcodeLineWidth, setBarcodeLineWidth] = useState<number>(1.2);
   const [barcodeWidthPercent, setBarcodeWidthPercent] = useState<number>(90); // 40% to 100%
@@ -346,7 +366,54 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   };
 
   const handlePrint = () => {
+    if (barcodeFormat === 'EAN13' && barcodeType !== 'qrcode') {
+      const itemsNeedingFix = selectedItems.filter((item) => {
+        const res = resolvePrintBarcode(item.product, 'EAN13');
+        return res.needsFix;
+      });
+
+      if (itemsNeedingFix.length > 0) {
+        setProductsToFix(itemsNeedingFix);
+        setShowEanConfirmDialog(true);
+        return;
+      }
+    }
+
     window.print();
+  };
+
+  const handleConfirmFixEan = async () => {
+    setIsFixingEan(true);
+    try {
+      const updatedMap = new Map<string, string>();
+      for (const item of productsToFix) {
+        const newEan = tempEanMapRef.current.get(item.product.id) || generateValidEan13();
+        await api.updateProduct(item.product.id, { barcode: newEan });
+        updatedMap.set(item.product.id, newEan);
+      }
+
+      setSelectedItems((prev) =>
+        prev.map((it) => {
+          if (updatedMap.has(it.product.id)) {
+            return {
+              ...it,
+              product: { ...it.product, barcode: updatedMap.get(it.product.id)! },
+            };
+          }
+          return it;
+        })
+      );
+
+      setShowEanConfirmDialog(false);
+      setProductsToFix([]);
+      setTimeout(() => {
+        window.print();
+      }, 300);
+    } catch (err: any) {
+      alert('خطا در به‌روزرسانی بارکد کالاها: ' + (err.message || 'خطای ناشناخته'));
+    } finally {
+      setIsFixingEan(false);
+    }
   };
 
   // Font size classes
@@ -563,11 +630,26 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       onChange={(e) => setBarcodeType(e.target.value as any)}
                       className="bg-[#161619] border border-[#2D2D33] rounded-lg px-2 py-0.5 text-[11px] font-bold text-[#E0E0E0] focus:outline-none"
                     >
-                      <option value="barcode">بارکد میله‌ای (CODE128)</option>
+                      <option value="barcode">بارکد میله‌ای</option>
                       <option value="qrcode">کد دوبعدی QR</option>
                       <option value="both">ترکیب بارکد + QR</option>
                     </select>
                   </div>
+
+                  {/* Barcode Format (CODE128 vs EAN-13) */}
+                  {barcodeType !== 'qrcode' && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-[#8E9299]">فرمت بارکد میله‌ای:</span>
+                      <select
+                        value={barcodeFormat}
+                        onChange={(e) => setBarcodeFormat(e.target.value as 'CODE128' | 'EAN13')}
+                        className="bg-[#161619] border border-[#2D2D33] rounded-lg px-2 py-0.5 text-[11px] font-bold text-[#E0E0E0] focus:outline-none"
+                      >
+                        <option value="CODE128">CODE128 (پیش‌فرض، هر متن/عددی)</option>
+                        <option value="EAN13">EAN-13 (فقط ۱۳ رقمی استاندارد)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pagination if multiple pages */}
@@ -631,7 +713,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       const p = item.product;
                       const displayName = item.customName || p.name;
                       const priceVal = getProductPrice(item);
-                      const barcodeVal = p.barcode || p.code || '00000000';
+                      const barcodeResolved = resolvePrintBarcode(p, barcodeFormat);
+                      const barcodeVal = barcodeResolved.value;
 
                       return (
                         <div
@@ -705,6 +788,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                             <BarcodeSvg
                               value={barcodeVal}
                               type={barcodeType}
+                              format={barcodeFormat}
                               height={barcodeHeight}
                               width={barcodeLineWidth}
                               displayValue={includeBarcodeDigits}
@@ -1419,6 +1503,85 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                       className="w-full accent-[#C9A227] cursor-pointer"
                     />
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EAN-13 Fix Confirmation Modal */}
+          {showEanConfirmDialog && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-[#161619] border border-[#2D2D33] rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 text-right">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-[#F3F4F6]">
+                      استانداردسازی بارکد به EAN-13
+                    </h3>
+                    <p className="text-xs text-[#8E9299] mt-0.5">
+                      تعدادی از کالاهای انتخاب‌شده فاقد بارکد ۱۳ رقمی معتبر هستند.
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-[#CCCCCC] leading-relaxed">
+                  برای چاپ در فرمت <span className="font-mono text-[#C9A227] font-bold">EAN-13</span>، بارکدهای معتبر با پیش‌شماره ایران (۶۲۶) و رقم کنترلی محاسبه شده‌اند. با تأیید شما، این بارکدها در مشخصات کالا ذخیره شده و فرآیند چاپ آغاز می‌شود.
+                </p>
+
+                <div className="max-h-48 overflow-y-auto border border-[#2D2D33] rounded-xl bg-[#0A0A0B] divide-y divide-[#1C1C20]">
+                  {productsToFix.map((item) => {
+                    const newBarcode = tempEanMapRef.current.get(item.product.id) || '';
+                    return (
+                      <div key={item.product.id} className="p-2.5 flex items-center justify-between text-xs">
+                        <div className="font-medium text-[#F3F4F6] truncate max-w-[200px]">
+                          {item.customName || item.product.name}
+                        </div>
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                          <span className="text-slate-500 line-through">
+                            {item.product.barcode || 'ندارد'}
+                          </span>
+                          <span className="text-[#8E9299]">←</span>
+                          <span className="text-[#C9A227] font-bold bg-[#C9A227]/10 px-1.5 py-0.5 rounded border border-[#C9A227]/30">
+                            {newBarcode}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#2D2D33]">
+                  <button
+                    type="button"
+                    disabled={isFixingEan}
+                    onClick={() => {
+                      setShowEanConfirmDialog(false);
+                      setProductsToFix([]);
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#8E9299] hover:text-[#F3F4F6] hover:bg-[#222225] transition-colors cursor-pointer"
+                  >
+                    انصراف
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isFixingEan}
+                    onClick={handleConfirmFixEan}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-[#C9A227] hover:bg-[#b08d20] text-black transition-colors flex items-center gap-1.5 cursor-pointer shadow-lg shadow-[#C9A227]/10"
+                  >
+                    {isFixingEan ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>در حال به‌روزرسانی...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>تأیید، ثبت در دیتابیس و چاپ</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

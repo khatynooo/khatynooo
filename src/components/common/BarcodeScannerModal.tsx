@@ -46,6 +46,8 @@ interface BarcodeScannerModalProps {
   subtitle?: string;
   allowContinuous?: boolean;
   defaultCurvedSurfaceMode?: boolean;
+  continuousWorkflow?: boolean;
+  isPaused?: boolean;
 }
 
 const ALL_FORMATS = [
@@ -70,6 +72,8 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   subtitle = 'تشخیص خودکار و فوق‌سریع انواع بارکدهای خطی، جعبه، سطوح استوانه‌ای و برچسب‌های ریز',
   allowContinuous = true,
   defaultCurvedSurfaceMode = true,
+  continuousWorkflow = false,
+  isPaused = false,
 }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -165,13 +169,27 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     } catch (_) {}
   }, [soundEnabled]);
 
+  useEffect(() => {
+    if (continuousWorkflow) {
+      if (isPaused) {
+        isProcessingScanRef.current = true;
+      } else {
+        const timer = setTimeout(() => {
+          isProcessingScanRef.current = false;
+          setLastScannedCode(null);
+        }, 350);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isPaused, continuousWorkflow]);
+
   const handleSuccessfulScan = useCallback(
     (code: string) => {
       const clean = toEnglishDigits(code).replace(/[\r\n\t]/g, '').trim();
       if (!clean || clean.length < 2) return;
 
-      // In non-continuous mode, prevent multiple firings while closing
-      if (isProcessingScanRef.current && !continuousMode) return;
+      // In non-continuous mode or continuousWorkflow mode, prevent multiple firings
+      if (isProcessingScanRef.current) return;
 
       // In continuous mode, avoid duplicate scan of the SAME code within 1.8 seconds
       if (continuousMode && scannedHistory.length > 0 && scannedHistory[0].code === clean) {
@@ -195,6 +213,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         } catch (_) {}
       }
 
+      if (continuousWorkflow) {
+        // Continuous POS / Accounting Workflow: notify parent immediately, keep scanner paused until parent unlocks
+        onScan(clean);
+        return;
+      }
+
       if (continuousMode) {
         setScannedHistory((prev) => [
           { code: clean, time: new Date().toISOString() },
@@ -214,20 +238,20 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         }, 250);
       }
     },
-    [continuousMode, onScan, onClose, playScanBeep, scannedHistory]
+    [continuousMode, continuousWorkflow, onScan, onClose, playScanBeep, scannedHistory]
   );
 
   const handleFrameDecoded = useCallback(
     (rawDecodedText: string, _format?: string) => {
       if (!rawDecodedText) return;
-      if (isProcessingScanRef.current && !continuousMode) return;
+      if (isProcessingScanRef.current) return;
 
       const clean = toEnglishDigits(rawDecodedText).replace(/[\r\n\t]/g, '').trim();
       if (clean.length < 2) return;
 
       handleSuccessfulScan(clean);
     },
-    [handleSuccessfulScan, continuousMode]
+    [handleSuccessfulScan]
   );
 
   // Apply Hardware or Digital Zoom

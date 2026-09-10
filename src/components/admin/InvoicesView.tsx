@@ -32,13 +32,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Pencil,
+  Camera,
+  Barcode,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, formatNumber } from '../../lib/utils';
+import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, findProductByBarcodeOrCode } from '../../lib/utils';
 import { SalesInvoice, PurchaseInvoice, ReturnInvoice, ReturnInvoiceItem, Customer, Supplier, Product, Warehouse, Category, ChequeInfo, PaymentMethod } from '../../types';
 import { useToast } from '../common/Toast';
 import { ReceiptModal } from './ReceiptModal';
 import { QuickAddProductModal } from './QuickAddProductModal';
+import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
+import { ProductScanQuantityModal } from './ProductScanQuantityModal';
+import { UnknownBarcodeModal } from './UnknownBarcodeModal';
+import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 
 export const InvoicesView: React.FC = () => {
   const { showToast } = useToast();
@@ -85,6 +91,17 @@ export const InvoicesView: React.FC = () => {
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [quickAddInitialName, setQuickAddInitialName] = useState('');
   const [checkingMarketProductId, setCheckingMarketProductId] = useState<string | null>(null);
+
+  // Barcode Scanner & Quantity Workflow in New Purchase Modal
+  const [isPurchaseScannerOpen, setIsPurchaseScannerOpen] = useState(false);
+  const [isPurchaseScannerPaused, setIsPurchaseScannerPaused] = useState(false);
+  const [purchaseQuantityModal, setPurchaseQuantityModal] = useState<{
+    product: Product;
+    mode: 'unit' | 'box';
+    currentQtyInInvoice: number;
+  } | null>(null);
+  const [purchaseUnknownBarcode, setPurchaseUnknownBarcode] = useState<string | null>(null);
+  const [purchaseQuickAddBarcode, setPurchaseQuickAddBarcode] = useState<string>('');
 
   // New Return Invoice Modal
   const [showNewReturnModal, setShowNewReturnModal] = useState(false);
@@ -289,7 +306,7 @@ export const InvoicesView: React.FC = () => {
       if (existing) {
         return prev.map((i) =>
           i.productId === product.id
-            ? { ...i, quantity: i.quantity + 10, total: (i.quantity + 10) * i.buyPrice }
+            ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.buyPrice }
             : i
         );
       }
@@ -298,18 +315,124 @@ export const InvoicesView: React.FC = () => {
         {
           productId: product.id,
           productName: product.name,
-          quantity: 10,
+          quantity: 1,
           buyPrice: product.buyPrice,
-          total: 10 * product.buyPrice,
+          total: product.buyPrice,
         },
       ];
     });
   };
 
+  const processPurchaseBarcodeScan = (scannedCode: string) => {
+    const clean = toEnglishDigits(scannedCode).replace(/[\r\n\t]/g, '').trim();
+    if (!clean) return;
+
+    setIsPurchaseScannerPaused(true);
+
+    const match = findProductByBarcodeOrCode<Product>(products, clean);
+    if (!match) {
+      setPurchaseUnknownBarcode(clean);
+      return;
+    }
+
+    const cleanedQuery = clean;
+    const cleanedBoxBarcode = toEnglishDigits((match as any).boxBarcode || '').trim();
+    const isBox = Boolean(cleanedBoxBarcode) && cleanedBoxBarcode === cleanedQuery;
+
+    const existing = purchaseItems.find((i) => i.productId === match.id);
+    const currentQty = existing ? existing.quantity : 0;
+
+    setPurchaseQuantityModal({
+      product: match,
+      mode: isBox ? 'box' : 'unit',
+      currentQtyInInvoice: currentQty,
+    });
+  };
+
+  const handleConfirmPurchaseQuantity = (qty: number) => {
+    if (!purchaseQuantityModal) return;
+    const { product } = purchaseQuantityModal;
+
+    setPurchaseItems((prev) => {
+      const existing = prev.find((i) => i.productId === product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.productId === product.id
+            ? { ...i, quantity: i.quantity + qty, total: (i.quantity + qty) * i.buyPrice }
+            : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          productName: product.name,
+          quantity: qty,
+          buyPrice: product.buyPrice,
+          total: qty * product.buyPrice,
+        },
+      ];
+    });
+
+    showToast(`«${product.name}» (${toPersianDigits(qty)} ${product.unit || 'عدد'}) به فاکتور خرید اضافه شد.`, 'success');
+    setPurchaseQuantityModal(null);
+
+    if (isPurchaseScannerOpen) {
+      setIsPurchaseScannerPaused(false);
+    }
+  };
+
+  const handleCancelPurchaseQuantity = () => {
+    setPurchaseQuantityModal(null);
+    if (isPurchaseScannerOpen) {
+      setIsPurchaseScannerPaused(false);
+    }
+  };
+
+  const handleRetryPurchaseUnknownBarcode = () => {
+    setPurchaseUnknownBarcode(null);
+    if (isPurchaseScannerOpen) {
+      setIsPurchaseScannerPaused(false);
+    }
+  };
+
+  const handleQuickAddPurchaseUnknownBarcode = () => {
+    const code = purchaseUnknownBarcode || '';
+    setPurchaseQuickAddBarcode(code);
+    setPurchaseUnknownBarcode(null);
+    setShowQuickAddModal(true);
+  };
+
+  const handleCancelPurchaseUnknownBarcode = () => {
+    setPurchaseUnknownBarcode(null);
+    if (isPurchaseScannerOpen) {
+      setIsPurchaseScannerPaused(false);
+    }
+  };
+
+  // Hardware scanner listener for Purchase Invoice
+  useHardwareBarcodeScanner({
+    onScan: (scannedCode) => {
+      if (showNewPurchaseModal) {
+        processPurchaseBarcodeScan(scannedCode);
+      }
+    },
+    enabled:
+      showNewPurchaseModal &&
+      !purchaseQuantityModal &&
+      !purchaseUnknownBarcode &&
+      !showQuickAddModal,
+  });
+
   const handleProductCreatedFromModal = (newProd: Product) => {
     setProducts((prev) => [newProd, ...prev]);
-    handleAddPurchaseItem(newProd);
-    showToast(`کالای «${newProd.name}» تعریف شد و به اقلام فاکتور خرید افزوده گردید.`, 'success');
+    setShowQuickAddModal(false);
+    showToast(`کالای «${newProd.name}» با موفقیت تعریف شد.`, 'success');
+    setPurchaseQuantityModal({
+      product: newProd,
+      mode: 'unit',
+      currentQtyInInvoice: 0,
+    });
   };
 
   const handleAddReturnItem = (product: Product) => {
@@ -1285,22 +1408,37 @@ export const InvoicesView: React.FC = () => {
 
               {/* Searchable Product Selector Box */}
               <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="font-bold text-slate-800 flex items-center gap-1.5">
                     <Search className="w-4 h-4 text-indigo-600" />
                     <span>جستجو و انتخاب کالا برای فاکتور خرید:</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuickAddInitialName(productSearchTerm);
-                      setShowQuickAddModal(true);
-                    }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[11px] shadow-xs cursor-pointer transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ تعریف کالای جدید</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPurchaseScannerOpen(true);
+                        setIsPurchaseScannerPaused(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white rounded-xl font-bold text-xs shadow-sm cursor-pointer transition-colors"
+                      title="اسکن بارکد با دوربین برای افزودن به فاکتور خرید"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>[ 📷 اسکن بارکد ]</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickAddInitialName(productSearchTerm);
+                        setPurchaseQuickAddBarcode('');
+                        setShowQuickAddModal(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[11px] shadow-xs cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ تعریف کالای جدید</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Search Input */}
@@ -1913,11 +2051,56 @@ export const InvoicesView: React.FC = () => {
       {/* Quick Add Product Modal */}
       <QuickAddProductModal
         isOpen={showQuickAddModal}
-        onClose={() => setShowQuickAddModal(false)}
+        onClose={() => {
+          setShowQuickAddModal(false);
+          if (isPurchaseScannerOpen) setIsPurchaseScannerPaused(false);
+        }}
         onProductCreated={handleProductCreatedFromModal}
         categories={categories}
         initialName={quickAddInitialName}
+        initialBarcode={purchaseQuickAddBarcode}
       />
+
+      {/* Purchase Invoice Camera Barcode Scanner Modal */}
+      <BarcodeScannerModal
+        isOpen={isPurchaseScannerOpen}
+        onClose={() => {
+          setIsPurchaseScannerOpen(false);
+          setIsPurchaseScannerPaused(false);
+          setPurchaseQuantityModal(null);
+          setPurchaseUnknownBarcode(null);
+        }}
+        onScan={(scannedCode) => {
+          processPurchaseBarcodeScan(scannedCode);
+        }}
+        continuousWorkflow={true}
+        isPaused={isPurchaseScannerPaused}
+        title="اسکنر سریع بارکد در فاکتور خرید"
+        subtitle="برای ثبت اقلام فاکتور خرید، بارکد را اسکن کنید، سپس تعداد را تایید کنید تا اسکنر خودکار برای قلم بعدی فعال شود."
+      />
+
+      {/* Purchase Product Scan Quantity Modal */}
+      {purchaseQuantityModal && (
+        <ProductScanQuantityModal
+          product={purchaseQuantityModal.product}
+          mode={purchaseQuantityModal.mode}
+          targetType="purchase"
+          currentQtyInInvoice={purchaseQuantityModal.currentQtyInInvoice}
+          confirmButtonText="تأیید و اسکن بعدی"
+          onCancel={handleCancelPurchaseQuantity}
+          onConfirm={handleConfirmPurchaseQuantity}
+        />
+      )}
+
+      {/* Purchase Unknown Barcode Modal */}
+      {purchaseUnknownBarcode && (
+        <UnknownBarcodeModal
+          barcode={purchaseUnknownBarcode}
+          onRetry={handleRetryPurchaseUnknownBarcode}
+          onQuickAdd={handleQuickAddPurchaseUnknownBarcode}
+          onCancel={handleCancelPurchaseUnknownBarcode}
+        />
+      )}
 
       {/* Full-Screen Multi-Image Receipt Viewer Modal */}
       {viewingReceiptUrls.length > 0 && (

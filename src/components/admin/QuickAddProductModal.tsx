@@ -37,6 +37,7 @@ interface QuickAddProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialName?: string;
+  initialBarcode?: string;
   categories: Category[];
   unitDefs?: UnitDefinition[];
   onProductCreated: (newProduct: Product) => void;
@@ -46,6 +47,7 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
   isOpen,
   onClose,
   initialName = '',
+  initialBarcode = '',
   categories,
   unitDefs: propUnitDefs,
   onProductCreated,
@@ -137,7 +139,7 @@ export const QuickAddProductModal: React.FC<QuickAddProductModalProps> = ({
       setFormData({
         name: initialName,
         code: generateProductCode(),
-        barcode: generateValidEan13(),
+        barcode: initialBarcode ? toEnglishDigits(initialBarcode).trim() : generateValidEan13(),
         boxBarcode: '',
         categoryId: initialCatId,
         subCategoryId: '',

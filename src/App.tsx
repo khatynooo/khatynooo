@@ -514,7 +514,7 @@ function AdminPortal() {
       onTabChange={handleTabChange}
       onBackToStore={() => navigate('/')}
     >
-      {currentTab === 'dashboard' && <DashboardView />}
+      {currentTab === 'dashboard' && <DashboardView onNavigate={handleTabChange} />}
       {currentTab === 'pos' && <PosView />}
       {currentTab === 'products' && <ProductsView />}
       {currentTab === 'categories_units' && <CategoriesUnitsView />}

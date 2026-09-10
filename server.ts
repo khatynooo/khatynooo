@@ -813,13 +813,14 @@ app.post('/api/pos/checkout', optionalAuthenticateToken, async (req: AuthRequest
 
   try {
     const storeSettings = await db.getStoreSettings();
+    const finalTaxRate = req.body.taxRate !== undefined ? Number(req.body.taxRate) : storeSettings.taxRate;
     const result = await db.executePosCheckout({
       customerId,
       customerName: customerName || 'مشتری نقدی حضوری',
       customerMobile,
       items,
       discount: Number(discount),
-      taxRate: storeSettings.taxRate,
+      taxRate: finalTaxRate,
       paymentMethod,
       paidAmount: Number(paidAmount),
       cashAmount: Number(cashAmount) || 0,

@@ -62,7 +62,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   const menuItems: Array<{ id: AdminTab; label: string; icon: any; roles: UserRole[] }> = [
     { id: 'dashboard', label: 'داشبورد مدیریتی', icon: LayoutDashboard, roles: ['admin', 'site_manager', 'seller', 'accountant', 'chief_accountant'] },
-    { id: 'pos', label: 'صندوق فروش سریع (POS)', icon: ShoppingCart, roles: ['admin', 'seller', 'site_manager', 'chief_accountant'] },
+    { id: 'pos', label: 'صندوق فروش سریع (POS)', icon: ShoppingCart, roles: ['admin', 'seller', 'site_manager', 'accountant', 'chief_accountant'] },
     { id: 'products', label: 'کالاها و قیمت‌گذاری ۵ سطحی', icon: Package, roles: ['admin', 'site_manager', 'accountant', 'chief_accountant'] },
     { id: 'categories_units', label: 'دسته‌بندی و واحدهای شمارش', icon: Layers, roles: ['admin', 'site_manager', 'chief_accountant'] },
     { id: 'inventory', label: 'موجودی و کسری انبار', icon: Package, roles: ['admin', 'seller', 'site_manager', 'accountant', 'chief_accountant'] },

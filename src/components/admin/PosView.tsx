@@ -138,6 +138,18 @@ export const PosView: React.FC = () => {
   // Continuous Scan Mode (اسکن پیوسته)
   const [continuousScanMode, setContinuousScanMode] = useState<boolean>(true);
 
+  // VAT rate state (0% exempt or 10% standard VAT)
+  const [vatRate, setVatRate] = useState<number>(10);
+
+  // Cash Received & Change Return
+  const [cashReceived, setCashReceived] = useState<number | ''>('');
+
+  // Cart Clear Confirmation Modal
+  const [showClearConfirm, setShowClearConfirm] = useState<boolean>(false);
+
+  // Scan debounce ref to prevent accidental duplicate triggers
+  const lastScanRef = useRef<{ code: string; timestamp: number }>({ code: '', timestamp: 0 });
+
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -404,6 +416,13 @@ export const PosView: React.FC = () => {
     const clean = toEnglishDigits(scannedCode).replace(/[\r\n\t]/g, '').trim();
     if (!clean) return;
 
+    // Debounce duplicate rapid scan events (e.g. within 700ms)
+    const now = Date.now();
+    if (clean === lastScanRef.current.code && now - lastScanRef.current.timestamp < 700) {
+      return;
+    }
+    lastScanRef.current = { code: clean, timestamp: now };
+
     // Immediately pause the camera scanner to prevent duplicate frames
     setIsCameraScannerPaused(true);
 
@@ -551,7 +570,7 @@ export const PosView: React.FC = () => {
 
   // Calculations
   const subtotal = cartItems.reduce((sum, item) => sum + item.selectedPrice * item.quantity - item.discount, 0);
-  const tax = Math.round((subtotal * 10) / 100); // 10% VAT
+  const tax = vatRate > 0 ? Math.round((subtotal * vatRate) / 100) : 0;
   const finalAmount = Math.max(0, subtotal + tax - overallDiscount);
 
   // Quick Customer Add
@@ -635,6 +654,7 @@ export const PosView: React.FC = () => {
               paidAmount: finalAmount,
               posResult: posRes,
               warehouseId: selectedWarehouseId || 'wh_central',
+              taxRate: vatRate,
             });
 
             if (checkoutRes.success) {
@@ -648,6 +668,7 @@ export const PosView: React.FC = () => {
                 setShowReceiptModal(true);
                 setCartItems([]);
                 setOverallDiscount(0);
+                setCashReceived('');
                 loadData(); // reload product stocks
                 showToast('تراکنش کارتخوان تایید و فاکتور فروش صادر شد.', 'success');
               }, 1200);
@@ -680,6 +701,7 @@ export const PosView: React.FC = () => {
                 ? { chequeNumber, sayadId, dueDate: chequeDueDate, bankName, amount: finalAmount }
                 : undefined,
             warehouseId: selectedWarehouseId || 'wh_central',
+            taxRate: vatRate,
           });
 
           if (checkoutRes.success) {
@@ -691,6 +713,7 @@ export const PosView: React.FC = () => {
             setShowReceiptModal(true);
             setCartItems([]);
             setOverallDiscount(0);
+            setCashReceived('');
             loadData();
             showToast('فاکتور با موفقیت ثبت گردید.', 'success');
           } else {
@@ -704,6 +727,77 @@ export const PosView: React.FC = () => {
       setIsCheckingOut(false);
     }
   };
+
+  // Keyboard Shortcuts Listener for High-Speed Cashier Usage (F1 - F10)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if inside a modal other than base POS
+      if (
+        quantityModal ||
+        unknownBarcode ||
+        showAddCustomerModal ||
+        showQuickAddModal ||
+        showReceiptModal
+      ) {
+        return;
+      }
+
+      if (e.key === 'F1') {
+        e.preventDefault();
+        barcodeRef.current?.focus();
+        showToast('ورودی بارکد فعال شد (F1)', 'info');
+      } else if (e.key === 'F2') {
+        e.preventDefault();
+        setShowAddCustomerModal(true);
+      } else if (e.key === 'F3') {
+        e.preventDefault();
+        const tiers: PriceTier[] = ['shop1', 'shop2', 'shop3', 'wholesale', 'manual'];
+        setActiveTier((prev) => {
+          const nextIdx = (tiers.indexOf(prev) + 1) % tiers.length;
+          const newTier = tiers[nextIdx];
+          showToast(`سطح قیمت به ${newTier} تغییر یافت (F3)`, 'info');
+          return newTier;
+        });
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        handleHoldAndStartNew();
+      } else if (e.key === 'F5') {
+        e.preventDefault();
+        api.listSalesDrafts().then((res) => setHeldInvoices(res?.drafts || [])).catch(() => {});
+        setShowHeldList(true);
+      } else if (e.key === 'F8') {
+        e.preventDefault();
+        setIsCameraScannerOpen((prev) => !prev);
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        if (cartItems.length > 0) {
+          setShowClearConfirm(true);
+        }
+      } else if (e.key === 'F10') {
+        e.preventDefault();
+        if (cartItems.length > 0 && !isCheckingOut) {
+          handleExecuteCheckout();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    cartItems,
+    isCheckingOut,
+    quantityModal,
+    unknownBarcode,
+    showAddCustomerModal,
+    showQuickAddModal,
+    showReceiptModal,
+    activeTier,
+    selectedCustomerId,
+    selectedWarehouseId,
+    overallDiscount,
+    paymentMethod,
+    vatRate,
+  ]);
 
   // Combined Goods & Services for POS
   const cleanSearch = toEnglishDigits(searchQuery).trim().toLowerCase();
@@ -1049,10 +1143,12 @@ export const PosView: React.FC = () => {
               </div>
               {cartItems.length > 0 && (
                 <button
-                  onClick={() => setCartItems([])}
-                  className="text-xs text-rose-600 hover:text-rose-700 font-bold cursor-pointer"
+                  onClick={() => setShowClearConfirm(true)}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 cursor-pointer"
+                  title="کلید میانبر: F9"
                 >
-                  پاک کردن همه
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>پاک کردن همه (F9)</span>
                 </button>
               )}
             </div>
@@ -1076,77 +1172,99 @@ export const PosView: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {cartItems.map((item, idx) => (
-                      <tr key={item.product.id} className="hover:bg-slate-50/80">
-                        <td className="p-3 font-mono text-slate-400">{toPersianDigits(idx + 1)}</td>
-                        <td className="p-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
-                              item.product.isService ? 'bg-amber-100 text-amber-900' : 'bg-indigo-50 text-indigo-700'
-                            }`}>
-                              {item.product.isService ? 'خدمت' : 'کالا'}
-                            </span>
-                            <div className="font-bold text-slate-900">{item.product.name}</div>
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.product.code}</div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center justify-center gap-1.5 bg-slate-100 rounded-lg p-1 border border-slate-200 max-w-[100px] mx-auto">
-                            <button
-                              onClick={() => updateItemQty(item.product.id, -1)}
-                              className="w-5 h-5 rounded bg-white font-bold text-xs flex items-center justify-center shadow-xs cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              min={1}
-                              value={item.quantity}
-                              onChange={(e) => setItemQtyDirect(item.product.id, e.target.value)}
-                              className="w-10 text-center font-bold bg-transparent outline-none border-0 p-0"
-                            />
-                            <button
-                              onClick={() => updateItemQty(item.product.id, 1)}
-                              className="w-5 h-5 rounded bg-white font-bold text-xs flex items-center justify-center shadow-xs cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
+                    {cartItems.map((item, idx) => {
+                      const availableStock = item.product.stock ?? 0;
+                      const isShortage = !item.product.isService && item.quantity > availableStock;
 
-                          {item.boxScans && item.boxScans.length > 0 && (
-                            <div className="text-[9px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-amber-200/50">
-                              📦 {item.boxScans.map((b) => `${toPersianDigits(b.boxCount)} جعبه × ${toPersianDigits(b.unitsPerBox)}`).join(' + ')}
+                      return (
+                        <tr key={item.product.id} className="hover:bg-slate-50/80">
+                          <td className="p-3 font-mono text-slate-400">{toPersianDigits(idx + 1)}</td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                  item.product.isService ? 'bg-amber-100 text-amber-900' : 'bg-indigo-50 text-indigo-700'
+                                }`}
+                              >
+                                {item.product.isService ? 'خدمت' : 'کالا'}
+                              </span>
+                              <div className="font-bold text-slate-900">{item.product.name}</div>
                             </div>
-                          )}
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">{item.product.code}</div>
 
-                          {(() => {
-                            const breakdown = getUnitBreakdownLabel(
-                              item.quantity,
-                              item.product.conversionFactor,
-                              item.product.unit,
-                              item.product.subUnit
-                            );
-                            return breakdown ? (
-                              <div className="text-[9px] text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-indigo-200/50">
-                                {breakdown}
+                            {isShortage && (
+                              <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold w-fit mt-1 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-amber-600" />
+                                <span>کسری انبار (موجودی: {toPersianDigits(availableStock)})</span>
                               </div>
-                            ) : null;
-                          })()}
-                        </td>
-                        <td className="p-3 font-bold text-slate-800">{formatToman(item.selectedPrice)}</td>
-                        <td className="p-3 font-black text-indigo-700">
-                          {formatToman(item.selectedPrice * item.quantity)}
-                        </td>
-                        <td className="p-3 text-center">
-                          <button
-                            onClick={() => removeItem(item.product.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center justify-center gap-1.5 bg-slate-100 rounded-lg p-1 border border-slate-200 max-w-[100px] mx-auto">
+                              <button
+                                onClick={() => updateItemQty(item.product.id, -1)}
+                                className="w-5 h-5 rounded bg-white font-bold text-xs flex items-center justify-center shadow-xs cursor-pointer hover:bg-slate-50"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={item.quantity}
+                                onChange={(e) => setItemQtyDirect(item.product.id, e.target.value)}
+                                className="w-10 text-center font-bold bg-transparent outline-none border-0 p-0"
+                              />
+                              <button
+                                onClick={() => updateItemQty(item.product.id, 1)}
+                                className="w-5 h-5 rounded bg-white font-bold text-xs flex items-center justify-center shadow-xs cursor-pointer hover:bg-slate-50"
+                              >
+                                +
+                              </button>
+                            </div>
+
+                            {item.boxScans && item.boxScans.length > 0 && (
+                              <div className="text-[9px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-amber-200/50">
+                                📦 {item.boxScans.map((b) => `${toPersianDigits(b.boxCount)} جعبه × ${toPersianDigits(b.unitsPerBox)}`).join(' + ')}
+                              </div>
+                            )}
+
+                            {(() => {
+                              const breakdown = getUnitBreakdownLabel(
+                                item.quantity,
+                                item.product.conversionFactor,
+                                item.product.unit,
+                                item.product.subUnit
+                              );
+                              return breakdown ? (
+                                <div className="text-[9px] text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5 mt-1 text-center font-medium border border-indigo-200/50">
+                                  {breakdown}
+                                </div>
+                              ) : null;
+                            })()}
+                          </td>
+                          <td className="p-3 font-bold text-slate-800">{formatToman(item.selectedPrice)}</td>
+                          <td className="p-3">
+                            <div className="font-black text-indigo-700">
+                              {formatToman(item.selectedPrice * item.quantity - (item.discount || 0))}
+                            </div>
+                            {item.discount > 0 && (
+                              <div className="text-[10px] text-emerald-600 font-medium mt-0.5">
+                                تخفیف: {formatToman(item.discount)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              onClick={() => removeItem(item.product.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="حذف قلم"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1252,6 +1370,72 @@ export const PosView: React.FC = () => {
               </button>
             </div>
 
+            {/* Cash Calculator if Cash selected */}
+            {paymentMethod === 'cash' && (
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200/80 space-y-2.5 mt-2">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-950">
+                  <span>محاسبه وجه نقد و پول خرد مشتری:</span>
+                  <span className="text-[11px] text-emerald-700 font-mono">
+                    فاکتور: {formatToman(finalAmount)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-emerald-900 font-bold shrink-0">اسکناس دریافتی:</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="مبلغ دریافتی به تومان..."
+                    className="w-full bg-white border border-emerald-300 rounded-lg px-2.5 py-1.5 text-xs font-mono text-emerald-950 outline-none focus:border-emerald-600"
+                  />
+                </div>
+                {/* Quick preset buttons */}
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived(finalAmount)}
+                    className="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded-md text-[10px] font-bold text-emerald-800 transition-colors cursor-pointer"
+                  >
+                    مبلغ دقیق
+                  </button>
+                  {[50000, 100000, 200000, 500000].map((step) => {
+                    const rounded = Math.ceil(finalAmount / step) * step;
+                    if (rounded <= finalAmount && step !== 50000) return null;
+                    return (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => setCashReceived(rounded)}
+                        className="px-2 py-1 bg-white hover:bg-emerald-100 border border-emerald-300 rounded-md text-[10px] font-mono font-bold text-emerald-800 transition-colors cursor-pointer"
+                      >
+                        {formatNumber(rounded)} ت
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Change Due Display */}
+                {cashReceived !== '' && (
+                  <div
+                    className={`p-2 rounded-lg text-xs font-bold flex justify-between items-center ${
+                      Number(cashReceived) >= finalAmount
+                        ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
+                        : 'bg-rose-50 text-rose-800 border border-rose-200'
+                    }`}
+                  >
+                    <span>
+                      {Number(cashReceived) >= finalAmount ? 'باقیمانده / پول خرد مشتری:' : 'کسری مبلغ پرداختی:'}
+                    </span>
+                    <span className="font-mono text-sm">
+                      {Number(cashReceived) >= finalAmount
+                        ? formatToman(Number(cashReceived) - finalAmount)
+                        : formatToman(finalAmount - Number(cashReceived))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Cheque Details Form if Cheque selected */}
             {paymentMethod === 'cheque' && (
               <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-2 mt-2">
@@ -1289,48 +1473,79 @@ export const PosView: React.FC = () => {
             )}
           </div>
 
-          {/* Pricing & Checkout Summary Box */}
-          <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-lg space-y-4">
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-slate-400">
+          {/* Pricing & Checkout Summary Box (High-Contrast Light Theme) */}
+          <div className="bg-white border-2 border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+            <div className="space-y-2.5 text-xs text-slate-700">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>جمع کل اقلام:</span>
-                <span>{formatToman(subtotal)}</span>
+                <span className="font-mono font-bold text-slate-900">{formatToman(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-slate-400">
-                <span>مالیات ارزش افزوده (۱۰٪):</span>
-                <span>{formatToman(tax)}</span>
+
+              {/* VAT Rate Selector & Value */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-600">ارزش افزوده:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setVatRate(10)}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        vatRate === 10 ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      ۱۰٪
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVatRate(0)}
+                      className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                        vatRate === 0 ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      معاف (۰٪)
+                    </button>
+                  </div>
+                </div>
+                <span className="font-mono font-bold text-slate-900">{formatToman(tax)}</span>
               </div>
-              <div className="flex items-center justify-between text-slate-400 pt-1">
+
+              {/* Overall Discount */}
+              <div className="flex items-center justify-between text-slate-600 pt-1 border-t border-slate-100">
                 <span>تخفیف کلی فاکتور:</span>
-                <input
-                  type="number"
-                  min={0}
-                  value={overallDiscount}
-                  onChange={(e) => setOverallDiscount(Number(e.target.value))}
-                  placeholder="مبلغ تخفیف"
-                  className="w-28 bg-slate-800 border border-slate-700 rounded-lg p-1 text-left font-mono text-white text-xs outline-none"
-                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    value={overallDiscount || ''}
+                    onChange={(e) => setOverallDiscount(Number(e.target.value) || 0)}
+                    placeholder="۰"
+                    className="w-28 bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg py-1 px-2 text-left font-mono text-slate-900 text-xs outline-none"
+                  />
+                  <span className="text-[10px] text-slate-400">تومان</span>
+                </div>
               </div>
-              <div className="flex justify-between text-white font-black text-sm pt-3 border-t border-slate-800">
+
+              {/* Final Amount */}
+              <div className="flex justify-between items-center text-slate-900 font-black text-sm pt-3 border-t-2 border-slate-200">
                 <span>مبلغ قابل دریافت:</span>
-                <span className="text-amber-400 text-lg sm:text-xl font-mono">{formatToman(finalAmount)}</span>
+                <span className="text-blue-700 text-xl font-mono">{formatToman(finalAmount)}</span>
               </div>
             </div>
 
             <button
               onClick={handleExecuteCheckout}
               disabled={cartItems.length === 0 || isCheckingOut}
-              className={`w-full py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
+              className={`w-full py-3.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
                 cartItems.length === 0 || isCheckingOut
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
                   : paymentMethod === 'pos_pasargad'
-                  ? 'bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white shadow-emerald-600/30'
-                  : 'bg-indigo-600 hover:bg-indigo-500 active:scale-98 text-white shadow-indigo-600/30'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white shadow-emerald-600/25'
+                  : 'bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white shadow-indigo-600/25'
               }`}
             >
               {isCheckingOut ? (
                 <>
-                  <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+                  <RefreshCw className="w-5 h-5 animate-spin text-white/80" />
                   <span>در حال پردازش و ثبت فاکتور...</span>
                 </>
               ) : paymentMethod === 'pos_pasargad' ? (
@@ -1341,7 +1556,7 @@ export const PosView: React.FC = () => {
               ) : (
                 <>
                   <CheckCircle2 className="w-5 h-5" />
-                  <span>ثبت نهایی و صدور فاکتور</span>
+                  <span>ثبت نهایی و صدور فاکتور (F10)</span>
                 </>
               )}
             </button>
@@ -1349,72 +1564,105 @@ export const PosView: React.FC = () => {
         </div>
       </div>
 
+      {/* Cashier Keyboard Shortcuts Bar */}
+      <div className="bg-white rounded-xl p-2.5 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+        <div className="flex items-center gap-1.5 font-bold text-slate-700">
+          <Layers className="w-4 h-4 text-indigo-600" />
+          <span>کلیدهای میانبر سریع صندوق:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F1</span>
+          <span className="text-slate-600 font-sans">فوکوس بارکد</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F2</span>
+          <span className="text-slate-600 font-sans">مشتری جدید</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F3</span>
+          <span className="text-slate-600 font-sans">سطح قیمت</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F4</span>
+          <span className="text-slate-600 font-sans">نگهداشتن فاکتور</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F5</span>
+          <span className="text-slate-600 font-sans">فاکتورهای معلق</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F8</span>
+          <span className="text-slate-600 font-sans">دوربین</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F9</span>
+          <span className="text-slate-600 font-sans">خالی کردن سبد</span>
+          <span className="text-slate-300">•</span>
+          <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800 font-bold">F10</span>
+          <span className="text-slate-600 font-sans">تسویه نهایی</span>
+        </div>
+      </div>
+
       {/* POS Terminal Interaction Modal (TCP/IP Simulation & Live Status) */}
       <AnimatePresence>
         {isPosProcessing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-slate-900 text-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-700 text-center space-y-5"
+              className="bg-white text-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-center space-y-5"
             >
               <div className="flex items-center justify-center">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-600/30 text-indigo-400 border border-indigo-500/40 flex items-center justify-center">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center">
                   <CreditCard className="w-8 h-8 animate-pulse" />
                 </div>
               </div>
 
               <div>
-                <h3 className="text-lg font-black text-white">پوز بانک پاسارگاد (TCP/IP)</h3>
-                <div className="text-xs text-slate-400 mt-1 font-mono">
-                  IP: 192.168.1.150:7000 • ترمینال: 87654321
+                <h3 className="text-base font-black text-slate-900">ارتباط با پایانه کارتخوان پاسارگاد</h3>
+                <div className="text-xs text-slate-500 mt-1 font-mono">
+                  IP: 192.168.1.150:7000 • شناسه ترمینال: 87654321
                 </div>
               </div>
 
               {/* Amount Display */}
-              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="text-xs text-slate-400 mb-1">مبلغ ارسالی به پوز:</div>
-                <div className="text-2xl font-black text-amber-400 font-mono">{formatToman(finalAmount)}</div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                <div className="text-xs text-slate-500 mb-1">مبلغ ارسالی به دستگاه کارتخوان:</div>
+                <div className="text-2xl font-black text-blue-700 font-mono">{formatToman(finalAmount)}</div>
               </div>
 
               {/* Dynamic Step Indicator */}
               <div className="space-y-3 text-xs">
                 {posStep === 'connecting' && (
-                  <div className="flex items-center justify-center gap-2 text-indigo-400">
+                  <div className="flex items-center justify-center gap-2 text-indigo-600 font-bold">
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>برقراری سوکت TCP با پایانه فروشگاهی...</span>
+                    <span>برقراری ارتباط شبکه با کارتخوان فروشگاهی...</span>
                   </div>
                 )}
                 {posStep === 'swipe_card' && (
-                  <div className="text-amber-300 font-bold animate-pulse">
+                  <div className="text-amber-800 bg-amber-50 border border-amber-200 py-2 px-3 rounded-xl font-bold animate-pulse">
                     لطفاً کارت بانکی را بکشید یا نزدیک دستگاه بگیرید...
                   </div>
                 )}
                 {posStep === 'pin_entry' && (
-                  <div className="text-sky-300 font-bold">
-                    مشتری در حال ورود رمز ۴ رقمی کارت...
+                  <div className="text-blue-800 bg-blue-50 border border-blue-200 py-2 px-3 rounded-xl font-bold">
+                    مشتری در حال وارد کردن رمز کارت است...
                   </div>
                 )}
                 {posStep === 'approved' && (
-                  <div className="text-emerald-400 font-black flex items-center justify-center gap-2">
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>تراکنش با موفقیت انجام شد و رسید چاپ شد.</span>
+                  <div className="text-emerald-800 bg-emerald-50 border border-emerald-200 py-2.5 px-3 rounded-xl font-black flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span>تراکنش تایید شد؛ فاکتور و رسید در حال صدور است.</span>
                   </div>
                 )}
                 {posStep === 'failed' && (
-                  <div className="text-rose-400 font-bold flex items-center justify-center gap-2">
-                    <AlertCircle className="w-5 h-5" />
-                    <span>خطا در تراکنش یا انصراف کاربر.</span>
+                  <div className="text-rose-800 bg-rose-50 border border-rose-200 py-2.5 px-3 rounded-xl font-bold flex items-center justify-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-rose-600" />
+                    <span>خطا در تراکنش یا انصراف خریدار از پرداخت.</span>
                   </div>
                 )}
               </div>
 
               {/* Hex Frame Monitor */}
               {posHexLog.request && (
-                <div className="text-[10px] font-mono text-left bg-black/50 p-2.5 rounded-xl border border-slate-800 text-slate-400 space-y-1 overflow-x-auto">
-                  <div className="text-indigo-400">TX [STX 0x02]: {posHexLog.request}</div>
-                  <div className="text-emerald-400">RX [LRC XOR]: {posHexLog.response}</div>
+                <div className="text-[10px] font-mono text-left bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-slate-600 space-y-1 overflow-x-auto">
+                  <div className="text-indigo-700">TX [STX 0x02]: {posHexLog.request}</div>
+                  <div className="text-emerald-700">RX [LRC XOR]: {posHexLog.response}</div>
                   {posHexLog.rrn && <div>RRN: {posHexLog.rrn} | REF: {posHexLog.ref}</div>}
                 </div>
               )}
@@ -1422,9 +1670,9 @@ export const PosView: React.FC = () => {
               {posStep === 'failed' && (
                 <button
                   onClick={() => setIsPosProcessing(false)}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 rounded-xl text-xs"
+                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs cursor-pointer"
                 >
-                  بستن
+                  بستن پنجره
                 </button>
               )}
             </motion.div>
@@ -1619,6 +1867,44 @@ export const PosView: React.FC = () => {
                   );
                 })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Cart Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 mx-auto flex items-center justify-center border border-rose-200">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-black text-slate-900 text-base">پاکسازی اقلام فاکتور جاری؟</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                آیا از حذف تمام {toPersianDigits(cartItems.length)} ردیف کالای موجود در سبد فروش اطمینان دارید؟ این عملیات غیرقابل بازگشت است.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCartItems([]);
+                  setCashReceived('');
+                  setShowClearConfirm(false);
+                  showToast('اقلام فاکتور جاری پاک شدند.', 'info');
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
+              >
+                بله، پاک شود
+              </button>
             </div>
           </div>
         </div>

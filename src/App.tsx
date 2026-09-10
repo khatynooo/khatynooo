@@ -51,6 +51,7 @@ import { AiAssistantView } from './components/admin/AiAssistantView';
 import { WebsiteManagerView } from './components/admin/WebsiteManagerView';
 import { ReportsView } from './components/admin/ReportsView';
 import { UsersView } from './components/admin/UsersView';
+import { PublicationView } from './components/admin/publication/PublicationView';
 
 // Dedicated Website Admin Portal Components
 import { SiteAdminPortal } from './components/siteAdmin/SiteAdminPortal';
@@ -527,6 +528,7 @@ function AdminPortal() {
       {currentTab === 'torob' && <TorobMarketView />}
       {currentTab === 'ai' && <AiAssistantView />}
       {currentTab === 'website' && <WebsiteManagerView />}
+      {currentTab === 'publication' && <PublicationView />}
       {currentTab === 'reports' && <ReportsView />}
       {currentTab === 'users' && <UsersView />}
     </AdminLayout>

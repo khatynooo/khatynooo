@@ -70,18 +70,16 @@ SELECT
 FROM products p
 ON CONFLICT (warehouse_id, product_id) 
 DO UPDATE SET 
-    stock = CASE 
-        WHEN (SELECT COUNT(*) FROM inventory_by_location WHERE product_id = products.id) = 1 
-        THEN products.stock 
-        ELSE inventory_by_location.stock 
-    END,
+    stock = EXCLUDED.stock,
     updated_at = NOW();
 
 -- ۵. همگام‌سازی نهایی products.stock بر اساس تجمیع کل تمام انبارها
-UPDATE products p
-SET stock = COALESCE((
-    SELECT SUM(stock) 
-    FROM inventory_by_location 
-    WHERE product_id = p.id
-), 0),
-updated_at = NOW();
+UPDATE products
+SET stock = COALESCE(s.total_stock, 0),
+    updated_at = NOW()
+FROM (
+    SELECT product_id, SUM(stock) AS total_stock
+    FROM inventory_by_location
+    GROUP BY product_id
+) s
+WHERE products.id = s.product_id;

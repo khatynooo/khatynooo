@@ -1159,4 +1159,108 @@ export interface SystemAuditLog {
   createdAt: string;
 }
 
+// =============================================================================
+// سیستم انتشار چندکاناله (Multi-Channel Publication Types)
+// =============================================================================
+
+export type PublicationProvider =
+  | 'eitaa'
+  | 'bale'
+  | 'telegram'
+  | 'instagram'
+  | 'website';
+
+export type PublicationEvent =
+  | 'product_created'
+  | 'product_updated'
+  | 'price_changed'
+  | 'stock_restocked'
+  | 'manual';
+
+export type PublicationStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'cancelled'
+  | 'not_configured';
+
+export interface PublicationChannelConfig {
+  token?: string;
+  channelId?: string;
+  baseUrl?: string;
+  businessAccountId?: string;
+  accessToken?: string;
+  autoPublish?: boolean;
+  sendImage?: boolean;
+  generateHashtags?: boolean;
+  customTemplate?: string;
+  [key: string]: any;
+}
+
+export interface PublicationChannel {
+  id: string;
+  provider: PublicationProvider;
+  name: string;
+  enabled: boolean;
+  config: PublicationChannelConfig;
+  createdAt: string;
+  updatedAt: string;
+  tokenConfigured?: boolean;
+  tokenMasked?: string;
+}
+
+export interface ProductPublicationRecord {
+  id: string;
+  productId: string;
+  productName?: string;
+  productCode?: string;
+  productImage?: string;
+  channelId?: string;
+  channelName?: string;
+  provider: PublicationProvider;
+  eventType: PublicationEvent;
+  status: PublicationStatus;
+  idempotencyKey?: string;
+  messageId?: string;
+  externalUrl?: string;
+  payload: {
+    text?: string;
+    imageUrl?: string;
+    hashtags?: string[];
+    customText?: string;
+    productSnapshot?: any;
+  };
+  errorCode?: string;
+  errorMessage?: string;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt?: string | null;
+  processingStartedAt?: string | null;
+  sentAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicationSettings {
+  id: string;
+  publishOnCreate: boolean;
+  publishOnUpdate: boolean;
+  publishOnPriceChange: boolean;
+  publishOnRestock: boolean;
+  sendImageByDefault: boolean;
+  generateHashtagsByDefault: boolean;
+  defaultTemplate: string;
+  updatedAt: string;
+}
+
+export interface PublicationStats {
+  totalSent: number;
+  totalPending: number;
+  totalFailed: number;
+  todaySent: number;
+  providerBreakdown: Record<string, { sent: number; failed: number }>;
+}
+
+
 

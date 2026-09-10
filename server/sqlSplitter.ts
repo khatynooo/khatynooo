@@ -143,7 +143,8 @@ export function splitSqlStatements(sqlText: string): string[] {
     // ۱۱. کاراکتر جداکننده پایان دستور (;)
     if (char === ';') {
       const trimmed = current.trim();
-      if (trimmed.length > 0) {
+      const codeWithoutComments = trimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+      if (codeWithoutComments.length > 0) {
         statements.push(trimmed);
       }
       current = '';
@@ -156,9 +157,10 @@ export function splitSqlStatements(sqlText: string): string[] {
     i++;
   }
 
-  // اضافه کردن آخرین دستور در صورت عدم وجود ; در انتهای فایل
+  // اضافه کردن آخرین دستور در صورت عدم وجود ; در انتهای فایل (به شرطی که فقط کامنت نباشد)
   const lastTrimmed = current.trim();
-  if (lastTrimmed.length > 0) {
+  const lastCodeWithoutComments = lastTrimmed.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+  if (lastCodeWithoutComments.length > 0) {
     statements.push(lastTrimmed);
   }
 

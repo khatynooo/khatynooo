@@ -34,6 +34,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Smartphone,
+  Send,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, isValidBarcodeChecksum, generateValidEan13 } from '../../lib/utils';
@@ -46,6 +47,7 @@ import { CurrencyInput } from '../common/CurrencyInput';
 import { InlineCategoryCreator } from '../common/InlineCategoryCreator';
 import { ProductGalleryManager } from '../common/ProductGalleryManager';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { ProductPublishModal } from './publication/ProductPublishModal';
 
 type ModalTabType = 'general' | 'pricing' | 'gallery' | 'details';
 
@@ -102,6 +104,9 @@ export const ProductsView: React.FC = () => {
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
   const [batchPrintProducts, setBatchPrintProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+
+  // Multi-Channel Publication Modal
+  const [publishProduct, setPublishProduct] = useState<Product | null>(null);
 
   // Hardware USB/Bluetooth Barcode Scanner listener
   useHardwareBarcodeScanner({
@@ -637,6 +642,13 @@ export const ProductsView: React.FC = () => {
                       <td className="p-3.5 font-bold text-amber-400 font-mono">{formatToman(p.wholesalePrice || p.salePrice)}</td>
                       <td className="p-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => setPublishProduct(p)}
+                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400 border border-amber-500/30 transition-colors cursor-pointer"
+                            title="انتشار چندکاناله کالا در ایتا، بله، تلگرام، اینستاگرام و سایت"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => setLabelProduct(p)}
                             className="p-1.5 rounded-lg bg-[#161619] hover:bg-[#1F1F24] text-[#8E9299] hover:text-[#E0E0E0] border border-[#2D2D33] transition-colors cursor-pointer"
@@ -1332,6 +1344,18 @@ export const ProductsView: React.FC = () => {
           product={labelProduct}
           productsList={batchPrintProducts}
           allAvailableProducts={products}
+        />
+      )}
+
+      {/* Multi-Channel Publication Modal */}
+      {publishProduct && (
+        <ProductPublishModal
+          product={publishProduct}
+          isOpen={Boolean(publishProduct)}
+          onClose={() => setPublishProduct(null)}
+          onSuccess={() => {
+            showToast('کالا با موفقیت در صف انتشار چندکاناله قرار گرفت.', 'success');
+          }}
         />
       )}
     </div>

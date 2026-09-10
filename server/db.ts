@@ -5,6 +5,7 @@
 
 import { query, withTransaction } from './dbClient';
 import bcrypt from 'bcryptjs';
+import { PublicationService } from './publication/publicationService';
 import {
   Category,
   Cheque,
@@ -710,7 +711,29 @@ export const db = {
          WHERE p.id = $1`,
         [id]
       );
-      return formatProduct(res.rows[0]);
+      const createdProduct = formatProduct(res.rows[0]);
+
+      // تریگر انتشار خودکار چندکاناله کالا
+      try {
+        PublicationService.onProductCreated({
+          id: createdProduct.id,
+          name: createdProduct.name,
+          code: createdProduct.code,
+          barcode: createdProduct.barcode,
+          salePrice: createdProduct.salePrice,
+          buyPrice: createdProduct.buyPrice,
+          stock: createdProduct.stock,
+          unit: createdProduct.unit,
+          description: createdProduct.description,
+          image: createdProduct.image,
+          showOnWebsite: createdProduct.showOnWebsite,
+          categoryName: createdProduct.categoryName,
+        }, client).catch(e => console.warn('⚠️ [Publication onProductCreated Warning]:', e.message));
+      } catch (pubErr) {
+        // هیچ خطایی در ماژول انتشار مانع از ثبت کالا در دیتابیس نمی‌شود
+      }
+
+      return createdProduct;
     });
   },
 
@@ -865,7 +888,37 @@ export const db = {
       }
 
       const res = await client.query('SELECT * FROM products WHERE id = $1', [id]);
-      return res.rows.length > 0 ? formatProduct(res.rows[0]) : null;
+      const updatedProduct = res.rows.length > 0 ? formatProduct(res.rows[0]) : null;
+
+      if (updatedProduct) {
+        try {
+          PublicationService.onProductUpdated(
+            {
+              id: updatedProduct.id,
+              name: updatedProduct.name,
+              code: updatedProduct.code,
+              barcode: updatedProduct.barcode,
+              salePrice: updatedProduct.salePrice,
+              buyPrice: updatedProduct.buyPrice,
+              stock: updatedProduct.stock,
+              unit: updatedProduct.unit,
+              description: updatedProduct.description,
+              image: updatedProduct.image,
+              showOnWebsite: updatedProduct.showOnWebsite,
+              categoryName: updatedProduct.categoryName,
+            },
+            {
+              stock: previousStock,
+              salePrice: Number(current.sale_price || 0),
+            },
+            client
+          ).catch(e => console.warn('⚠️ [Publication onProductUpdated Warning]:', e.message));
+        } catch (pubErr) {
+          // نباید مانع از تکمیل ویرایش کالا شود
+        }
+      }
+
+      return updatedProduct;
     });
   },
 

@@ -20,6 +20,7 @@ import {
   X,
   ExternalLink,
   Cpu,
+  Radio,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleTitle, getRoleBadgeClass } from '../../lib/utils';
@@ -41,6 +42,7 @@ export type AdminTab =
   | 'torob'
   | 'ai'
   | 'website'
+  | 'publication'
   | 'reports'
   | 'users';
 
@@ -74,6 +76,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'torob', label: 'هوش بازار و رصد قیمت ترب', icon: TrendingUp, roles: ['admin', 'site_manager', 'chief_accountant'] },
     { id: 'ai', label: 'دستیار هوشمند Gemini AI', icon: Bot, roles: ['admin', 'site_manager', 'chief_accountant', 'accountant'] },
     { id: 'website', label: 'مدیریت فروشگاه آنلاین و سفارشات', icon: Globe, roles: ['admin', 'site_manager', 'chief_accountant'] },
+    { id: 'publication', label: 'انتشار چندکاناله (ایتا، بله، تلگرام)', icon: Radio, roles: ['admin', 'site_manager', 'chief_accountant', 'seller'] },
     { id: 'reports', label: 'گزارش سود/زیان و ارزش انبار', icon: BarChart3, roles: ['admin', 'chief_accountant', 'accountant'] },
     { id: 'users', label: 'مدیریت کاربران و دسترسی‌ها', icon: UserCheck, roles: ['admin'] },
   ];

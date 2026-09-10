@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Cpu,
   RotateCcw,
+  Square,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useToast } from '../common/Toast';
@@ -57,7 +58,7 @@ export const AiAssistantView: React.FC = () => {
     {
       role: 'assistant',
       content: `### سلام! من دستیار هوشمند، تحلیلگر ارشد مالی و انبار خطی‌نو هستم.
-من مستقیماً به مدل رسمی **Google Gemini 3.8 Flash** و پایگاه‌داده حسابداری و انبارداری خطی‌نو متصل هستم.
+من مستقیماً به مدل رسمی **Google Gemini** و پایگاه‌داده حسابداری و انبارداری خطی‌نو متصل هستم.
 
 #### قابلیت‌های فعال و متصل:
 * 📊 **تحلیل زنده مالی و سود (Function Calling):** استعلام فروش امروز، حاشیه سود، گردش نقدینگی و مانده حساب مشتریان مستقیماً از دیتابیس.
@@ -72,6 +73,16 @@ export const AiAssistantView: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+      showToast('پردازش توسط کاربر متوقف گردید.', 'info');
+    }
+  };
 
   const quickPrompts = [
     {
@@ -147,6 +158,9 @@ export const AiAssistantView: React.FC = () => {
     setInputText('');
     setIsLoading(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       // آماده‌سازی تاریخچه پیام‌ها بدون پیام‌های خطای نمایشی قبلی
       const validHistory = updatedMessages
@@ -159,7 +173,8 @@ export const AiAssistantView: React.FC = () => {
       const res = await api.askAiAssistant(
         validHistory,
         'فروشگاه و کارگاه تولیدی نوشت‌افزار و خدمات چاپ خطی‌نو (سامانه متمرکز مالی و انبار)',
-        enableGrounding
+        enableGrounding,
+        controller.signal
       );
 
       setMessages([
@@ -173,6 +188,9 @@ export const AiAssistantView: React.FC = () => {
         },
       ]);
     } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        return;
+      }
       const errorMessage =
         err?.message ||
         'متاسفانه در برقراری ارتباط با مدل Gemini یا واکشی اطلاعات خطایی رخ داد.';
@@ -238,12 +256,12 @@ export const AiAssistantView: React.FC = () => {
               ) : aiStatus?.configured ? (
                 <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>Google Gemini 3.8 Flash (فعال و متصل)</span>
+                  <span>Google Gemini {aiStatus.model ? aiStatus.model.replace('gemini-', '') : '2.5 Flash'} (فعال و متصل)</span>
                 </span>
               ) : (
                 <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1.5">
                   <AlertTriangle className="w-3 h-3 text-amber-400" />
-                  <span>نیازمند تنظیم GEMINI_API_KEY</span>
+                  <span>نیازمند تنظیم کلید هوش مصنوعی در سرور</span>
                 </span>
               )}
             </div>
@@ -306,7 +324,7 @@ export const AiAssistantView: React.FC = () => {
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <span>
-              <strong>توجه:</strong> متغیر <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">GEMINI_API_KEY</code> در فایل <code className="bg-black/40 px-1.5 py-0.5 rounded text-amber-300 font-mono">.env</code> سرور تنظیم نشده است. برای پاسخ‌دهی زنده مدل Gemini لطفاً کلید معتبر خود را اضافه فرمایید.
+              <strong>توجه:</strong> کلید هوش مصنوعی در فایل تنظیمات محیطی سرور وارد نشده است. برای فعال‌سازی گفتگوی زنده، لطفاً کلید معتبر Google Gemini را در متغیرهای محیطی سرور وارد فرمایید.
             </span>
           </div>
         </div>
@@ -518,38 +536,61 @@ export const AiAssistantView: React.FC = () => {
         })}
       </div>
 
-      {/* فیلد ورودی متن */}
+      {/* فیلد ورودی متن پیشرفته */}
       <div className="p-3 sm:p-4 bg-[#161619] border-t border-[#222225] shrink-0">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleSendMessage();
+            if (inputText.trim() && !isLoading) {
+              handleSendMessage();
+            }
           }}
-          className="flex items-center gap-2"
+          className="flex items-end gap-2"
         >
           <div className="relative flex-1">
-            <input
-              type="text"
+            <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (inputText.trim() && !isLoading) {
+                    handleSendMessage();
+                  }
+                }
+              }}
+              rows={Math.min(Math.max(inputText.split('\n').length, 1), 4)}
               placeholder="پرسش مالی، استعلام قیمت، تحلیل کسری انبار یا فرمولاسیون تولید را بنویسید..."
               disabled={isLoading}
-              className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] text-[#F3F4F6] placeholder-[#6B7280] text-xs sm:text-sm rounded-2xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-[#C9A227]/50 transition-all disabled:opacity-50"
+              className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] text-[#F3F4F6] placeholder-[#6B7280] text-xs sm:text-sm rounded-2xl px-4 py-2.5 focus:outline-none focus:ring-1 focus:ring-[#C9A227]/50 transition-all disabled:opacity-50 resize-none max-h-32"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={!inputText.trim() || isLoading}
-            className="w-11 h-11 rounded-2xl bg-[#C9A227] hover:bg-[#b59020] text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-[#C9A227]/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
-            title="ارسال پیام"
-          >
-            <Send className="w-4 h-4 text-black -rotate-90" />
-          </button>
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={handleStopGeneration}
+              className="w-11 h-11 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center font-bold shadow-lg shadow-rose-600/30 transition-all cursor-pointer shrink-0 mb-0.5"
+              title="توقف تولید پاسخ (Stop Generation)"
+              aria-label="توقف تولید"
+            >
+              <Square className="w-4 h-4 fill-white text-white" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isLoading}
+              className="w-11 h-11 rounded-2xl bg-[#C9A227] hover:bg-[#b59020] text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-[#C9A227]/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 mb-0.5"
+              title="ارسال پیام (Enter)"
+              aria-label="ارسال پیام"
+            >
+              <Send className="w-4 h-4 text-black -rotate-90" />
+            </button>
+          )}
         </form>
         <div className="mt-2 text-[10px] text-[#6B7280] flex items-center justify-between px-1">
-          <span>پردازش واقعی داده‌ها با مدل رسمی Google GenAI</span>
-          <span>Shift+Enter برای خط جدید • Enter برای ارسال</span>
+          <span className="hidden sm:inline">پردازش داده‌های واقعی حسابداری با Google Gemini</span>
+          <span className="text-right sm:text-left">Enter برای ارسال • Shift+Enter برای خط جدید</span>
         </div>
       </div>
     </div>

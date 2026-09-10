@@ -523,7 +523,8 @@ export const api = {
   askAiAssistant: (
     messagesOrPrompt: Array<{ role: 'user' | 'model'; text: string }> | string,
     storeContext?: string,
-    enableSearchGrounding: boolean = true
+    enableSearchGrounding: boolean = true,
+    signal?: AbortSignal
   ) => {
     const formattedMessages =
       typeof messagesOrPrompt === 'string'
@@ -533,12 +534,79 @@ export const api = {
     return fetch(`${API_BASE}/ai/assistant`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      signal,
       body: JSON.stringify({
         messages: formattedMessages,
         storeContext,
         enableSearchGrounding,
       }),
     }).then(handleResponse);
+  },
+
+  askAiAssistantStream: async (
+    messagesOrPrompt: Array<{ role: 'user' | 'model'; text: string }> | string,
+    onChunk: (chunk: string) => void,
+    storeContext?: string,
+    enableSearchGrounding: boolean = true,
+    signal?: AbortSignal
+  ) => {
+    const formattedMessages =
+      typeof messagesOrPrompt === 'string'
+        ? [{ role: 'user' as const, text: messagesOrPrompt }]
+        : messagesOrPrompt;
+
+    const response = await fetch(`${API_BASE}/ai/assistant/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      signal,
+      body: JSON.stringify({
+        messages: formattedMessages,
+        storeContext,
+        enableSearchGrounding,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'خطا در ارتباط با سرور' }));
+      throw new Error(err.error || 'خطا در برقراری ارتباط با مدل Gemini');
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let finalResult: any = null;
+
+    if (!reader) {
+      throw new Error('عدم پشتیبانی مرورگر از جریان پاسخ');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(trimmed.slice(6));
+            if (data.type === 'chunk' && data.text) {
+              onChunk(data.text);
+            } else if (data.type === 'done') {
+              finalResult = data.final;
+            } else if (data.type === 'error') {
+              throw new Error(data.error || 'خطای پردازش در مدل Gemini');
+            }
+          } catch (e: any) {
+            if (e.message?.includes('Gemini') || e.message?.includes('خطا')) throw e;
+          }
+        }
+      }
+    }
+
+    return finalResult;
   },
 
   askGeminiAssistant: (prompt: string, enableSearchGrounding: boolean = true) => {
@@ -1084,6 +1152,106 @@ export const api = {
     fetch(`${API_BASE}/invoice-drafts/sales/${id}`, {
       method: 'DELETE',
       headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  // ===========================================================================
+  // MULTI-CHANNEL PUBLICATION API CLIENT
+  // ===========================================================================
+  getPublicationChannels: () =>
+    fetch(`${API_BASE}/publication/channels`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  createPublicationChannel: (data: any) =>
+    fetch(`${API_BASE}/publication/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  updatePublicationChannel: (id: string, data: any) =>
+    fetch(`${API_BASE}/publication/channels/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  deletePublicationChannel: (id: string) =>
+    fetch(`${API_BASE}/publication/channels/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  testPublicationChannel: (id: string) =>
+    fetch(`${API_BASE}/publication/channels/${id}/test`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  publishProduct: (productId: string, payload: {
+    providers: string[];
+    customText?: string;
+    sendImage?: boolean;
+    generateHashtags?: boolean;
+  }) =>
+    fetch(`${API_BASE}/publication/products/${productId}/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(payload),
+    }).then(handleResponse),
+
+  getProductPublicationHistory: (productId: string) =>
+    fetch(`${API_BASE}/publication/products/${productId}/history`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  retryPublication: (publicationId: string) =>
+    fetch(`${API_BASE}/publication/${publicationId}/retry`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  cancelPublication: (publicationId: string) =>
+    fetch(`${API_BASE}/publication/${publicationId}/cancel`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  getPublicationHistory: (params: {
+    productId?: string;
+    provider?: string;
+    status?: string;
+    eventType?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) => {
+    const query = new URLSearchParams();
+    if (params.productId) query.set('productId', params.productId);
+    if (params.provider) query.set('provider', params.provider);
+    if (params.status) query.set('status', params.status);
+    if (params.eventType) query.set('eventType', params.eventType);
+    if (params.limit) query.set('limit', String(params.limit));
+    if (params.offset) query.set('offset', String(params.offset));
+    return fetch(`${API_BASE}/publication/history?${query.toString()}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse);
+  },
+
+  getPublicationStats: () =>
+    fetch(`${API_BASE}/publication/stats`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  getPublicationSettings: () =>
+    fetch(`${API_BASE}/publication/settings`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  updatePublicationSettings: (settings: any) =>
+    fetch(`${API_BASE}/publication/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(settings),
     }).then(handleResponse),
 };
 

@@ -105,8 +105,44 @@ export async function testDbConnection(): Promise<boolean> {
         returns: DataType.float,
         implementation: (x: any) => (x == null ? null : Math.abs(Number(x))),
       });
+      memDb.public.registerFunction({
+        name: 'round',
+        args: [DataType.float],
+        returns: DataType.integer,
+        implementation: (x: any) => (x == null ? null : Math.round(Number(x))),
+      });
+      memDb.public.registerFunction({
+        name: 'round',
+        args: [DataType.integer],
+        returns: DataType.integer,
+        implementation: (x: any) => (x == null ? null : Math.round(Number(x))),
+      });
+      memDb.public.registerFunction({
+        name: 'trim',
+        args: [DataType.text],
+        returns: DataType.text,
+        implementation: (val: any) => (val == null ? null : String(val).trim()),
+      });
+      memDb.public.registerFunction({
+        name: 'btrim',
+        args: [DataType.text],
+        returns: DataType.text,
+        implementation: (val: any) => (val == null ? null : String(val).trim()),
+      });
+      memDb.public.registerFunction({
+        name: 'ceil',
+        args: [DataType.float],
+        returns: DataType.integer,
+        implementation: (x: any) => (x == null ? null : Math.ceil(Number(x))),
+      });
+      memDb.public.registerFunction({
+        name: 'floor',
+        args: [DataType.float],
+        returns: DataType.integer,
+        implementation: (x: any) => (x == null ? null : Math.floor(Number(x))),
+      });
     } catch (e) {
-      console.warn('⚠️ [DEV PG-MEM] ثبت تابع abs با هشدار همراه بود:', e);
+      console.warn('⚠️ [DEV PG-MEM] ثبت توابع کمکی با هشدار همراه بود:', e);
     }
 
     // ثبت تابع date برای تبدیل تاریخ‌ها در محیط pg-mem
@@ -275,7 +311,18 @@ export async function initializeSchema(): Promise<void> {
         let fileFailed = false;
 
         for (const sql of statements) {
-          if (sql.toUpperCase().includes('CREATE EXTENSION')) continue;
+          const cleanSql = sql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+          if (!cleanSql) continue;
+
+          if (cleanSql.toUpperCase().includes('CREATE EXTENSION')) continue;
+
+          // در محیط تست و شبیه‌ساز درون‌حافظه‌ای (pg-mem)، دستورات رویه‌ای و تریگرها پشتیبانی نمی‌شوند و منطق در لایه اپلیکیشن مدیریت می‌شود
+          const isProcedural = /^\s*(CREATE\s+(OR\s+REPLACE\s+)?FUNCTION|CREATE\s+TRIGGER|DROP\s+TRIGGER|DO\s+\$\$)/i.test(cleanSql);
+          if (!isRealPostgres && isProcedural) {
+            console.log(`ℹ️ [DEV PG-MEM] رد کردن دستور رویه‌ای/تریگر در دیتابیس شبیه‌ساز (${file}): ${cleanSql.slice(0, 45)}...`);
+            continue;
+          }
+
           try {
             await rawQuery(sql);
           } catch (stmtErr: any) {
@@ -288,6 +335,7 @@ export async function initializeSchema(): Promise<void> {
               msg.includes('plpgsql') ||
               msg.includes('language') ||
               msg.includes('trigger') ||
+              (!isRealPostgres && isProcedural) ||
               (msg.includes('column') && msg.includes('does not exist') && sql.toUpperCase().includes('DROP'));
 
             if (isIgnorable) {

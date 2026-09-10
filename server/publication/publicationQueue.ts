@@ -89,8 +89,7 @@ export class PublicationQueue {
                 stock: params.product.stock,
               },
             },
-          },
-          params.client
+          }
         );
       }
 

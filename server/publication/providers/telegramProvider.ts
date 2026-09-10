@@ -19,8 +19,8 @@ export class TelegramProvider implements PublicationProviderAdapter {
   private getCredentials() {
     const token = this.config.token || process.env.TELEGRAM_BOT_TOKEN;
     const channelId = this.config.channelId || process.env.TELEGRAM_CHANNEL_ID;
-    const baseUrl = (this.config.baseUrl || process.env.TELEGRAM_API_BASE_URL || 'https://api.telegram.org/bot').replace(/\/+$/, '') + '/';
-    return { token, channelId, baseUrl };
+    const baseUrl = (this.config.baseUrl || process.env.TELEGRAM_API_BASE_URL || 'https://api.telegram.org/bot').replace(/\/+$/, '');
+    return { token: token?.trim(), channelId: channelId?.trim(), baseUrl };
   }
 
   async sendProduct(params: {

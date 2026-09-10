@@ -711,10 +711,12 @@ export const db = {
          WHERE p.id = $1`,
         [id]
       );
-      const createdProduct = formatProduct(res.rows[0]);
+      return formatProduct(res.rows[0]);
+    });
 
-      // تریگر انتشار خودکار چندکاناله کالا
-      try {
+    // تریگر انتشار خودکار چندکاناله کالا خارج از تراکنش، پس از اطمینان از COMMIT قطعی در دیتابیس
+    if (createdProduct) {
+      setImmediate(() => {
         PublicationService.onProductCreated({
           id: createdProduct.id,
           name: createdProduct.name,
@@ -728,13 +730,11 @@ export const db = {
           image: createdProduct.image,
           showOnWebsite: createdProduct.showOnWebsite,
           categoryName: createdProduct.categoryName,
-        }, client).catch(e => console.warn('⚠️ [Publication onProductCreated Warning]:', e.message));
-      } catch (pubErr) {
-        // هیچ خطایی در ماژول انتشار مانع از ثبت کالا در دیتابیس نمی‌شود
-      }
+        }).catch(e => console.warn('⚠️ [Publication onProductCreated Warning]:', e.message));
+      });
+    }
 
-      return createdProduct;
-    });
+    return createdProduct;
   },
 
   async updateProduct(
@@ -742,11 +742,14 @@ export const db = {
     updates: Partial<Product>,
     context?: { userId?: string; username?: string; reason?: string; ip?: string; userAgent?: string }
   ): Promise<Product | null> {
-    return await withTransaction(async (client) => {
+    let previousState: { stock: number; salePrice: number } | null = null;
+    const updatedProduct = await withTransaction(async (client) => {
       const prodCheck = await client.query('SELECT * FROM products WHERE id = $1 FOR UPDATE', [id]);
       if (prodCheck.rows.length === 0) return null;
       const current = prodCheck.rows[0];
       const previousStock = Number(current.stock || 0);
+      const previousPrice = Number(current.sale_price || 0);
+      previousState = { stock: previousStock, salePrice: previousPrice };
 
       const hasStockChange = updates.stock !== undefined && Number(updates.stock) !== previousStock;
       const newStock = hasStockChange ? Number(updates.stock) : previousStock;
@@ -888,38 +891,33 @@ export const db = {
       }
 
       const res = await client.query('SELECT * FROM products WHERE id = $1', [id]);
-      const updatedProduct = res.rows.length > 0 ? formatProduct(res.rows[0]) : null;
-
-      if (updatedProduct) {
-        try {
-          PublicationService.onProductUpdated(
-            {
-              id: updatedProduct.id,
-              name: updatedProduct.name,
-              code: updatedProduct.code,
-              barcode: updatedProduct.barcode,
-              salePrice: updatedProduct.salePrice,
-              buyPrice: updatedProduct.buyPrice,
-              stock: updatedProduct.stock,
-              unit: updatedProduct.unit,
-              description: updatedProduct.description,
-              image: updatedProduct.image,
-              showOnWebsite: updatedProduct.showOnWebsite,
-              categoryName: updatedProduct.categoryName,
-            },
-            {
-              stock: previousStock,
-              salePrice: Number(current.sale_price || 0),
-            },
-            client
-          ).catch(e => console.warn('⚠️ [Publication onProductUpdated Warning]:', e.message));
-        } catch (pubErr) {
-          // نباید مانع از تکمیل ویرایش کالا شود
-        }
-      }
-
-      return updatedProduct;
+      return res.rows.length > 0 ? formatProduct(res.rows[0]) : null;
     });
+
+    // تریگر انتشار خودکار چندکاناله بعد از اتمام و COMMIT کامل تراکنش در دیتابیس
+    if (updatedProduct && previousState) {
+      setImmediate(() => {
+        PublicationService.onProductUpdated(
+          {
+            id: updatedProduct.id,
+            name: updatedProduct.name,
+            code: updatedProduct.code,
+            barcode: updatedProduct.barcode,
+            salePrice: updatedProduct.salePrice,
+            buyPrice: updatedProduct.buyPrice,
+            stock: updatedProduct.stock,
+            unit: updatedProduct.unit,
+            description: updatedProduct.description,
+            image: updatedProduct.image,
+            showOnWebsite: updatedProduct.showOnWebsite,
+            categoryName: updatedProduct.categoryName,
+          },
+          previousState
+        ).catch(e => console.warn('⚠️ [Publication onProductUpdated Warning]:', e.message));
+      });
+    }
+
+    return updatedProduct;
   },
 
   async deleteProduct(id: string): Promise<boolean> {

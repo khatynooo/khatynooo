@@ -32,11 +32,10 @@ export class PublicationService {
   /**
    * رویداد ثبت کالای جدید
    */
-  static async onProductCreated(product: PublicationProduct, client?: any): Promise<void> {
+  static async onProductCreated(product: PublicationProduct): Promise<void> {
     await PublicationQueue.enqueueAutomaticEvent({
       product,
       event: 'product_created',
-      client,
     });
   }
 
@@ -45,8 +44,7 @@ export class PublicationService {
    */
   static async onProductUpdated(
     product: PublicationProduct,
-    prev: { stock?: number; salePrice?: number },
-    client?: any
+    prev: { stock?: number; salePrice?: number }
   ): Promise<void> {
     const prevStock = Number(prev.stock || 0);
     const newStock = Number(product.stock || 0);
@@ -59,7 +57,6 @@ export class PublicationService {
         product,
         event: 'stock_restocked',
         previousStock: prevStock,
-        client,
       });
     }
 
@@ -69,7 +66,6 @@ export class PublicationService {
         product,
         event: 'price_changed',
         previousPrice: prevPrice,
-        client,
       });
     }
 
@@ -77,7 +73,6 @@ export class PublicationService {
     await PublicationQueue.enqueueAutomaticEvent({
       product,
       event: 'product_updated',
-      client,
     });
   }
 

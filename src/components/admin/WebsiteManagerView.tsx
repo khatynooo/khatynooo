@@ -1303,7 +1303,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     <label className="font-bold text-[#8E9299] block text-xs">تعداد ستون‌های چیدمان محصولات در دسکتاپ:</label>
                     <select
                       value={webSettings.layoutColumns || 5}
-                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) })}
+                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) as 3 | 4 | 5 | 6 })}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value={3}>۳ ستونه (تصاویر بزرگ و ویژه)</option>
@@ -1534,7 +1534,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     <label className="font-bold text-[#8E9299] block text-xs">تعداد ستون‌های محصولات در دسکتاپ:</label>
                     <select
                       value={webSettings.layoutColumns || 5}
-                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) })}
+                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) as 3 | 4 | 5 | 6 })}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value={3}>۳ ستونه (تصاویر بسیار بزرگ و جزئیات بالا)</option>
@@ -2831,7 +2831,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         <input
                           type="text"
                           value={webSettings.mapLatitude || ''}
-                          onChange={(e) => setWebSettings({ ...webSettings, mapLatitude: e.target.value })}
+                          onChange={(e) => setWebSettings({ ...webSettings, mapLatitude: parseFloat(e.target.value) || 0 })}
                           placeholder="35.6892"
                           className="bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2 py-2 font-mono text-center text-[#E0E0E0] outline-none text-[11px]"
                           title="Latitude (عرض جغرافیایی)"
@@ -2839,7 +2839,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                         <input
                           type="text"
                           value={webSettings.mapLongitude || ''}
-                          onChange={(e) => setWebSettings({ ...webSettings, mapLongitude: e.target.value })}
+                          onChange={(e) => setWebSettings({ ...webSettings, mapLongitude: parseFloat(e.target.value) || 0 })}
                           placeholder="51.3890"
                           className="bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-2 py-2 font-mono text-center text-[#E0E0E0] outline-none text-[11px]"
                           title="Longitude (طول جغرافیایی)"

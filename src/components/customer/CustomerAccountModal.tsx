@@ -574,11 +574,11 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
                     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#222225]">
                       <div className="text-slate-500 dark:text-[#8E9299]">روش پرداخت:</div>
                       <div className="font-bold text-slate-900 dark:text-[#F3F4F6] mt-1">
-                        {selectedInvoice.paymentMethod === 'pos'
+                        {(selectedInvoice.paymentMethod as string) === 'pos' || selectedInvoice.paymentMethod === 'pos_pasargad'
                           ? 'کارتخوان پاسارگاد'
                           : selectedInvoice.paymentMethod === 'cash'
                           ? 'نقدی'
-                          : selectedInvoice.paymentMethod === 'cheque'
+                          : (selectedInvoice.paymentMethod as string) === 'cheque'
                           ? 'چک صیادی'
                           : 'نسیه / اعتباری'}
                       </div>
@@ -668,11 +668,11 @@ export const CustomerAccountModal: React.FC<CustomerAccountModalProps> = ({
                               </span>
                               <span>•</span>
                               <span>
-                                {inv.paymentMethod === 'pos'
+                                {(inv.paymentMethod as string) === 'pos' || inv.paymentMethod === 'pos_pasargad'
                                   ? 'کارتخوان'
                                   : inv.paymentMethod === 'cash'
                                   ? 'نقدی'
-                                  : inv.paymentMethod === 'cheque'
+                                  : (inv.paymentMethod as string) === 'cheque'
                                   ? 'چک'
                                   : 'نسیه'}
                               </span>

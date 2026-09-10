@@ -1018,7 +1018,7 @@ export const InvoicesView: React.FC = () => {
                           ? 'کارتخوان پاسارگاد'
                           : inv.paymentMethod === 'cash'
                           ? 'نقدی'
-                          : inv.paymentMethod === 'cheque'
+                          : (inv.paymentMethod as string) === 'cheque'
                           ? 'چک صیادی'
                           : 'نسیه / اعتباری'}
                       </span>

@@ -1,6 +1,6 @@
 // ==============================================================================
-// ماژول هوش مصنوعی تحلیلی و مشاور جامع خطی‌نو (Gemini + موتور هوش بومی کارگاهی)
-// Khatinoo Advanced Business, Accounting & Stationery AI Engine
+// ماژول هوش مصنوعی تحلیلی و مشاور جامع خطی‌نو بر پایه Google Gemini
+// Khatinoo Advanced Business, Accounting & Stationery AI Engine (@google/genai)
 // ==============================================================================
 
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
@@ -9,14 +9,23 @@ import { auditAllInventoryAgainstMarket } from './market/marketAggregator';
 
 let aiClient: GoogleGenAI | null = null;
 
-function getAiClient(): GoogleGenAI | null {
+/**
+ * دریافت یا ایجاد نمونه کلاینت رسمی GoogleGenAI
+ */
+function getAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return null;
+  if (!apiKey || apiKey.trim() === '') {
+    const error: any = new Error(
+      'کلید دسترسی Gemini API (متغیر GEMINI_API_KEY) در سرور تنظیم نشده است. لطفاً برای فعال‌سازی، کلید معتبر خود را در تنظیمات پروژه یا فایل .env قرار دهید.'
+    );
+    error.code = 'GEMINI_KEY_MISSING';
+    error.status = 503;
+    throw error;
   }
+
   if (!aiClient) {
     aiClient = new GoogleGenAI({
-      apiKey,
+      apiKey: apiKey.trim(),
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -28,141 +37,9 @@ function getAiClient(): GoogleGenAI | null {
 }
 
 /**
- * موتور هوش تحلیلی و محاسباتی درون‌برنامه‌ای خطی‌نو (Offline/Keyless Built-in AI)
- * ارائه پاسخ‌های تخصصی، ساختاریافته و محاسباتی در حوزه‌های لوازم‌تحریر، چاپ، مالی و ترب
+ * نام مدل پیش‌فرض مدرن و رسمی طبق مستندات Google GenAI
  */
-function runOfflineStationeryExpert(userPrompt: string, storeContext?: string): string {
-  const q = userPrompt.toLowerCase();
-
-  // ۱. سوالات مربوط به فرمولاسیون و تولید دفاتر سیمی و یادداشت
-  if (
-    q.includes('دفتر') ||
-    q.includes('سیمی') ||
-    q.includes('تولید') ||
-    q.includes('فرمول') ||
-    q.includes('bom') ||
-    q.includes('یادداشت') ||
-    q.includes('صحافی')
-  ) {
-    return `### 📋 آنالیز و فرمولاسیون تخصصی تولید کارگاهی (BOM & Costing)
-
-برای تولید اقتصادی و رقابتی دفاتر در کارگاه خطی‌نو، آنالیز بهای تمام‌شده بر اساس استانداردهای روز به شرح زیر پیشنهاد می‌شود:
-
-#### ۱. ساختار مواد اولیه (BOM) برای یک جلد دفتر ۸۰ برگ سیمی وزیری (A5/B5):
-- **کاغذ داخلی (۸۰ برگ = ۴۰ برگ شیت دورو):** کاغذ ۷۰ گرم اندونزی یا تایلندی به ارزش تقریبی **۱۴,۵۰۰ تومان**
-- **جلد و پشت‌جلد:** طلق پلی‌پروپیلن (PP) طرح‌دار مات ضخامت ۶۰۰ میکرون یا مقوای ایندربرد ۳۰۰ گرم سلفون‌مات به ارزش **۶,۸۰۰ تومان**
-- **فنر دوبل فلزی (سایز ۵/۸ یا ۳/۴ اینچ):** **۳,۲۰۰ تومان**
-- **برگ اول گلاسه و لت تقویم/مشخصات:** **۱,۲۰۰ تومان**
-
-#### ۲. هزینه‌های مستقیم و سربار کارگاهی:
-- **دستمزد خط‌کشی، چاپ و برش گیوتین:** **۱,۸۰۰ تومان**
-- **پانچ و فنرزنی مکانیزه:** **۱,۵۰۰ تومان**
-- **استهلاک تیغه، سلفون و برق کارگاه:** **۱,۰۰۰ تومان**
-
----
-- 🔹 **بهای تمام‌شده کل تولید (Cost of Goods):** **۳۰,۰۰۰ تومان**
-- 🔹 **قیمت پیشنهادی فروش عمده به مدارس و همکار (سطح ۳):** **۳۹,۰۰۰ تومان** (۳۰٪ حاشیه سود)
-- 🔹 **قیمت فروش آنلاین و رقابت در ترب (سطح ۲):** **۴۸,۰۰۰ تومان** (۶۰٪ حاشیه سود)
-- 🔹 **قیمت خرده‌فروشی فروشگاه حضوری (سطح ۱):** **۵۵,۰۰۰ تومان** (۸۳٪ حاشیه سود)
-
-💡 **مزیت رقابتی خطی‌نو:** تولید اختصاصی با طرح‌های ترند روز، حاشیه سود را نسبت به خرید از پاپکو حداقل ۲۵٪ بالاتر می‌برد.`;
-  }
-
-  // ۲. سوالات مربوط به خدمات چاپ، تکثیر و کپی
-  if (
-    q.includes('کپی') ||
-    q.includes('پرینت') ||
-    q.includes('چاپ') ||
-    q.includes('تکثیر') ||
-    q.includes('اسکن') ||
-    q.includes('تونر')
-  ) {
-    return `### 🖨️ راهنمای استراتژیک قیمت‌گذاری و مدیریت سود خدمات چاپ و تکثیر
-
-خدمات چاپ و تکثیر یکی از باارزش‌ترین جریان‌های نقدینگی فروشگاه است. برای دستیابی به حداکثر سودآوری:
-
-#### ۱. آنالیز بهای تمام‌شده هر برگ A4 سیاه و سفید:
-- **کاغذ خام ۸۰ گرم (مثلاً دابل‌ای یا سل‌پرینت):** میانگین **۴۸۰ تومان**
-- **پودر تونر و شارژ کارتریج:** میانگین **۱۲۰ تومان**
-- **استهلاک درام، بلید و قطعات پرینتر/فتوکپی:** **۱۰۰ تومان**
-- **برق و استهلاک عمومی:** **۱۰۰ تومان**
-- 🔸 **بهای تمام‌شده هر صفحه یک‌رو:** حدود **۸۰۰ تومان** | **دورو:** حدود **۱,۱۰۰ تومان**
-
-#### ۲. جدول قیمت‌گذاری پیشنهادی پلکانی بر اساس تیراژ:
-| تیراژ صفحات | قیمت یک‌رو (تومان) | قیمت دورو (تومان) | حاشیه سود ناخالص |
-| :--- | :--- | :--- | :--- |
-| **۱ تا ۱۰ برگ (تک‌برگی و فوری)** | ۲,۵۰۰ | ۳,۵۰۰ | بیش از ۲۰۰٪ |
-| **۱۱ تا ۵۰ برگ (دانشجویی)** | ۱,۸۰۰ | ۲,۵۰۰ | ۱۲۵٪ |
-| **۵۱ تا ۲۰۰ برگ (جزوات)** | ۱,۴۰۰ | ۲,۰۰۰ | ۷۵٪ |
-| **بیش از ۲۰۰ برگ (مدارس و کتاب)** | ۱,۱۰۰ | ۱,۶۰۰ | ۴۰٪ (گردش نقدی بالا) |
-
-#### ۳. خدمات تکمیلی ارزش‌افزا:
-- **صحافی فنری با طلق و شیرازه:** هزینه مواد ۸,۰۰۰ تومان ⬅️ نرخ فروش: **۲۵,۰۰۰ تا ۳۵,۰۰۰ تومان**
-- **پرس کارت و لمینت A4:** هزینه مواد ۵,۰۰۰ تومان ⬅️ نرخ فروش: **۱۸,۰۰۰ تومان**`;
-  }
-
-  // ۳. سوالات مربوط به ترب، دیجی‌کالا و قیمت‌گذاری رقابتی
-  if (
-    q.includes('ترب') ||
-    q.includes('دیجیکالا') ||
-    q.includes('دیجی کالا') ||
-    q.includes('رقابت') ||
-    q.includes('مارکت') ||
-    q.includes('قیمت')
-  ) {
-    return `### 🎯 استراتژی هوشمند رصد و صدرنشینی در ترب و دیجی‌کالا
-
-برای موفقیت در مارکت‌پلیس‌ها بدون ورود به جنگ مخرب قیمت (Price War):
-
-#### ۱. فرمول پیروزی در رتبه ۱ ترب با سود تضمینی:
-1. **استخراج کمترین قیمت رقیب:** قیمت رتبه ۱ ترب را شناسایی کنید.
-2. **بررسی سقف تخفیف:** قیمت فروشگاه ۲ آنلاین را **۱,۰۰۰ تا ۲,۰۰۰ تومان زیر رتبه ۱** قرار دهید، **مشروط بر آنکه** حداقل ۱۲٪ تا ۱۵٪ سود خالص پس از کسر کارمزد درگاه و بسته‌بندی باقی بماند.
-3. **پک‌های ترکیبی (Bundle):** برای کالاهای تک‌عددی ارزان (مثل خودکار یا پاک‌کن)، بسته‌های ۳ تایی، ۵ تایی یا ست ترکیبی تعریف کنید تا هزینه ارسال توجیه داشته باشد.
-
-#### ۲. تکنیک‌های فروش چندکاناله:
-- **کانال حضوری (فروشگاه ۱):** تمرکز بر تجربه لمس کالا، ویترین جذاب و قیمت کاتالوگی مصوب (مارجین ۳۰ تا ۴۰٪).
-- **کانال آنلاین و ترب (فروشگاه ۲):** تمرکز بر سرعت پردازش سفارش، بسته‌بندی محکم و قیمت فوق‌رقابتی برای کسب امتیاز ۵ ستاره.
-- **کانال عمده و سازمان‌ها (فروشگاه ۳):** تخفیف حجمی و تسویه نقدی با مدارس و آموزشگاه‌های منطقه.`;
-  }
-
-  // ۴. سوالات مربوط به انبارداری، فصل مدارس (مهرماه) و نقدینگی
-  if (
-    q.includes('انبار') ||
-    q.includes('مهر') ||
-    q.includes('مدرسه') ||
-    q.includes('مدارس') ||
-    q.includes('خواب سرمایه') ||
-    q.includes('نقدینگی') ||
-    q.includes('چک')
-  ) {
-    return `### 📦 تقویم فصلی و نقشه راه تامین نقدینگی نوشت‌افزار (فصل مهر و امتحانات)
-
-بازار لوازم‌تحریر ایران تقاضای فصلی بسیار بالایی دارد. توزیع بهینه نقدینگی:
-
-#### ۱. زمان‌بندی سفارش‌گذاری و تامین:
-- **تیر و مرداد (پیش‌خرید عمده):** خرید مستقیم کاغذ، خودکار پرمصرف (کیان، پنتر، صفا)، مداد رنگی و پاک‌کن از بنکداران بازار تهران با حداقل قیمت سال.
-- **مرداد (تولید کارگاهی دفاتر):** تولید حداکثری دفاتر مشق ۴۰، ۶۰، ۸۰ و ۱۰۰ برگ در کارگاه خطی‌نو پیش از افزایش قیمت کاغذ.
-- **شهریور تا ۱۵ مهر (اوج برداشت نقدی):** فروش حداکثری، اولویت تسویه نقدی و کارتخوان، خودداری از فروش نسیه بلندمدت.
-- **دی و خرداد (موج دوم امتحانات):** تمرکز بر کاغذ A4، ملزومات پرینت، خودکار و طلق و فنر.
-
-#### ۲. مدیریت ریسک چک و نسیه:
-- سقف اعتبار نسیه برای مشتریان همکار حداکثر به اندازه میانگین خرید ۱ ماه گذشته باشد.
-- چک‌های صیادی حتماً پیش از تحویل بار در سامانه پیچک/صیاد تایید و استعلام وضعیت سفید شوند.`;
-  }
-
-  // ۵. پاسخ عمومی و جامع به هر سوال دیگر
-  return `### 💡 تحلیل و راهنمای جامع خطی‌نو
-
-با توجه به بررسی فرآیندهای مالی، انبارداری و بازار لوازم‌تحریر:
-
-۱. **تحلیل سودآوری:** برای حفظ تعادل نقدینگی، میانگین حاشیه سود ناخالص فروشگاه باید بین **۲۵٪ تا ۳۵٪** و برای خدمات چاپ بالای **۶۰٪** تثبیت شود.
-۲. **مدیریت بهینه موجودی:** کالاهای پرگردش (کاغذ A4، خودکارهای برند، دفاتر مشق) باید نقطه سفارش مجدد ۲ هفته‌ای داشته باشند تا با اتمام موجودی و از دست رفتن مشتری مواجه نشوید.
-۳. **بهره‌گیری از ماژول‌های خطی‌نو:**
-   - از **دفتر معین نقدینگی** برای ثبت لحظه‌ای تمامی هزینه‌ها و ورودی‌های پوز پاسارگاد استفاده کنید.
-   - بخش **هوش بازار ترب** را برای رصد قیمت‌های روزانه دیجی‌کالا و ترب پیش از قیمت‌گذاری کالاهای حساس به کار گیرید.
-
-اگر مایلید جزئیات دقیق‌تری در مورد فرمول خاص، محصول مشخص یا محاسبات حسابداری بررسی کنیم، عنوان آن را مطرح فرمایید.`;
-}
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 export interface GroundingSource {
   title?: string;
@@ -183,100 +60,172 @@ export interface GroundedSearchResult {
   sources: GroundingSource[];
   groundingSources: GroundingSource[];
   searchQueries: string[];
-  isFallback?: boolean;
+  isFallback: boolean;
+}
+
+export interface AiConfigStatus {
+  configured: boolean;
+  model: string;
+  searchGroundingAvailable: boolean;
+  tools: string[];
 }
 
 /**
- * تولید تحلیل جامع و هوشمند بازار در زمان اتمام سهمیه یا عدم دسترسی به API
+ * وضعیت پیکربندی و در دسترس بودن هوش مصنوعی سرور
  */
-function generateOfflineGroundedMarketAnalysis(queryText: string): GroundedSearchResult {
-  const q = queryText.trim();
-  const qLower = q.toLowerCase();
-  const encodedQ = encodeURIComponent(q);
-
-  let categoryName = 'لوازم تحریر و نوشت‌افزار';
-  let estimatedMin = 35000;
-  let estimatedMax = 75000;
-  let estimatedAvg = 52000;
-  let keyCompetitors = 'ترب، دیجی‌کالا، ایمالز، باسلام و پخش‌های بازار تهران';
-  let topBrands = 'پنتر (Panter)، کیان، صفا، پاپکو، فابرکاستل و دابل‌ ای';
-  let marginAdvice = 'حاشیه سود آنلاین: ۱۸٪ تا ۲۵٪ | حاشیه سود فروشگاه حضوری: ۳۰٪ تا ۴۰٪';
-
-  if (qLower.includes('کاغذ') || qLower.includes('a4') || qLower.includes('a3') || qLower.includes('دابل')) {
-    categoryName = 'کاغذ و مقوا';
-    estimatedMin = 185000;
-    estimatedMax = 260000;
-    estimatedAvg = 215000;
-    topBrands = 'Double A (دابل ای)، PaperOne، سل پرینت، کپی مکس (Copimax) و هایلایت';
-    marginAdvice = 'کالای پرگردش و استراتژیک با حاشیه سود ۸٪ تا ۱۲٪ جهت جذب مشتری به سبد خرید';
-  } else if (qLower.includes('خودکار') || qLower.includes('روان‌نویس') || qLower.includes('اتود') || qLower.includes('کیان') || qLower.includes('پنتر')) {
-    categoryName = 'نوشت‌افزار و قلم';
-    estimatedMin = 8500;
-    estimatedMax = 45000;
-    estimatedAvg = 18000;
-    topBrands = 'کیان (Kian)، پنتر، صفا، زبرا (Zebra Sarasa)، پایلوت و یونی‌بال';
-    marginAdvice = 'حاشیه سود عمده‌فروشی: ۱۰٪ | تک‌فروشی آنلاین و ترب: ۲۵٪ | حضوری: ۳۵٪';
-  } else if (qLower.includes('دفتر') || qLower.includes('کلاسور') || qLower.includes('سیمی') || qLower.includes('یادداشت')) {
-    categoryName = 'دفاتر و کلاسور';
-    estimatedMin = 28000;
-    estimatedMax = 110000;
-    estimatedAvg = 58000;
-    topBrands = 'تولیدات اختصاصی خطی‌نو، پاپکو، آزاده، ایمان و سهند';
-    marginAdvice = 'تولید اختصاصی کارگاهی با حاشیه سود ۶۰٪ تا ۸۰٪ و مزیت قیمتی بالا نسبت به بازار';
-  } else if (qLower.includes('مداد') || qLower.includes('رنگی') || qLower.includes('نقاشی') || qLower.includes('ماژیک')) {
-    categoryName = 'رنگ‌آمیزی و نقاشی';
-    estimatedMin = 45000;
-    estimatedMax = 380000;
-    estimatedAvg = 120000;
-    topBrands = 'فابر کاستل (Faber-Castell)، پیکاسو (Picasso)، آریا (Arya)، استدلر و استابیلو';
-    marginAdvice = 'حاشیه سود فصلی (فصل مدارس): ۲۵٪ تا ۳۵٪ با تضمین اصالت کالا';
-  }
-
-  const analysisText = `### 📊 گزارش تحلیلی و استعلام بازار: «${q}»
-  
-- **دسته‌بندی اصلی:** ${categoryName}
-- **کمترین قیمت رصدشده در ترب:** ${estimatedMin.toLocaleString('fa-IR')} تومان
-- **میانگین قیمت بازار ایران:** ${estimatedAvg.toLocaleString('fa-IR')} تومان
-- **بیشترین قیمت (فروشگاه‌های رسمی و دیجی‌کالا):** ${estimatedMax.toLocaleString('fa-IR')} تومان
-- **برندهای برتر و پرفروش:** ${topBrands}
-- **کانال‌های اصلی تامین و عرضه:** ${keyCompetitors}
-
----
-#### 💡 توصیه استراتژیک قیمت‌گذاری برای خطی‌نو:
-1. **قیمت‌گذاری در ترب و آنلاین (فروشگاه ۲):** ${Math.round(estimatedMin * 0.98).toLocaleString('fa-IR')} تومان (۲٪ پایین‌تر از کمترین رقیب ترب جهت جذب نشان رتبه اول).
-2. **قیمت فروشگاه حضوری (فروشگاه ۱):** ${Math.round(estimatedAvg * 0.95).toLocaleString('fa-IR')} تومان.
-3. **استراتژی سودآوری:** ${marginAdvice}.
-4. **توصیه تامین:** خرید حجمی مستقیم از بنکداران بازار تهران یا تولید اختصاصی در کارگاه خطی‌نو.`;
-
-  const sources: GroundingSource[] = [
-    {
-      title: `جستجوی زنده «${q}» در ترب`,
-      uri: `https://torob.com/search/?query=${encodedQ}`,
-    },
-    {
-      title: `مشاهده قیمت «${q}» در دیجی‌کالا`,
-      uri: `https://www.digikala.com/search/?q=${encodedQ}`,
-    },
-    {
-      title: `استعلام قیمت در ایمالز`,
-      uri: `https://emalls.ir/Search/?query=${encodedQ}`,
-    },
-  ];
-
+export function getAiConfigStatus(): AiConfigStatus {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const configured = Boolean(apiKey && apiKey.trim().length > 5);
   return {
-    query: q,
-    summary: analysisText,
-    analysis: analysisText,
-    sources,
-    groundingSources: sources,
-    searchQueries: [q, `قیمت روز ${q} در ترب`, `قیمت عمده ${q} در بازار تهران`],
-    isFallback: true,
+    configured,
+    model: DEFAULT_GEMINI_MODEL,
+    searchGroundingAvailable: true,
+    tools: [
+      'getFinancialSummary',
+      'getInventoryAlerts',
+      'getTopSellingProducts',
+      'getProductionCostingAndBOM',
+      'checkInventoryMarketPrices',
+    ],
   };
+}
+
+// -----------------------------------------------------------------------------
+// ابزارهای واقعی (Tools / Function Calling) متصل به پایگاه‌داده حسابداری و انبار
+// -----------------------------------------------------------------------------
+
+const getFinancialSummaryDeclaration: FunctionDeclaration = {
+  name: 'getFinancialSummary',
+  description:
+    'دریافت اطلاعات و آمار زنده مالی از دیتابیس خطی‌نو شامل: فروش امروز، سود تخمینی، گردش نقدینگی، مانده بدهی مشتریان و فروش ۷ روز اخیر',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  },
+};
+
+async function executeGetFinancialSummary() {
+  try {
+    const [dashboardStats, treasurySummary] = await Promise.all([
+      db.getDashboardStats().catch(() => null),
+      db.getTreasurySummary().catch(() => null),
+    ]);
+
+    return {
+      salesTodayToman: dashboardStats?.salesToday || 0,
+      invoicesTodayCount: dashboardStats?.invoiceCountToday || 0,
+      estimatedProfitTodayToman: dashboardStats?.estimatedProfitToday || 0,
+      totalCustomerDebtToman: dashboardStats?.totalCustomerDebt || 0,
+      totalCashInTreasuryToman: treasurySummary?.totalCash || 0,
+      recentDailySales: (dashboardStats?.dailySales || []).slice(-7),
+    };
+  } catch (err: any) {
+    return { error: 'امکان واکشی آمار مالی از دیتابیس میسر نشد: ' + err.message };
+  }
+}
+
+const getInventoryAlertsDeclaration: FunctionDeclaration = {
+  name: 'getInventoryAlerts',
+  description:
+    'دریافت لیست کالاهای دارای کسری موجودی یا در مرز هشدار انبار (نقطه سفارش مجدد) جهت برنامه‌ریزی تامین موجودی',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      limit: {
+        type: Type.NUMBER,
+        description: 'تعداد کالاهای بحرانی جهت نمایش (پیش‌فرض ۱۰)',
+      },
+    },
+  },
+};
+
+async function executeGetInventoryAlerts(args?: { limit?: number }) {
+  try {
+    const products = await db.getProducts();
+    const maxItems = Math.min(Math.max(Number(args?.limit) || 10, 1), 25);
+    const criticalItems = products
+      .filter((p) => Number(p.stock) <= Number(p.minStockAlert || 5))
+      .sort((a, b) => Number(a.stock) - Number(b.stock))
+      .slice(0, maxItems)
+      .map((p) => ({
+        name: p.name,
+        code: p.code,
+        currentStock: p.stock,
+        minAlert: p.minStockAlert,
+        unit: p.unit,
+        buyPrice: p.buyPrice,
+        salePrice: p.salePrice,
+      }));
+
+    return {
+      totalProductsCount: products.length,
+      lowStockTotalCount: products.filter((p) => Number(p.stock) <= Number(p.minStockAlert || 5)).length,
+      criticalItems,
+    };
+  } catch (err: any) {
+    return { error: 'امکان دریافت وضعیت انبار از دیتابیس وجود ندارد: ' + err.message };
+  }
+}
+
+const getTopSellingProductsDeclaration: FunctionDeclaration = {
+  name: 'getTopSellingProducts',
+  description: 'دریافت پرفروش‌ترین کالاهای فروشگاه خطی‌نو بر اساس گردش مالی و تعداد فاکتورهای فروش',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      limit: {
+        type: Type.NUMBER,
+        description: 'تعداد کالاهای پرفروش (پیش‌فرض ۵)',
+      },
+    },
+  },
+};
+
+async function executeGetTopSellingProducts(args?: { limit?: number }) {
+  try {
+    const stats = await db.getDashboardStats();
+    const limit = Math.min(Math.max(Number(args?.limit) || 5, 1), 10);
+    return {
+      topSelling: (stats?.topProducts || []).slice(0, limit),
+    };
+  } catch (err: any) {
+    return { error: 'امکان واکشی کالاهای پرفروش وجود ندارد: ' + err.message };
+  }
+}
+
+const getProductionCostingDeclaration: FunctionDeclaration = {
+  name: 'getProductionCostingAndBOM',
+  description: 'دریافت فرمولاسیون‌های فعال کارگاهی (BOM) برای تولید دفاتر، یادداشت‌ها و بهای تمام‌شده مستقیم مواد و دستمزد',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  },
+};
+
+async function executeGetProductionCostingAndBOM() {
+  try {
+    const formulas = await db.getProductionFormulas();
+    return {
+      totalFormulasCount: formulas.length,
+      formulas: formulas.slice(0, 10).map((f) => ({
+        title: f.title,
+        outputProductName: f.outputProductName,
+        materialsCount: f.materials?.length || 0,
+        estimatedTotalCostToman: f.materials?.reduce(
+          (sum: number, m: any) => sum + (Number(m.unitCost) || 0) * (Number(m.quantity) || 1),
+          0
+        ) || 0,
+      })),
+    };
+  } catch (err: any) {
+    return { error: 'خطا در واکشی فرمول‌های تولید کارگاه: ' + err.message };
+  }
 }
 
 const checkInventoryMarketPricesDeclaration: FunctionDeclaration = {
   name: 'checkInventoryMarketPrices',
-  description: 'بررسی زنده و تطبیق قیمت‌های موجودی انبار فروشگاه با کف قیمت بازار آزاد (ترب، دیجی‌کالا، تحریر۲۰) و ارائه تحلیل کالاهای گران‌تر از بازار، ارزان‌تر از بازار، یا با پتانسیل افزایش سود',
+  description:
+    'بررسی زنده و تطبیق قیمت‌های موجودی انبار فروشگاه با کف قیمت بازار آزاد (ترب، دیجی‌کالا، تحریر۲۰) و ارائه تحلیل کالاهای گران‌تر یا ارزان‌تر از بازار',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -286,7 +235,7 @@ const checkInventoryMarketPricesDeclaration: FunctionDeclaration = {
       },
       limit: {
         type: Type.NUMBER,
-        description: 'تعداد کالاهای مورد استعلام و بررسی (پیش‌فرض ۱۰)',
+        description: 'تعداد کالاهای مورد استعلام و بررسی (پیش‌فرض ۸)',
       },
     },
   },
@@ -303,7 +252,7 @@ async function executeCheckInventoryMarketPrices(args?: { categoryFilter?: strin
         (p.categoryName && p.categoryName.toLowerCase().includes(filter))
     );
   }
-  const maxItems = Math.min(Math.max(Number(args?.limit) || 10, 1), 20);
+  const maxItems = Math.min(Math.max(Number(args?.limit) || 8, 1), 15);
   const toAudit = targetProds.slice(0, maxItems);
   const auditResult = await auditAllInventoryAgainstMarket(toAudit);
 
@@ -312,7 +261,6 @@ async function executeCheckInventoryMarketPrices(args?: { categoryFilter?: strin
     overpricedCount: auditResult.overpricedCount,
     underpricedCount: auditResult.underpricedCount,
     competitiveCount: auditResult.competitiveCount,
-    untrackedCount: auditResult.untrackedCount,
     potentialProfitIncreaseToman: auditResult.potentialProfitIncrease,
     items: auditResult.items.map((i) => ({
       productName: i.productName,
@@ -321,8 +269,6 @@ async function executeCheckInventoryMarketPrices(args?: { categoryFilter?: strin
       currentPrice: i.currentPrice,
       marketFloorPrice: i.torobFloorPrice,
       digikalaPrice: i.digikalaPrice,
-      tahrir20Price: i.tahrir20Price,
-      status: i.status,
       statusLabel: i.statusLabel,
       suggestedPrice: i.suggestedShop2Price,
       potentialGain: i.potentialGain,
@@ -330,195 +276,191 @@ async function executeCheckInventoryMarketPrices(args?: { categoryFilter?: strin
   };
 }
 
-function formatInventoryAuditReport(data: any): string {
-  const itemsList = (data.items || [])
-    .map(
-      (i: any) =>
-        `- **${i.productName}** (موجودی: ${i.stock}):\n` +
-        `  • قیمت فعلی: **${i.currentPrice.toLocaleString('fa-IR')} تومان** | خرید: **${i.buyPrice.toLocaleString('fa-IR')} تومان**\n` +
-        `  • کف بازار (ترب/تحریر۲۰): **${i.marketFloorPrice.toLocaleString('fa-IR')} تومان** | دیجی‌کالا: **${i.digikalaPrice.toLocaleString('fa-IR')} تومان**\n` +
-        `  • وضعیت: **${i.statusLabel}** ${i.potentialGain > 0 ? `| پتانسیل افزایش سود: +${i.potentialGain.toLocaleString('fa-IR')} تومان` : ''}\n` +
-        `  • پیشنهاد هوشمند فروش: **${i.suggestedPrice.toLocaleString('fa-IR')} تومان**`
-    )
-    .join('\n\n');
+/**
+ * مدیریت یکپارچه خطاهای Google Gemini و تبدیل به پیام‌های صریح فارسی
+ */
+function handleGeminiError(error: any): never {
+  const errMsg = String(error?.message || error || '');
+  const status = error?.status || error?.statusCode;
 
-  return `### 📊 گزارش هوشمند تطبیق و آدیت قیمت‌های انبار با بازار
+  console.error('[Gemini Service Error]:', errMsg, error);
 
-در بررسی **${data.totalAudited} قلم کالا** از انبار فروشگاه در مقایسه با بازار آنلاین (ترب، دیجی‌کالا، تحریر۲۰):
+  if (errMsg.includes('API_KEY_INVALID') || status === 401 || status === 403) {
+    const err: any = new Error(
+      'کلید API وارد شده برای Google Gemini معتبر نیست یا مجوز دسترسی ندارد. لطفاً کلید صحیح را بررسی کنید.'
+    );
+    err.code = 'GEMINI_AUTH_FAILED';
+    err.status = 401;
+    throw err;
+  }
 
-- 🔴 **کالاهای گران‌تر از بازار (نیاز به کاهش):** ${data.overpricedCount} مورد
-- 🟢 **کالاهای ارزان‌تر از بازار (پتانسیل افزایش قیمت و مارجین):** ${data.underpricedCount} مورد
-- ⚖️ **کالاهای با قیمت کاملاً رقابتی:** ${data.competitiveCount} مورد
-${data.potentialProfitIncreaseToman > 0 ? `- 💰 **مجموع پتانسیل افزایش سود با اصلاح قیمت‌ها:** **${data.potentialProfitIncreaseToman.toLocaleString('fa-IR')} تومان**\n` : ''}
----
+  if (errMsg.includes('RESOURCE_EXHAUSTED') || status === 429 || errMsg.includes('quota') || errMsg.includes('Quota')) {
+    const err: any = new Error(
+      'سقف مصرف یا نرخ درخواست مجاز به Google Gemini API تکمیل شده است (Rate Limit / Quota Exceeded). لطفاً چند لحظه بعد مجدداً تلاش نمایید.'
+    );
+    err.code = 'GEMINI_QUOTA_EXCEEDED';
+    err.status = 429;
+    throw err;
+  }
 
-#### جزئیات اقلام بررسی‌شده:
-${itemsList}
+  if (errMsg.includes('fetch failed') || errMsg.includes('ENOTFOUND') || errMsg.includes('ECONNREFUSED')) {
+    const err: any = new Error(
+      'ارتباط سرور با سرویس‌های هوش مصنوعی Google برقرار نشد. لطفاً وضعیت اینترنت سرور یا DNS را بررسی نمایید.'
+    );
+    err.code = 'GEMINI_NETWORK_ERROR';
+    err.status = 502;
+    throw err;
+  }
 
-💡 **پیشنهاد مشاور:** برای حفظ سهم بازار در ترب و حفظ مشتریان حضوری، قیمت اقلام قرمز رنگ را به قیمت پیشنهادی اصلاح کنید و برای اقلام سبز، قیمت را به سقف رقابتی نزدیک‌تر کنید تا حاشیه سود حفظ شود.`;
+  const err: any = new Error(`خطای پردازش هوش مصنوعی Gemini: ${errMsg}`);
+  err.code = 'GEMINI_INTERNAL_ERROR';
+  err.status = status || 500;
+  throw err;
 }
 
+/**
+ * گفتگو و تحلیل هوشمند با دستیار رسمی Gemini
+ */
 export async function askGeminiAssistant(
   messages: Array<{ role: 'user' | 'model'; text: string }>,
   storeContext?: string,
   enableSearchGrounding: boolean = true
 ): Promise<AssistantResponse> {
-  const latestMessage = messages[messages.length - 1]?.text || '';
   const ai = getAiClient();
 
-  // اگر کلاینت Gemini فعال بود، تلاش برای تحلیل هوشمند همراه با ابزار Function Calling
-  if (ai) {
-    const systemPrompt = `شما دستیار هوشمند، تحلیلگر ارشد بازار و مشاور مالی/تولیدی سیستم یکپارچه نوشت‌افزار «خطی‌نو» (Khatinoo) هستید.
-شما دسترسی به ابزار تابعی «checkInventoryMarketPrices» دارید که می‌تواند قیمت‌های انبار را با کف بازار (ترب، دیجی‌کالا، تحریر۲۰) مقایسه کند. هر زمان کاربر درباره وضعیت قیمت‌های انبار، استعلام بازار کالاها، یا ارزیابی رقابتی انبار پرسید، حتما از این ابزار استفاده کنید.
-وظایف:
-۱. تحلیل دقیق بهای تمام‌شده (BOM) تولید دفاتر و محصولات کارگاهی خطی‌نو.
-۲. استخراج قیمت‌های زنده و تحلیل رقابت در ترب، دیجی‌کالا و بازار ایران با استفاده از ابزارهای هوش بازار و وب.
-۳. استراتژی قیمت‌گذاری ۵ سطحی و سودآوری فروشگاه آنلاین و حضوری.
-۴. بهینه‌سازی جریان نقدینگی، گردش انبار، تامین فصل مدارس و خدمات تکثیر و چاپ.
-پاسخ‌ها را به زبان فارسی روان، ساختاریافته با مارک‌داون، تیترهای تمیز، اعداد مستند به تومان و تحلیل‌های دقیق بنویس.
+  const systemPrompt = `شما دستیار هوشمند، تحلیلگر ارشد مالی و مشاور استراتژیک سیستم یکپارچه لوازم‌تحریر، چاپ و حسابداری «خطی‌نو» (Khatinoo) هستید.
+پلتفرم خطی‌نو شامل:
+- فروشگاه آنلاین و حضوری لوازم‌تحریر
+- کارگاه تولید دفاتر سیمی و صحافی
+- خدمات چاپ، فتوکپی و خدمات دانشجویی
+- سیستم حسابداری، انبارداری و اتصال به پوز و درگاه‌های شاپرک
+- موتور رصد زنده قیمت‌ها در ترب و دیجی‌کالا
 
-زمینه فروشگاه:
-${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افزار و چاپ خطی‌نو'}`;
+شما دارای ابزارهای تخصصی واقعی (Function Calling) هستید:
+۱. getFinancialSummary: واکشی آمار دقیق فروش امروز، سود، گردش نقدینگی و بدهی مشتریان از دیتابیس
+۲. getInventoryAlerts: بررسی کالاهای دارای کسری و مرز هشدار انبار
+۳. getTopSellingProducts: دریافت پرفروش‌ترین‌های فروشگاه
+۴. getProductionCostingAndBOM: استعلام فرمولاسیون بهای تمام‌شده تولید دفاتر کارگاه
+۵. checkInventoryMarketPrices: تطبیق قیمت‌های انبار با کف بازار (ترب/دیجی‌کالا)
 
-    const formattedContents = messages.map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.text }],
-    }));
+دستورالعمل‌ها:
+- پاسخ‌ها باید به زبان فارسی رسمی، روان، کاملاً ساختاریافته با مارک‌داون (تیترها، جداول، بولت‌ها) باشد.
+- تمام مبالغ پولی را دقیق و به تومان ذکر کنید.
+- هرگز داده‌های مالی یا ارقام را جعل نکنید؛ اگر نیاز به آمار دیتابیس است از ابزار مربوطه استفاده کنید.
+- زمینه و اطلاعات محیطی سیستم: ${storeContext || 'فروشگاه و کارگاه تخصصی خطی‌نو'}`;
 
-    // مرحله ۱: تلاش با ابزار Function Calling
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: formattedContents,
+  const formattedContents = messages.map((m) => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.text }],
+  }));
+
+  try {
+    // تنظیم ابزارها: اگر جستجوی زنده گوگل مد نظر باشد از googleSearch استفاده می‌شود، در غیر این صورت از توابع پایگاه‌داده
+    const toolsConfig = enableSearchGrounding
+      ? [{ googleSearch: {} }]
+      : [
+          {
+            functionDeclarations: [
+              getFinancialSummaryDeclaration,
+              getInventoryAlertsDeclaration,
+              getTopSellingProductsDeclaration,
+              getProductionCostingDeclaration,
+              checkInventoryMarketPricesDeclaration,
+            ],
+          },
+        ];
+
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: formattedContents,
+      config: {
+        systemInstruction: systemPrompt,
+        temperature: 0.6,
+        tools: toolsConfig as any,
+      },
+    });
+
+    // بررسی آیا مدل تابعی را برای دریافت دیتای واقعی فراخوانی کرده است
+    const functionCalls = response.functionCalls;
+    if (functionCalls && functionCalls.length > 0) {
+      const toolFollowupParts: any[] = [];
+
+      for (const call of functionCalls) {
+        let resultData: any = null;
+        if (call.name === 'getFinancialSummary') {
+          resultData = await executeGetFinancialSummary();
+        } else if (call.name === 'getInventoryAlerts') {
+          resultData = await executeGetInventoryAlerts(call.args as any);
+        } else if (call.name === 'getTopSellingProducts') {
+          resultData = await executeGetTopSellingProducts(call.args as any);
+        } else if (call.name === 'getProductionCostingAndBOM') {
+          resultData = await executeGetProductionCostingAndBOM();
+        } else if (call.name === 'checkInventoryMarketPrices') {
+          resultData = await executeCheckInventoryMarketPrices(call.args as any);
+        }
+
+        toolFollowupParts.push({
+          functionResponse: {
+            name: call.name,
+            response: resultData || { status: 'success' },
+          },
+        });
+      }
+
+      // ارسال پاسخ توابع به مدل برای جمع‌بندی و نگارش پاسخ تحلیلی نهایی
+      const followupResponse = await ai.models.generateContent({
+        model: DEFAULT_GEMINI_MODEL,
+        contents: [
+          ...formattedContents,
+          response.candidates?.[0]?.content as any,
+          {
+            role: 'user',
+            parts: toolFollowupParts,
+          },
+        ],
         config: {
           systemInstruction: systemPrompt,
-          temperature: 0.7,
-          tools: [{ functionDeclarations: [checkInventoryMarketPricesDeclaration] }],
+          temperature: 0.6,
         },
       });
 
-      // بررسی آیا مدل تابعی را فراخوانی کرده است
-      const functionCalls = response.functionCalls;
-      if (functionCalls && functionCalls.length > 0) {
-        for (const call of functionCalls) {
-          if (call.name === 'checkInventoryMarketPrices') {
-            const result = await executeCheckInventoryMarketPrices(call.args as any);
-            const followup = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: [
-                ...formattedContents,
-                response.candidates?.[0]?.content as any,
-                {
-                  role: 'user',
-                  parts: [
-                    {
-                      functionResponse: {
-                        name: call.name,
-                        response: result,
-                      },
-                    },
-                  ],
-                },
-              ],
-              config: {
-                systemInstruction: systemPrompt,
-                temperature: 0.7,
-              },
-            });
-
-            const replyText = followup.text || '';
-            if (replyText.trim()) {
-              return {
-                reply: replyText,
-                groundingEnabled: false,
-              };
-            }
-          }
-        }
-      }
-
-      const text = response.text || '';
-      if (text.trim()) {
-        return {
-          reply: text,
-          groundingEnabled: false,
-        };
-      }
-    } catch (error: any) {
-      console.warn('Gemini function calling call unavailable or rate-limited, continuing...');
-    }
-
-    // مرحله ۲: تلاش با Search Grounding در صورت درخواست
-    if (enableSearchGrounding) {
-      try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: formattedContents,
-          config: {
-            systemInstruction: systemPrompt,
-            temperature: 0.7,
-            tools: [{ googleSearch: {} }],
-          },
-        });
-
-        const text = response.text || '';
-        const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
-        const groundingChunks = groundingMetadata?.groundingChunks;
-        const searchQueries = groundingMetadata?.webSearchQueries || [];
-
-        const groundingSources: GroundingSource[] = [];
-        if (groundingChunks && Array.isArray(groundingChunks)) {
-          for (const chunk of groundingChunks) {
-            if (chunk.web && chunk.web.uri) {
-              groundingSources.push({
-                title: chunk.web.title || chunk.web.uri,
-                uri: chunk.web.uri,
-              });
-            }
-          }
-        }
-
-        if (text.trim()) {
-          return {
-            reply: text,
-            groundingSources: groundingSources.length > 0 ? groundingSources : undefined,
-            searchQueries: searchQueries.length > 0 ? searchQueries : undefined,
-            groundingEnabled: true,
-          };
-        }
-      } catch (error: any) {
-        console.warn('Gemini Search Grounding call unavailable, falling back...');
-      }
-    }
-  }
-
-  // مرحله ۳: بررسی تقاضای بررسی قیمت‌های انبار در حالت آفلاین
-  const isInventoryAuditQuery =
-    (latestMessage.includes('انبار') || latestMessage.includes('موجودی')) &&
-    (latestMessage.includes('بازار') ||
-      latestMessage.includes('چک') ||
-      latestMessage.includes('استعلام') ||
-      latestMessage.includes('قیمت') ||
-      latestMessage.includes('آدیت') ||
-      latestMessage.includes('تطبیق'));
-
-  if (isInventoryAuditQuery) {
-    try {
-      const data = await executeCheckInventoryMarketPrices({ limit: 8 });
       return {
-        reply: formatInventoryAuditReport(data),
+        reply: followupResponse.text || 'پاسخ تحلیلی آماده گردید.',
         groundingEnabled: false,
       };
-    } catch (e) {
-      // ادامه به هوش عمومی
     }
-  }
 
-  // مرحله ۴: حالت آفلاین و بومی تضمینی (بدون نیاز به کلید با دقت بالای کارگاهی)
-  return {
-    reply: runOfflineStationeryExpert(latestMessage, storeContext),
-    groundingEnabled: false,
-  };
+    // استخراج متادیتای جستجوی گوگل (Grounding Sources) در صورت وجود
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+    const groundingChunks = groundingMetadata?.groundingChunks || [];
+    const searchQueries = groundingMetadata?.webSearchQueries || [];
+
+    const groundingSources: GroundingSource[] = [];
+    if (Array.isArray(groundingChunks)) {
+      for (const chunk of groundingChunks) {
+        if (chunk.web && chunk.web.uri) {
+          groundingSources.push({
+            title: chunk.web.title || chunk.web.uri,
+            uri: chunk.web.uri,
+          });
+        }
+      }
+    }
+
+    const replyText = response.text || '';
+    if (!replyText.trim()) {
+      throw new Error('پاسخی از مدل هوش مصنوعی دریافت نشد.');
+    }
+
+    return {
+      reply: replyText,
+      groundingSources: groundingSources.length > 0 ? groundingSources : undefined,
+      searchQueries: searchQueries.length > 0 ? searchQueries : undefined,
+      groundingEnabled: enableSearchGrounding && groundingSources.length > 0,
+    };
+  } catch (error: any) {
+    handleGeminiError(error);
+  }
 }
 
 /**
@@ -527,30 +469,36 @@ ${storeContext || 'فروشگاه و کارگاه تولیدی نوشت‌افز
 export async function groundedWebMarketSearch(queryText: string): Promise<GroundedSearchResult> {
   const q = (queryText || '').trim();
   if (!q) {
-    return generateOfflineGroundedMarketAnalysis('لوازم تحریر');
+    const err: any = new Error('متن جستجو برای هوش بازار نباید خالی باشد.');
+    err.status = 400;
+    throw err;
   }
 
   const ai = getAiClient();
-  if (ai) {
-    // مرحله ۱: تلاش با ابزار جستجوی گوگل متصل به جمینای
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `با جستجوی زنده در وب (Google Search)، قیمت روز، مشخصات، تولیدکنندگان و وضعیت بازار کالای زیر را در ایران (سایت‌های ترب، دیجی‌کالا، ایمالز، باسلام و بنکداران بازار تهران) به دقت بررسی و خلاصه کن:
+
+  try {
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: `با جستجوی زنده در وب (Google Search)، قیمت روز، برندهای برتر و وضعیت عرضه کالای زیر را در بازار ایران (سایت‌های ترب، دیجی‌کالا، ایمالز، باسلام و بنکداران بازار تهران) بررسی و مستند کن:
 «${q}»
-شامل: کمترین و بیشترین قیمت بازار، میانگین قیمت، برندهای معتبر و توصیه قیمت‌گذاری برای فروشگاه خطی‌نو.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          temperature: 0.5,
-        },
-      });
+پاسخ شما باید شامل:
+۱. کمترین و بیشترین قیمت بازار
+۲. میانگین قیمت مصرف‌کننده
+۳. برندهای برتر بازار
+۴. پیشنهاد استراتژی قیمت‌گذاری برای فروشگاه حضوری و آنلاین خطی‌نو باشد.`,
+      config: {
+        tools: [{ googleSearch: {} }],
+        temperature: 0.4,
+      },
+    });
 
-      const text = response.text || '';
-      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
-      const groundingChunks = groundingMetadata?.groundingChunks || [];
-      const searchQueries = groundingMetadata?.webSearchQueries || [];
+    const text = response.text || '';
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+    const groundingChunks = groundingMetadata?.groundingChunks || [];
+    const searchQueries = groundingMetadata?.webSearchQueries || [];
 
-      const sources: GroundingSource[] = [];
+    const sources: GroundingSource[] = [];
+    if (Array.isArray(groundingChunks)) {
       for (const chunk of groundingChunks) {
         if (chunk.web && chunk.web.uri) {
           sources.push({
@@ -559,55 +507,25 @@ export async function groundedWebMarketSearch(queryText: string): Promise<Ground
           });
         }
       }
-
-      if (text.trim()) {
-        return {
-          query: q,
-          summary: text,
-          analysis: text,
-          sources,
-          groundingSources: sources,
-          searchQueries: searchQueries.length > 0 ? searchQueries : [q],
-          isFallback: false,
-        };
-      }
-    } catch (error: any) {
-      console.warn('Grounded search hit rate limit/quota, generating market synthesis...');
     }
 
-    // مرحله ۲: تلاش با مدل استاندارد بدون ابزار جستجو
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `به عنوان تحلیلگر ارشد بازار لوازم تحریر ایران، قیمت روز، بازه رقابتی در ترب و دیجی‌کالا و استراتژی قیمت‌گذاری برای کالای زیر را تحلیل و فرمت‌بندی کن:
-«${q}»`,
-        config: {
-          temperature: 0.5,
-        },
-      });
-
-      const text = response.text || '';
-      if (text.trim()) {
-        const fallbackObj = generateOfflineGroundedMarketAnalysis(q);
-        return {
-          query: q,
-          summary: text,
-          analysis: text,
-          sources: fallbackObj.sources,
-          groundingSources: fallbackObj.groundingSources,
-          searchQueries: [q],
-          isFallback: false,
-        };
-      }
-    } catch (e) {
-      // ادامه به مرحله ۳ در زیر
-    }
+    return {
+      query: q,
+      summary: text,
+      analysis: text,
+      sources,
+      groundingSources: sources,
+      searchQueries: searchQueries.length > 0 ? searchQueries : [q],
+      isFallback: false,
+    };
+  } catch (error: any) {
+    handleGeminiError(error);
   }
-
-  // مرحله ۳: تحلیل بومی جامع و پیوندهای مستقیم معتبر ترب و دیجی‌کالا
-  return generateOfflineGroundedMarketAnalysis(q);
 }
 
+/**
+ * تحلیل و تعیین قیمت ۵ سطحی کالا بر اساس داده‌های خرید و بازار با Gemini
+ */
 export async function analyzeProductMarketAndPricing(
   productName: string,
   buyPrice: number,
@@ -626,56 +544,42 @@ export async function analyzeProductMarketAndPricing(
   const avgMarket = Number(torobAvgPrice) || Math.round(baseBuy * 1.38);
 
   const ai = getAiClient();
-  if (ai) {
-    try {
-      const prompt = `کالای نوشت‌افزار: ${productName}
+
+  const prompt = `شما مشاور مالی و استراتژی قیمت‌گذاری خطی‌نو هستید.
+کالای نوشت‌افزار: ${productName}
 دسته‌بندی: ${category}
-بهای تمام‌شده خرید: ${baseBuy} تومان
-کمترین قیمت رقبا در ترب و دیجی‌کالا: ${minMarket} تومان
+بهای تمام‌شده خرید انبار: ${baseBuy} تومان
+کمترین قیمت رقبا در ترب و بازار: ${minMarket} تومان
 میانگین قیمت بازار: ${avgMarket} تومان
 
-یک JSON معتبر با ساختار زیر بده:
+یک JSON معتبر و بدون هیچ متن اضافه‌ای با ساختار زیر تولید کن:
 {
-  "suggestedRetailPrice": عدد صحیح به تومان,
-  "suggestedOnlinePrice": عدد صحیح به تومان (مناسب ترب),
-  "suggestedWholesalePrice": عدد صحیح به تومان (عمده),
-  "marginAnalysis": "متن فارسی تحلیل حاشیه سود",
-  "competitiveStrategy": "متن فارسی استراتژی فروش"
+  "suggestedRetailPrice": عدد صحیح به تومان برای فروشگاه حضوری,
+  "suggestedOnlinePrice": عدد صحیح به تومان رقابتی برای ترب و آنلاین,
+  "suggestedWholesalePrice": عدد صحیح به تومان برای فروش عمده به مدارس و همکاران,
+  "marginAnalysis": "متن فارسی تحلیل درصد سود ناخالص هر سطح",
+  "competitiveStrategy": "متن فارسی استراتژی قیمت‌گذاری و پیروزی در رتبه ۱ ترب"
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+  try {
+    const response = await ai.models.generateContent({
+      model: DEFAULT_GEMINI_MODEL,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
 
-      const parsed = JSON.parse(response.text?.trim() || '{}');
-      if (parsed.suggestedRetailPrice) {
-        return {
-          suggestedRetailPrice: parsed.suggestedRetailPrice,
-          suggestedOnlinePrice: parsed.suggestedOnlinePrice || Math.round(minMarket * 0.98),
-          suggestedWholesalePrice: parsed.suggestedWholesalePrice || Math.round(baseBuy * 1.1),
-          marginAnalysis: parsed.marginAnalysis || `حاشیه سود ${Math.round(((parsed.suggestedRetailPrice - baseBuy) / baseBuy) * 100)}٪`,
-          competitiveStrategy: parsed.competitiveStrategy || 'تنظیم قیمت رقابتی در ترب با حفظ حاشیه سود امن',
-        };
-      }
-    } catch (e) {
-      // Fallback below
-    }
+    const parsed = JSON.parse(response.text?.trim() || '{}');
+    return {
+      suggestedRetailPrice: Number(parsed.suggestedRetailPrice) || Math.round(baseBuy * 1.35),
+      suggestedOnlinePrice: Number(parsed.suggestedOnlinePrice) || Math.round(minMarket * 0.98),
+      suggestedWholesalePrice: Number(parsed.suggestedWholesalePrice) || Math.round(baseBuy * 1.1),
+      marginAnalysis: parsed.marginAnalysis || `حاشیه سود آنلاین: ${Math.round(((minMarket * 0.98 - baseBuy) / baseBuy) * 100)}٪`,
+      competitiveStrategy: parsed.competitiveStrategy || 'تنظیم قیمت رقابتی در ترب با ۲٪ پایین‌تر از رقبا جهت صدرنشینی.',
+    };
+  } catch (error: any) {
+    handleGeminiError(error);
   }
-
-  // محاسبات هوشمند بومی ریاضی و بازار ایران
-  const onlinePrice = Math.max(Math.round(minMarket * 0.98), Math.round(baseBuy * 1.15));
-  const retailPrice = Math.round(baseBuy * 1.35);
-  const wholesalePrice = Math.round(baseBuy * 1.1);
-
-  return {
-    suggestedRetailPrice: retailPrice,
-    suggestedOnlinePrice: onlinePrice,
-    suggestedWholesalePrice: wholesalePrice,
-    marginAnalysis: `سود ناخالص آنلاین: ${Math.round(((onlinePrice - baseBuy) / baseBuy) * 100)}٪ | سود فروشگاه حضوری: ${Math.round(((retailPrice - baseBuy) / baseBuy) * 100)}٪`,
-    competitiveStrategy: `قیمت‌گذاری آنلاین با ۲٪ پایین‌تر از کمترین رقیب ترب جهت کسب رتبه اول و جذب سبدهای خرید چندقلمی.`,
-  };
 }

@@ -515,6 +515,11 @@ export const api = {
       headers: getAuthHeader(),
     }).then(handleResponse),
 
+  getAiStatus: () =>
+    fetch(`${API_BASE}/ai/status`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
   askAiAssistant: (
     messagesOrPrompt: Array<{ role: 'user' | 'model'; text: string }> | string,
     storeContext?: string,

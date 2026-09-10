@@ -261,7 +261,9 @@ export const CustomerAuthModal: React.FC = () => {
                 {otpCode.map((digit, idx) => (
                   <input
                     key={idx}
-                    ref={(el) => (otpInputsRef.current[idx] = el)}
+                    ref={(el) => {
+                      otpInputsRef.current[idx] = el;
+                    }}
                     type="text"
                     inputMode="numeric"
                     maxLength={1}

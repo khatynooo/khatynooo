@@ -1053,7 +1053,7 @@ export const PosView: React.FC = () => {
                     filteredProducts.map((p) => (
                       <button
                         key={`p_${p.id}`}
-                        onClick={() => setQuantityModal({ product: p, mode: 'unit' })}
+                        onClick={() => setQuantityModal({ product: p, mode: 'unit', currentQtyInInvoice: 0 })}
                         className="p-2 bg-white hover:bg-indigo-50 hover:border-indigo-300 rounded-xl border border-slate-200 text-right text-xs transition-colors flex flex-col justify-between cursor-pointer"
                       >
                         <div className="flex items-start justify-between gap-1">
@@ -1098,7 +1098,7 @@ export const PosView: React.FC = () => {
                     products.slice(0, itemTypeFilter === 'products' ? 12 : 6).map((p) => (
                       <button
                         key={`p_quick_${p.id}`}
-                        onClick={() => setQuantityModal({ product: p, mode: 'unit' })}
+                        onClick={() => setQuantityModal({ product: p, mode: 'unit', currentQtyInInvoice: 0 })}
                         className="p-2 bg-white hover:bg-indigo-50 hover:border-indigo-300 rounded-xl border border-slate-200 text-right text-xs transition-colors flex flex-col justify-between cursor-pointer"
                       >
                         <div className="flex items-start justify-between gap-1">

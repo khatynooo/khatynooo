@@ -93,9 +93,13 @@ export interface Product {
   minStockAlert: number;
   description?: string;
   image?: string;
+  imageUrl?: string;
+  sku?: string;
   gallery?: string[];
   isSpecialOffer?: boolean;
   featured?: boolean;
+  isFeatured?: boolean;
+  discountPercent?: number;
   isPublished?: boolean;
   showOnWebsite?: boolean;
   onlyAccounting?: boolean;
@@ -227,6 +231,7 @@ export interface SalesInvoice {
   discount: number;
   tax: number;
   finalAmount: number;
+  totalAmount?: number;
   paymentMethod: PaymentMethod;
   paidAmount: number;
   remainingAmount: number;
@@ -243,6 +248,7 @@ export interface SalesInvoice {
   createdAt: string;
   createdByUserId: string;
   createdByUserName: string;
+  createdByName?: string;
 }
 
 export interface PurchaseInvoice {
@@ -335,6 +341,7 @@ export interface OnlineOrderItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  totalPrice?: number;
   image?: string;
 }
 
@@ -345,16 +352,21 @@ export interface OnlineOrder {
   customerName: string;
   customerMobile: string;
   customerAddress: string;
+  city?: string;
+  shippingAddress?: string;
   items: OnlineOrderItem[];
   subtotal: number;
   shippingCost: number;
   shippingMethod: string;
+  shippingMethodName?: string;
   discountAmount: number;
   couponCode?: string;
   finalAmount: number;
+  totalAmount?: number;
   paymentGateway: 'zarinpal' | 'idpay' | 'nextpay' | 'behpardakht' | 'zibal' | 'card_to_card' | 'cod';
   paymentStatus: 'paid' | 'pending' | 'failed' | 'refunded';
   orderStatus: 'processing' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+  status?: string;
   trackingCode?: string;
   transactionRef?: string;
   salesInvoiceId?: string;
@@ -367,9 +379,11 @@ export interface OnlineOrder {
 export interface PaymentGatewayConfig {
   id: string;
   name: string;
+  title?: string;
   code: 'zarinpal' | 'idpay' | 'nextpay' | 'behpardakht' | 'zibal' | 'card_to_card' | 'cod';
   isActive: boolean;
   isEnabled?: boolean;
+  isTestMode?: boolean;
   merchantId?: string;
   apiKey?: string;
   terminalId?: string;
@@ -384,8 +398,12 @@ export interface WebsiteBanner {
   title: string;
   subtitle?: string;
   tag?: string;
+  badge?: string;
+  buttonText?: string;
   image: string;
-  targetUrl: string;
+  imageUrl?: string;
+  targetUrl?: string;
+  link?: string;
   isActive: boolean;
   sortOrder: number;
 }
@@ -393,9 +411,12 @@ export interface WebsiteBanner {
 export interface ShippingMethodConfig {
   id: string;
   name: string;
+  title?: string;
   code: 'courier' | 'post' | 'tipax' | 'in_person';
   cost: number;
+  baseCost?: number;
   freeShippingThreshold: number;
+  freeThreshold?: number;
   estimatedDays: string;
   isActive: boolean;
 }
@@ -403,12 +424,14 @@ export interface ShippingMethodConfig {
 export interface HeaderMenuItem {
   id: string;
   title: string;
-  url: string; // e.g. /category/cat_writing or #products or #calculator
+  url?: string; // e.g. /category/cat_writing or #products or #calculator
+  link?: string;
   icon?: string;
+  iconName?: string;
   badge?: string; // e.g. تولید اختصاصی, جدید, تخفیف
   highlight?: boolean;
   isEnabled: boolean;
-  sortOrder: number;
+  sortOrder?: number;
 }
 
 export interface CustomSymbol {
@@ -666,7 +689,9 @@ export interface ProductionMaterial {
   id: string;
   linkedProductId?: string;
   materialName: string;
+  rawProductName?: string;
   quantity: number;
+  quantityNeeded?: number;
   unit: string;
   unitCost: number;
 }
@@ -680,6 +705,7 @@ export interface ProductionOverhead {
 export interface ProductionFormula {
   id: string;
   name: string;
+  title?: string;
   outputProductId?: string;
   outputProductName: string;
   outputCategory: string;
@@ -687,6 +713,7 @@ export interface ProductionFormula {
   baseOutputQuantity: number;
   materials: ProductionMaterial[];
   overheads: ProductionOverhead[];
+  overheadCostPerUnit?: number;
   suggestedSalePrice: number;
   description?: string;
   createdAt: string;
@@ -695,11 +722,14 @@ export interface ProductionFormula {
 export interface ProductionRun {
   id: string;
   runNumber: string;
+  orderNumber?: string;
   formulaId: string;
   formulaName: string;
+  formulaTitle?: string;
   outputProductId: string;
   outputProductName: string;
   producedQuantity: number;
+  quantityProduced?: number;
   outputUnit: string;
   totalMaterialCost: number;
   totalOverheadCost: number;
@@ -713,6 +743,7 @@ export interface ProductionRun {
     cost: number;
   }>;
   date: string;
+  createdAt?: string;
   userId: string;
   userName: string;
   warehouseId?: string;
@@ -981,6 +1012,7 @@ export interface AdminAuditLog {
   username: string;
   action: string;
   ip: string;
+  ipAddress?: string;
   userAgent: string;
   timestamp: string;
   status: 'success' | 'failed' | 'warning';
@@ -1055,6 +1087,7 @@ export interface Warehouse {
   phone?: string;
   isActive: boolean;
   isDefault: boolean;
+  isCentral?: boolean;
   createdAt: string;
 }
 

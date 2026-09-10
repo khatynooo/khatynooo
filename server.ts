@@ -26,7 +26,7 @@ import { db } from './server/db';
 import { initializeDatabase, isDbConnected, isPostgresReal, query } from './server/dbClient';
 import { sendToPasargadPos } from './server/posProtocol';
 import { searchTorobMarket, searchMultiSourceMarket, getTorobStationeryCategoryList, auditAllInventoryAgainstMarket, inspectTorobDirectUrl, searchDigikalaCandidates, compareAcrossSources, SlidingWindowRateLimiter } from './server/torobService';
-import { askGeminiAssistant, analyzeProductMarketAndPricing, groundedWebMarketSearch } from './server/geminiService';
+import { askGeminiAssistant, analyzeProductMarketAndPricing, groundedWebMarketSearch, getAiConfigStatus } from './server/geminiService';
 import { cmsEngine } from './server/cmsEngine';
 import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, getBackupStats } from './server/backupService';
 import { UserRole } from './src/types';
@@ -68,6 +68,23 @@ function torobRateLimitMiddleware(req: Request, res: Response, next: NextFunctio
   if (!check.allowed) {
     return res.status(429).json({
       error: 'تعداد درخواست‌های استعلام قیمت بیش از حد مجاز است. لطفاً چند لحظه دیگر مجدداً تلاش فرمایید.',
+      retryAfterSeconds: Math.ceil(check.resetMs / 1000),
+    });
+  }
+  next();
+}
+
+const aiRateLimiter = new SlidingWindowRateLimiter(60 * 1000, 30); // 30 requests per minute
+
+function aiRateLimitMiddleware(req: Request, res: Response, next: NextFunction) {
+  const authUser = (req as AuthRequest)?.user;
+  const clientIp = getClientIp(req);
+  const clientKey = authUser?.id ? `ai_usr_${authUser.id}` : `ai_ip_${clientIp}`;
+  const check = aiRateLimiter.check(clientKey);
+  if (!check.allowed) {
+    return res.status(429).json({
+      error: 'تعداد درخواست‌های ارسالی به هوش مصنوعی بیش از حد مجاز است (۳۰ درخواست در دقیقه). لطفاً چند لحظه صبر کنید.',
+      code: 'AI_RATE_LIMIT_EXCEEDED',
       retryAfterSeconds: Math.ceil(check.resetMs / 1000),
     });
   }
@@ -2013,51 +2030,105 @@ app.post('/api/torob/direct-url', optionalAuthenticateToken, torobRateLimitMiddl
   }
 });
 
-app.post('/api/ai/assistant', authenticateToken, async (req, res) => {
-  const { messages, storeContext, enableSearchGrounding } = req.body;
-  if (!messages || !messages.length) {
-    return res.status(400).json({ error: 'پیام گفتگو خالی است.' });
-  }
+// -------------------------------------------------------------
+// 10. AI ASSISTANT & GOOGLE GEMINI INTELLIGENCE (Backend-Only)
+// -------------------------------------------------------------
+const AI_ALLOWED_ROLES: UserRole[] = ['admin', 'site_manager', 'chief_accountant', 'accountant'];
 
+// استعلام وضعیت اتصال و در دسترس بودن Gemini AI
+app.get('/api/ai/status', authenticateToken, requireRole(AI_ALLOWED_ROLES), (req, res) => {
   try {
-    const result = await askGeminiAssistant(
-      messages,
-      storeContext,
-      enableSearchGrounding !== false // پیش‌فرض فعال
-    );
-    res.json(result);
+    const status = getAiConfigStatus();
+    res.json(status);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/ai/grounded-search', authenticateToken, async (req, res) => {
+// دستیار هوشمند گفتگو و تحلیل حسابداری/انبار/فروش با Function Calling و Search Grounding
+app.post('/api/ai/assistant', authenticateToken, requireRole(AI_ALLOWED_ROLES), aiRateLimitMiddleware, async (req, res) => {
+  const { messages, storeContext, enableSearchGrounding } = req.body;
+  
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'آرایه پیام‌های گفتگو خالی یا نامعتبر است.', code: 'INVALID_MESSAGES' });
+  }
+
+  if (messages.length > 50) {
+    return res.status(400).json({ error: 'تعداد پیام‌های تاریخچه بیش از حد مجاز (حداکثر ۵۰ پیام) است.', code: 'TOO_MANY_MESSAGES' });
+  }
+
+  // بررسی سلامت ساختار پیام‌ها و اعتبارسنجی
+  for (const m of messages) {
+    if (!m || typeof m !== 'object' || typeof m.text !== 'string' || !m.text.trim()) {
+      return res.status(400).json({ error: 'فرمت پیام ارسالی نامعتبر است. متن پیام نمی‌تواند خالی باشد.', code: 'INVALID_MESSAGE_PAYLOAD' });
+    }
+    if (m.text.length > 10000) {
+      return res.status(400).json({ error: 'طول متن پیام بیش از سقف مجاز (۱۰,۰۰۰ کاراکتر) است.', code: 'PAYLOAD_TOO_LARGE' });
+    }
+  }
+
+  try {
+    const result = await askGeminiAssistant(
+      messages,
+      typeof storeContext === 'string' ? storeContext.slice(0, 2000) : undefined,
+      enableSearchGrounding !== false // پیش‌فرض فعال
+    );
+    res.json(result);
+  } catch (err: any) {
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.message || 'خطا در ارتباط با هوش مصنوعی Gemini',
+      code: err.code || 'GEMINI_ERROR',
+    });
+  }
+});
+
+// جستجوی زنده در وب با Google Search Grounding برای رصد کالاها و اخبار بازار
+app.post('/api/ai/grounded-search', authenticateToken, requireRole(AI_ALLOWED_ROLES), aiRateLimitMiddleware, async (req, res) => {
   const { query: searchQuery } = req.body;
-  if (!searchQuery || !searchQuery.trim()) {
-    return res.status(400).json({ error: 'متن جستجو الزامی است.' });
+  if (!searchQuery || typeof searchQuery !== 'string' || !searchQuery.trim()) {
+    return res.status(400).json({ error: 'متن جستجو برای هوش بازار الزامی است.', code: 'MISSING_QUERY' });
+  }
+
+  if (searchQuery.length > 500) {
+    return res.status(400).json({ error: 'طول متن جستجو بیش از سقف مجاز است.', code: 'QUERY_TOO_LONG' });
   }
 
   try {
     const result = await groundedWebMarketSearch(searchQuery.trim());
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.message || 'خطا در جستجوی متصل به وب با Google Grounding',
+      code: err.code || 'GROUNDED_SEARCH_ERROR',
+    });
   }
 });
 
-app.post('/api/ai/pricing-advice', authenticateToken, async (req, res) => {
+// تحلیل و مشاوره استراتژی قیمت‌گذاری ۵ سطحی برای کالا
+app.post('/api/ai/pricing-advice', authenticateToken, requireRole(AI_ALLOWED_ROLES), aiRateLimitMiddleware, async (req, res) => {
   const { productName, buyPrice, category, torobMinPrice, torobAvgPrice } = req.body;
+  
+  if (!productName || typeof productName !== 'string') {
+    return res.status(400).json({ error: 'نام محصول برای تحلیل قیمت الزامی است.', code: 'MISSING_PRODUCT_NAME' });
+  }
+
   try {
     const advice = await analyzeProductMarketAndPricing(
-      productName || 'لوازم‌تحریر',
-      Number(buyPrice) || 50000,
-      category || 'عمومی',
-      Number(torobMinPrice),
-      Number(torobAvgPrice)
+      productName.trim().slice(0, 200),
+      Math.max(Number(buyPrice) || 0, 0),
+      typeof category === 'string' ? category.trim().slice(0, 100) : 'عمومی',
+      torobMinPrice ? Number(torobMinPrice) : undefined,
+      torobAvgPrice ? Number(torobAvgPrice) : undefined
     );
     res.json({ advice });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.message || 'خطا در تحلیل قیمت‌گذاری هوشمند',
+      code: err.code || 'PRICING_ADVICE_ERROR',
+    });
   }
 });
 

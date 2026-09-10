@@ -1740,7 +1740,7 @@ export const TorobMarketView: React.FC = () => {
                       تحقیق و رصد زنده با Google Search Grounding
                     </h3>
                     <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold">
-                      Gemini 3.7 Flash
+                      Gemini 3.8 Flash
                     </span>
                   </div>
                   <span className="text-[11px] text-[#8E9299]">

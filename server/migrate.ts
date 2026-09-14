@@ -60,6 +60,8 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
             msg.includes('plpgsql') ||
             msg.includes('language') ||
             msg.includes('trigger') ||
+            msg.includes('Not supported') ||
+            msg.includes('pg-mem') ||
             (msg.includes('column') && msg.includes('does not exist') && statement.toUpperCase().includes('DROP'));
 
           if (isIgnorable) {

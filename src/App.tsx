@@ -45,6 +45,7 @@ import { InvoicesView } from './components/admin/InvoicesView';
 import { CustomersSuppliersView } from './components/admin/CustomersSuppliersView';
 import { ChequesView } from './components/admin/ChequesView';
 import { ServicesView } from './components/admin/ServicesView';
+import { BindingOrdersView } from './components/admin/BindingOrdersView';
 import { ProductionView } from './components/admin/ProductionView';
 import { TorobMarketView } from './components/admin/TorobMarketView';
 import { AiAssistantView } from './components/admin/AiAssistantView';
@@ -524,6 +525,7 @@ function AdminPortal() {
       {currentTab === 'customers_suppliers' && <CustomersSuppliersView />}
       {currentTab === 'cheques' && <ChequesView />}
       {currentTab === 'services' && <ServicesView />}
+      {currentTab === 'binding_orders' && <BindingOrdersView />}
       {currentTab === 'production' && <ProductionView />}
       {currentTab === 'torob' && <TorobMarketView />}
       {currentTab === 'ai' && <AiAssistantView />}

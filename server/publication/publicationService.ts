@@ -12,6 +12,7 @@ import {
 import {
   getChannels,
   getRawChannelById,
+  getRawChannelByProvider,
   updateChannel,
   createChannel,
   deleteChannel,
@@ -111,13 +112,70 @@ export class PublicationService {
    * تست سلامت اتصال کانال به درگاه مربوطه
    */
   static async testChannel(channelId: string): Promise<{ success: boolean; message: string }> {
-    const raw = await getRawChannelById(channelId);
+    let raw = await getRawChannelById(channelId);
+    if (!raw) {
+      raw = await getRawChannelByProvider(channelId as any);
+    }
     if (!raw) {
       throw new Error('کانال مورد نظر یافت نشد.');
     }
 
     const adapter = getPublicationProvider(raw.provider, raw.config || {});
     return await adapter.testConnection();
+  }
+
+  /**
+   * ارسال یک پیام آزمایشی به کانال برای راستی‌آزمایی سطح دسترسی بات
+   */
+  static async sendTestMessage(
+    channelId: string,
+    customText?: string
+  ): Promise<{ success: boolean; message: string; externalUrl?: string }> {
+    let raw = await getRawChannelById(channelId);
+    if (!raw) {
+      raw = await getRawChannelByProvider(channelId as any);
+    }
+    if (!raw) {
+      throw new Error('کانال مورد نظر یافت نشد.');
+    }
+
+    const adapter = getPublicationProvider(raw.provider, raw.config || {});
+    const nowPersian = new Intl.DateTimeFormat('fa-IR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date());
+
+    const messageText =
+      customText ||
+      `🔔 پیام آزمایشی اتصال خطی‌نو\n📅 زمان ارسال: ${nowPersian}\n✅ سامانه حسابداری و انبارداری خطی‌نو با موفقیت به این کانال متصل شد.`;
+
+    const dummyProduct: PublicationProduct = {
+      id: 'test-ping',
+      name: 'آزمایش اتصال سامانه خطی‌نو',
+      code: 'TEST-PING',
+      salePrice: 0,
+      stock: 1,
+      unit: 'عدد',
+    };
+
+    const res = await adapter.sendProduct({
+      product: dummyProduct,
+      event: 'manual',
+      text: messageText,
+    });
+
+    if (res.success) {
+      return {
+        success: true,
+        message: 'پیام آزمایشی با موفقیت به کانال ارسال شد. لطفاً کانال را بررسی کنید.',
+        externalUrl: res.externalUrl,
+      };
+    } else {
+      return {
+        success: false,
+        message: res.error || 'خطا در ارسال پیام آزمایشی به کانال.',
+      };
+    }
   }
 
   /**

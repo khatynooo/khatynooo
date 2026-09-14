@@ -21,6 +21,7 @@ import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber, formatPersianDate } from '../../lib/utils';
 import { Product, Warehouse, InventoryByLocation, InventoryTransfer, InventoryAdjustment, SystemAuditLog } from '../../types';
 import { useToast } from '../common/Toast';
+import { InventoryExcelImportModal } from './InventoryExcelImportModal';
 
 export const InventoryView: React.FC = () => {
   const { showToast } = useToast();
@@ -37,6 +38,7 @@ export const InventoryView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
 
   // Quick edit stock state
   const [editingStockId, setEditingStockId] = useState<string | null>(null);
@@ -313,6 +315,14 @@ export const InventoryView: React.FC = () => {
           >
             <ClipboardList className="w-4 h-4" />
             اصلاح و انبارگردانی
+          </button>
+          <button
+            onClick={() => setIsExcelImportOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            title="ورود کالا و موجودی انبار از طریق فایل اکسل با راهنمای جامع"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            ورودی انبار با اکسل
           </button>
           <button
             onClick={() => setIsWarehouseModalOpen(true)}
@@ -1228,6 +1238,16 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Excel Import Modal with Side Guide */}
+      <InventoryExcelImportModal
+        isOpen={isExcelImportOpen}
+        onClose={() => setIsExcelImportOpen(false)}
+        warehouses={warehouses}
+        onSuccess={() => {
+          loadAllData();
+          setIsExcelImportOpen(false);
+        }}
+      />
     </div>
   );
 };

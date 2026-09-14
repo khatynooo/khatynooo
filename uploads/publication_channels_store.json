@@ -1,0 +1,60 @@
+[
+  {
+    "id": "pub_chan_website",
+    "provider": "website",
+    "name": "ویترین فروشگاه اینترنتی خطی‌نو",
+    "enabled": true,
+    "config": {
+      "autoPublish": true
+    },
+    "created_at": "2026-09-12T17:13:35.115Z",
+    "updated_at": "2026-09-12T17:13:35.116Z"
+  },
+  {
+    "id": "pub_chan_instagram",
+    "provider": "instagram",
+    "name": "صفحه اینستاگرام تجاری خطی‌نو",
+    "enabled": false,
+    "config": {
+      "autoPublish": false
+    },
+    "created_at": "2026-09-12T17:13:35.115Z",
+    "updated_at": "2026-09-12T17:13:35.116Z"
+  },
+  {
+    "id": "pub_chan_bale",
+    "provider": "bale",
+    "name": "کانال پیام‌رسان بله خطی‌نو",
+    "enabled": false,
+    "config": {
+      "autoPublish": false
+    },
+    "created_at": "2026-09-12T17:13:35.115Z",
+    "updated_at": "2026-09-12T17:13:35.116Z"
+  },
+  {
+    "id": "pub_chan_telegram",
+    "provider": "telegram",
+    "name": "کانال تلگرام خطی‌نو",
+    "enabled": false,
+    "config": {
+      "autoPublish": false
+    },
+    "created_at": "2026-09-12T17:13:35.115Z",
+    "updated_at": "2026-09-12T17:13:35.116Z"
+  },
+  {
+    "id": "pub_chan_eitaa",
+    "provider": "eitaa",
+    "name": "کانال ایتا خطی‌نو",
+    "enabled": true,
+    "config": {
+      "autoPublish": true,
+      "token": "bot12345:TEST_TOKEN_SECRET",
+      "chat_id": "khatynoo_channel",
+      "channelId": "khatynoo_channel"
+    },
+    "created_at": "2026-09-12T17:13:35.115Z",
+    "updated_at": "2026-09-12T17:13:35.620Z"
+  }
+]

@@ -16,6 +16,11 @@ import {
   AdminAuditLog,
 } from '../src/types';
 import { db } from './db';
+import fs from 'fs';
+import path from 'path';
+
+const BLOCKS_STORE_PATH = path.join(process.cwd(), 'uploads', 'cms_page_blocks.json');
+const TEMPLATES_STORE_PATH = path.join(process.cwd(), 'uploads', 'cms_page_templates.json');
 
 // ۱. لیست ماژول‌های اولیه استاندارد سیستم
 let modules: CmsModule[] = [
@@ -390,6 +395,61 @@ let pageTemplates: PageTemplate[] = [
   },
 ];
 
+function loadPersistedBlocks() {
+  try {
+    if (fs.existsSync(BLOCKS_STORE_PATH)) {
+      const raw = fs.readFileSync(BLOCKS_STORE_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data) && data.length > 0) {
+        pageBlocks = data;
+        console.log(`✅ [CMS Engine] Loaded ${pageBlocks.length} persisted page blocks from disk.`);
+      }
+    }
+  } catch (e: any) {
+    console.warn('⚠️ [CMS Engine] Could not load persisted cms_page_blocks:', e.message);
+  }
+}
+
+function persistBlocksToDisk() {
+  try {
+    const dir = path.dirname(BLOCKS_STORE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(BLOCKS_STORE_PATH, JSON.stringify(pageBlocks, null, 2), 'utf-8');
+  } catch (e: any) {
+    console.warn('⚠️ [CMS Engine] Could not persist cms_page_blocks to disk:', e.message);
+  }
+}
+
+function loadPersistedTemplates() {
+  try {
+    if (fs.existsSync(TEMPLATES_STORE_PATH)) {
+      const raw = fs.readFileSync(TEMPLATES_STORE_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data) && data.length > 0) {
+        const defaultIds = new Set(pageTemplates.map(t => t.id));
+        const custom = data.filter((t: any) => !defaultIds.has(t.id));
+        pageTemplates = [...pageTemplates, ...custom];
+        console.log(`✅ [CMS Engine] Loaded ${custom.length} persisted custom templates from disk.`);
+      }
+    }
+  } catch (e: any) {
+    console.warn('⚠️ [CMS Engine] Could not load persisted cms_page_templates:', e.message);
+  }
+}
+
+function persistTemplatesToDisk() {
+  try {
+    const dir = path.dirname(TEMPLATES_STORE_PATH);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(TEMPLATES_STORE_PATH, JSON.stringify(pageTemplates, null, 2), 'utf-8');
+  } catch (e: any) {
+    console.warn('⚠️ [CMS Engine] Could not persist cms_page_templates to disk:', e.message);
+  }
+}
+
+loadPersistedBlocks();
+loadPersistedTemplates();
+
 // ۴. کتابخانه رسانه و مدیا (Media Library)
 let mediaItems: MediaItem[] = [
   {
@@ -679,6 +739,7 @@ export const cmsEngine = {
       sortOrder: b.sortOrder !== undefined ? b.sortOrder : idx + 1,
       settings: b.settings || {},
     })).sort((a, b) => a.sortOrder - b.sortOrder);
+    persistBlocksToDisk();
     cmsEngine.triggerEvent('page:updated', { blocksCount: pageBlocks.length });
     return pageBlocks;
   },
@@ -687,6 +748,7 @@ export const cmsEngine = {
     const tpl = pageTemplates.find((t) => t.id === templateId);
     if (!tpl) throw new Error('قالب یافت نشد.');
     pageBlocks = JSON.parse(JSON.stringify(tpl.blocks));
+    persistBlocksToDisk();
     cmsEngine.triggerEvent('template:switched', { templateId });
     return pageBlocks;
   },
@@ -703,6 +765,7 @@ export const cmsEngine = {
       isDefault: false,
     };
     pageTemplates.push(newTpl);
+    persistTemplatesToDisk();
     cmsEngine.triggerEvent('template:saved', { templateId: newTpl.id, name: newTpl.name });
     return newTpl;
   },
@@ -711,6 +774,7 @@ export const cmsEngine = {
     if (!tpl) throw new Error('قالب یافت نشد.');
     if (tpl.isDefault) throw new Error('قالب‌های پیش‌فرض سامانه قابل حذف نیستند.');
     pageTemplates = pageTemplates.filter((t) => t.id !== templateId);
+    persistTemplatesToDisk();
     cmsEngine.triggerEvent('template:deleted', { templateId });
     return { success: true };
   },

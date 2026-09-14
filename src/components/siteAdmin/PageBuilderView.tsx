@@ -660,6 +660,37 @@ export const PageBuilderView: React.FC = () => {
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">استایل ظاهری دکمه:</label>
+                        <select
+                          value={selectedBlock.settings?.buttonStyle || 'gold'}
+                          onChange={(e) => updateSelectedBlockSettings('buttonStyle', e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] rounded-xl px-3 py-2 text-xs outline-none focus:border-[#C9A227] text-slate-900 dark:text-[#E0E0E0]"
+                        >
+                          <option value="gold">طلایی زرین خطی‌نو (Solid Gold)</option>
+                          <option value="gradient">گرادیانت طلایی متالیک (Gradient)</option>
+                          <option value="outline">خط دور طلایی شفاف (Outline)</option>
+                          <option value="dark">تیره کربنی (Dark Carbon)</option>
+                          <option value="emerald">سبز زمردی فروشگاهی (Emerald)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-500 text-[11px] mb-1">شعاع گوشه دکمه:</label>
+                        <select
+                          value={selectedBlock.settings?.buttonRadius || 'rounded-xl'}
+                          onChange={(e) => updateSelectedBlockSettings('buttonRadius', e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] rounded-xl px-3 py-2 text-xs outline-none focus:border-[#C9A227] text-slate-900 dark:text-[#E0E0E0]"
+                        >
+                          <option value="rounded-md">کلاسیک ملایم (۶ پیکسل)</option>
+                          <option value="rounded-xl">مدرن استاندارد (۱۲ پیکسل)</option>
+                          <option value="rounded-2xl">خمیده لوکس (۱۶ پیکسل)</option>
+                          <option value="rounded-full">کپسولی تمام‌گرد (Pill Shape)</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-slate-500 text-[11px] mb-1">لینک یا مسیر دکمه:</label>
                       <input
@@ -1056,7 +1087,21 @@ export const PageBuilderView: React.FC = () => {
                                 : 'justify-center'
                             }`}
                           >
-                            <span className="text-[11px] font-black bg-[#C9A227] text-slate-950 px-4 py-1.5 rounded-xl shadow-sm">
+                            <span
+                              className={`text-[11px] font-black px-4 py-1.5 shadow-sm transition-all ${
+                                block.settings?.buttonRadius || 'rounded-xl'
+                              } ${
+                                block.settings?.buttonStyle === 'outline'
+                                  ? 'border-2 border-[#C9A227] text-[#C9A227] bg-transparent'
+                                  : block.settings?.buttonStyle === 'gradient'
+                                  ? 'bg-gradient-to-r from-[#D4AF37] via-[#C9A227] to-[#AA820A] text-slate-950'
+                                  : block.settings?.buttonStyle === 'dark'
+                                  ? 'bg-[#1C1C20] text-[#E0E0E0] border border-[#333]'
+                                  : block.settings?.buttonStyle === 'emerald'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-[#C9A227] text-slate-950'
+                              }`}
+                            >
                               {block.settings?.buttonText || 'مشاهده و خرید'}
                             </span>
                           </div>

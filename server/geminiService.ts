@@ -368,14 +368,33 @@ const getSlowMovingProductsDeclaration: FunctionDeclaration = {
   },
 };
 
-async function executeGetSlowMovingProducts(args?: { limit?: number }) {
+async function executeGetSlowMovingProducts(args?: { limit?: number }): Promise<{
+  totalCount: number;
+  slowMovingProducts: Array<{
+    name: string;
+    code: string;
+    stock: number;
+    buyPrice: number;
+    salePrice: number;
+    category: string;
+  }>;
+  slowMovingCandidates: Array<{
+    name: string;
+    code: string;
+    stock: number;
+    buyPrice: number;
+    salePrice: number;
+    category: string;
+  }>;
+  error?: string;
+}> {
   try {
     const products = await db.getProducts();
     const limit = Math.min(Math.max(Number(args?.limit) || 8, 1), 20);
 
     // کالاهایی که موجودی بالا دارند و قیمت فروش تعریف شده است
-    const slowMoving = products
-      .filter((p) => Number(p.stock) >= 15)
+    const candidates = products.filter((p) => Number(p.stock) >= 15);
+    const slowMoving = candidates
       .sort((a, b) => Number(b.stock) - Number(a.stock))
       .slice(0, limit)
       .map((p) => ({
@@ -384,14 +403,21 @@ async function executeGetSlowMovingProducts(args?: { limit?: number }) {
         stock: p.stock,
         buyPrice: p.buyPrice,
         salePrice: p.salePrice,
-        category: p.categoryName,
+        category: p.categoryName || '',
       }));
 
     return {
+      totalCount: candidates.length,
+      slowMovingProducts: slowMoving,
       slowMovingCandidates: slowMoving,
     };
   } catch (err: any) {
-    return { error: 'امکان واکشی کالاهای راکد انبار میسر نشد: ' + err.message };
+    return {
+      totalCount: 0,
+      slowMovingProducts: [],
+      slowMovingCandidates: [],
+      error: 'امکان واکشی کالاهای راکد انبار میسر نشد: ' + err.message,
+    };
   }
 }
 

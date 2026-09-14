@@ -42,6 +42,9 @@ import {
   SmsProviderConfig,
   SubCategory,
   ResponsiveLayoutSettings,
+  BindingOrder,
+  BindingSettings,
+  EitaaCustomerChat,
 } from '../src/types';
 
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
@@ -445,8 +448,22 @@ export const db = {
   // ۲. دسته‌بندی‌ها و واحدهای شمارش (Categories & Units)
   // ============================================================================
   async getCategories(): Promise<Category[]> {
-    const catRes = await query('SELECT * FROM categories ORDER BY sort_order ASC, created_at ASC');
-    const subRes = await query('SELECT * FROM sub_categories ORDER BY created_at ASC');
+    const [catRes, subRes, catCountsRes, subCountsRes] = await Promise.all([
+      query('SELECT * FROM categories ORDER BY sort_order ASC, created_at ASC'),
+      query('SELECT * FROM sub_categories ORDER BY created_at ASC'),
+      query('SELECT category_id, COUNT(*)::int as count FROM products WHERE category_id IS NOT NULL GROUP BY category_id'),
+      query('SELECT sub_category_id, COUNT(*)::int as count FROM products WHERE sub_category_id IS NOT NULL GROUP BY sub_category_id'),
+    ]);
+
+    const catCountMap = new Map<string, number>();
+    for (const r of catCountsRes.rows) {
+      if (r.category_id) catCountMap.set(r.category_id, Number(r.count));
+    }
+
+    const subCountMap = new Map<string, number>();
+    for (const r of subCountsRes.rows) {
+      if (r.sub_category_id) subCountMap.set(r.sub_category_id, Number(r.count));
+    }
 
     const subs = subRes.rows;
     return catRes.rows.map((c: any) => ({
@@ -455,7 +472,13 @@ export const db = {
       icon: c.icon || 'Tag',
       image: c.image || undefined,
       sortOrder: c.sort_order || 0,
-      subcategories: subs.filter((s: any) => s.category_id === c.id).map((s: any) => ({ id: s.id, name: s.name, description: s.description })),
+      productCount: catCountMap.get(c.id) || 0,
+      subcategories: subs.filter((s: any) => s.category_id === c.id).map((s: any) => ({ 
+        id: s.id, 
+        name: s.name, 
+        description: s.description,
+        productCount: subCountMap.get(s.id) || 0
+      })),
     }));
   },
 
@@ -481,6 +504,7 @@ export const db = {
       name: data.name,
       icon: data.icon || 'Tag',
       image: data.image,
+      productCount: 0,
       subcategories: [],
     };
   },
@@ -494,9 +518,23 @@ export const db = {
     );
   },
 
-  async deleteCategory(id: string): Promise<void> {
+  async replaceCategory(sourceCategoryId: string, targetCategoryId: string, targetSubCategoryId?: string): Promise<number> {
+    const res = await query(
+      `UPDATE products 
+       SET category_id = $1, sub_category_id = $2, updated_at = NOW() 
+       WHERE category_id = $3`,
+      [targetCategoryId, targetSubCategoryId || null, sourceCategoryId]
+    );
+    return res.rowCount || 0;
+  },
+
+  async deleteCategory(id: string, replacementCategoryId?: string): Promise<void> {
     await withTransaction(async (client) => {
-      await client.query('UPDATE products SET category_id = NULL WHERE category_id = $1', [id]);
+      if (replacementCategoryId && replacementCategoryId !== id) {
+        await client.query('UPDATE products SET category_id = $1, updated_at = NOW() WHERE category_id = $2', [replacementCategoryId, id]);
+      } else {
+        await client.query('UPDATE products SET category_id = NULL, sub_category_id = NULL WHERE category_id = $1', [id]);
+      }
       await client.query('DELETE FROM sub_categories WHERE category_id = $1', [id]);
       await client.query('DELETE FROM categories WHERE id = $1', [id]);
     });
@@ -519,6 +557,7 @@ export const db = {
       categoryName,
       name: data.name,
       description: data.description || '',
+      productCount: 0,
     };
   },
 
@@ -536,13 +575,23 @@ export const db = {
   },
 
   async getUnits(): Promise<UnitDefinition[]> {
-    const res = await query('SELECT * FROM unit_definitions ORDER BY id ASC');
-    return res.rows.map((u: any) => ({
+    const [unitsRes, countRes] = await Promise.all([
+      query('SELECT * FROM unit_definitions ORDER BY id ASC'),
+      query('SELECT unit, COUNT(*)::int as count FROM products WHERE unit IS NOT NULL GROUP BY unit'),
+    ]);
+
+    const unitCountMap = new Map<string, number>();
+    for (const r of countRes.rows) {
+      if (r.unit) unitCountMap.set(r.unit, Number(r.count));
+    }
+
+    return unitsRes.rows.map((u: any) => ({
       id: u.id,
       name: u.name,
       subUnit: u.sub_unit,
       conversionFactor: Number(u.conversion_factor || 1),
       description: u.description,
+      productCount: unitCountMap.get(u.name) || 0,
     }));
   },
 
@@ -559,6 +608,7 @@ export const db = {
       subUnit: data.subUnit || data.name,
       conversionFactor: data.conversionFactor || 1,
       description: data.description,
+      productCount: 0,
     };
   },
 
@@ -570,6 +620,24 @@ export const db = {
        WHERE id = $5`,
       [data.name, data.subUnit, data.conversionFactor, data.description, id]
     );
+  },
+
+  async replaceUnit(sourceUnit: string, targetUnit: string, conversionFactor?: number, subUnit?: string): Promise<number> {
+    let sql = 'UPDATE products SET unit = $1, updated_at = NOW()';
+    const params: any[] = [targetUnit];
+    if (conversionFactor !== undefined && conversionFactor > 0) {
+      params.push(conversionFactor);
+      sql += `, conversion_factor = $${params.length}`;
+    }
+    if (subUnit !== undefined && subUnit.trim()) {
+      params.push(subUnit.trim());
+      sql += `, sub_unit = $${params.length}`;
+    }
+    params.push(sourceUnit);
+    sql += ` WHERE unit = $${params.length}`;
+
+    const res = await query(sql, params);
+    return res.rowCount || 0;
   },
 
   async deleteUnit(id: string): Promise<void> {
@@ -647,7 +715,7 @@ export const db = {
     const barcode = p.barcode || generateServerEan13();
     const initialStock = Number(p.stock || 0);
 
-    return await withTransaction(async (client) => {
+    const createdProduct = await withTransaction(async (client) => {
       // نگاشت امن دسته‌بندی و زیردسته برای جلوگیری قطعی از خطای Foreign Key
       const validCatId = await resolveValidCategoryId(client, p.categoryId, p.categoryName || (p as any).category);
       const validSubCatId = await resolveValidSubCategoryId(client, p.subCategoryId, validCatId);
@@ -1827,6 +1895,7 @@ export const db = {
         remainingAmount: Number(r.remaining_amount || 0),
         paymentMethod: r.payment_method,
         warehouseId: r.warehouse_id || 'wh_central',
+        documentNumber: r.document_number || undefined,
         notes: r.notes,
         createdAt: r.created_at,
       };
@@ -1890,6 +1959,7 @@ export const db = {
       remainingAmount: Number(r.remaining_amount || 0),
       paymentMethod: r.payment_method,
       warehouseId: r.warehouse_id || 'wh_central',
+      documentNumber: r.document_number || undefined,
       notes: r.notes,
       createdAt: r.created_at,
     };
@@ -1995,6 +2065,7 @@ export const db = {
     warehouseId?: string;
     invoiceNumber?: string;
     invoiceDate?: string;
+    documentNumber?: string;
     discount?: number;
     receiptImageUrl?: string;
     userId?: string;
@@ -2021,6 +2092,7 @@ export const db = {
       const paymentMethod = updateData.paymentMethod || oldInv.payment_method;
       const invoiceNumber = updateData.invoiceNumber?.trim() || oldInv.invoice_number;
       const invoiceDate = updateData.invoiceDate || oldInv.invoice_date;
+      const documentNumber = updateData.documentNumber !== undefined ? (updateData.documentNumber?.trim() || null) : (oldInv.document_number || null);
       const discount = Math.max(0, updateData.discount !== undefined ? Number(updateData.discount) : Number(oldInv.discount || 0));
       const notes = updateData.notes !== undefined ? updateData.notes : oldInv.notes;
 
@@ -2285,8 +2357,9 @@ export const db = {
           cash_amount = $14,
           cheque_amount = $15,
           cheques = $16,
-          receipt_image_urls = $17
-        WHERE id = $18`,
+          receipt_image_urls = $17,
+          document_number = $18
+        WHERE id = $19`,
         [
           targetSupplierId,
           targetSupplierName,
@@ -2305,6 +2378,7 @@ export const db = {
           chequeAmount,
           JSON.stringify(cheques),
           JSON.stringify(receiptUrls),
+          documentNumber,
           id,
         ]
       );
@@ -2390,6 +2464,7 @@ export const db = {
     warehouseId?: string;
     invoiceNumber?: string;
     invoiceDate?: string;
+    documentNumber?: string;
     discount?: number;
     receiptImageUrl?: string;
   }): Promise<PurchaseInvoice> {
@@ -2467,8 +2542,8 @@ export const db = {
           id, invoice_number, invoice_date, supplier_id, supplier_name, items,
           total_amount, discount, paid_amount, remaining_amount, payment_method,
           notes, warehouse_id, receipt_image_url, cash_amount, cheque_amount,
-          cheques, receipt_image_urls, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())`,
+          cheques, receipt_image_urls, document_number, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())`,
         [
           id,
           invoiceNumber,
@@ -2488,6 +2563,7 @@ export const db = {
           calculatedChequeAmount,
           JSON.stringify(cheques),
           JSON.stringify(receiptUrls),
+          invoice.documentNumber || null,
         ]
       );
 
@@ -3291,6 +3367,671 @@ export const db = {
       status,
       date: new Date().toISOString(),
     };
+  },
+
+  // ============================================================================
+  // ۷.۵. سفارشات فنرزنی و مدیریت پیام مستقیم ایتا (Binding Orders)
+  // ============================================================================
+  async getBindingOrders(filter: { query?: string; paymentStatus?: string; workStatus?: string; limit?: number } = {}): Promise<BindingOrder[]> {
+    let sql = `
+      SELECT bo.*,
+             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
+             COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+      FROM binding_orders bo
+      LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (filter.query?.trim()) {
+      const q = `%${filter.query.trim()}%`;
+      params.push(q);
+      sql += ` AND (bo.customer_name ILIKE $${params.length} OR bo.receipt_code ILIKE $${params.length} OR bo.customer_mobile ILIKE $${params.length})`;
+    }
+
+    if (filter.paymentStatus && filter.paymentStatus !== 'all') {
+      params.push(filter.paymentStatus);
+      sql += ` AND bo.payment_status = $${params.length}`;
+    }
+
+    if (filter.workStatus && filter.workStatus !== 'all') {
+      params.push(filter.workStatus);
+      sql += ` AND bo.work_status = $${params.length}`;
+    }
+
+    sql += ` ORDER BY bo.created_at DESC`;
+
+    if (filter.limit && filter.limit > 0) {
+      params.push(filter.limit);
+      sql += ` LIMIT $${params.length}`;
+    }
+
+    const res = await query(sql, params);
+    return res.rows.map((r: any) => ({
+      id: r.id,
+      receiptCode: r.receipt_code,
+      customerName: r.customer_name,
+      customerMobile: r.customer_mobile,
+      bookCount: Number(r.book_count || 1),
+      unitPrice: Number(r.unit_price || 0),
+      spiralCount: Number(r.spiral_count ?? r.book_count ?? 0),
+      spiralUnitPrice: Number(r.spiral_unit_price ?? r.unit_price ?? 0),
+      stapleCount: Number(r.staple_count || 0),
+      stapleUnitPrice: Number(r.staple_unit_price || 0),
+      coverCount: Number(r.cover_count || 0),
+      coverUnitPrice: Number(r.cover_unit_price || 0),
+      discount: Number(r.discount || 0),
+      totalPrice: Number(r.total_price || 0),
+      description: r.description || '',
+      paymentStatus: r.payment_status || 'unpaid',
+      workStatus: r.work_status || 'pending',
+      eitaaIntakeSent: Boolean(r.eitaa_intake_sent),
+      eitaaReadySent: Boolean(r.eitaa_ready_sent),
+      eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
+      eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
+      hasEitaaChat: Boolean(r.has_eitaa_chat),
+      customerEitaaChatId: r.resolved_chat_id || r.customer_eitaa_chat_id || undefined,
+      createdBy: r.created_by,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  async getBindingOrderById(id: string): Promise<BindingOrder | null> {
+    const res = await query(
+      `SELECT bo.*,
+              CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
+              COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+       FROM binding_orders bo
+       LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
+       WHERE bo.id = $1 LIMIT 1`,
+      [id]
+    );
+    if (res.rows.length === 0) return null;
+    const r = res.rows[0];
+    return {
+      id: r.id,
+      receiptCode: r.receipt_code,
+      customerName: r.customer_name,
+      customerMobile: r.customer_mobile,
+      bookCount: Number(r.book_count || 1),
+      unitPrice: Number(r.unit_price || 0),
+      spiralCount: Number(r.spiral_count ?? r.book_count ?? 0),
+      spiralUnitPrice: Number(r.spiral_unit_price ?? r.unit_price ?? 0),
+      stapleCount: Number(r.staple_count || 0),
+      stapleUnitPrice: Number(r.staple_unit_price || 0),
+      coverCount: Number(r.cover_count || 0),
+      coverUnitPrice: Number(r.cover_unit_price || 0),
+      discount: Number(r.discount || 0),
+      totalPrice: Number(r.total_price || 0),
+      description: r.description || '',
+      paymentStatus: r.payment_status || 'unpaid',
+      workStatus: r.work_status || 'pending',
+      eitaaIntakeSent: Boolean(r.eitaa_intake_sent),
+      eitaaReadySent: Boolean(r.eitaa_ready_sent),
+      eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
+      eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
+      hasEitaaChat: Boolean(r.has_eitaa_chat),
+      customerEitaaChatId: r.resolved_chat_id || r.customer_eitaa_chat_id || undefined,
+      createdBy: r.created_by,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+    };
+  },
+
+  async createBindingOrder(
+    data: {
+      customerName: string;
+      customerMobile: string;
+      bookCount?: number;
+      unitPrice?: number;
+      spiralCount?: number;
+      spiralUnitPrice?: number;
+      stapleCount?: number;
+      stapleUnitPrice?: number;
+      coverCount?: number;
+      coverUnitPrice?: number;
+      discount?: number;
+      totalPrice?: number;
+      description?: string;
+      paymentStatus?: 'unpaid' | 'paid';
+      workStatus?: 'pending' | 'done' | 'cancelled';
+      customerEitaaChatId?: string;
+    },
+    userContext?: { userId?: string; username?: string; ip?: string }
+  ): Promise<BindingOrder> {
+    const id = `bind_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const spiralCount = Math.max(0, Number(data.spiralCount ?? data.bookCount ?? 0));
+    const spiralUnitPrice = Math.max(0, Number(data.spiralUnitPrice ?? data.unitPrice ?? 0));
+    const stapleCount = Math.max(0, Number(data.stapleCount || 0));
+    const stapleUnitPrice = Math.max(0, Number(data.stapleUnitPrice || 0));
+    const coverCount = Math.max(0, Number(data.coverCount || 0));
+    const coverUnitPrice = Math.max(0, Number(data.coverUnitPrice || 0));
+
+    const totalCalculatedBooks = spiralCount + stapleCount + coverCount;
+    const bookCount = totalCalculatedBooks > 0 ? totalCalculatedBooks : Math.max(1, Number(data.bookCount || 1));
+    const unitPrice = spiralUnitPrice || Math.max(0, Number(data.unitPrice || 0));
+    const discount = Math.max(0, Number(data.discount || 0));
+
+    const rawSum = (spiralCount * spiralUnitPrice) + (stapleCount * stapleUnitPrice) + (coverCount * coverUnitPrice);
+    const computedTotal = Math.max(0, (rawSum > 0 ? rawSum : (bookCount * unitPrice)) - discount);
+    const totalPrice = data.totalPrice !== undefined ? Number(data.totalPrice) : computedTotal;
+    const paymentStatus = data.paymentStatus === 'paid' ? 'paid' : 'unpaid';
+    const workStatus = data.workStatus || 'pending';
+    const customerName = data.customerName.trim();
+    const customerMobile = data.customerMobile.trim();
+    const description = data.description?.trim() || '';
+
+    return await withTransaction(async (client) => {
+      // ۱. دریافت شماره ترتیبی یکتا از Sequence با تراکنش امن
+      const seqRes = await client.query(`SELECT 'F-' || CAST(nextval('binding_order_seq') AS TEXT) AS receipt_code`);
+      const receiptCode = seqRes.rows[0].receipt_code;
+
+      // بررسی chat_id کاربر در صورت وجود
+      let resolvedChatId = data.customerEitaaChatId?.trim() || null;
+      if (!resolvedChatId) {
+        const chatCheck = await client.query(
+          `SELECT chat_id FROM eitaa_customer_chats WHERE mobile = $1 OR mobile = $2 ORDER BY updated_at DESC LIMIT 1`,
+          [customerMobile, customerMobile.replace(/^0/, '')]
+        );
+        if (chatCheck.rows.length > 0 && chatCheck.rows[0].chat_id) {
+          resolvedChatId = chatCheck.rows[0].chat_id;
+        }
+      }
+
+      // ۲. درج در جدول binding_orders
+      const insertRes = await client.query(
+        `INSERT INTO binding_orders (
+          id, receipt_code, customer_name, customer_mobile, book_count,
+          unit_price, spiral_count, spiral_unit_price, staple_count, staple_unit_price,
+          cover_count, cover_unit_price, discount, total_price, description, payment_status,
+          work_status, customer_eitaa_chat_id, created_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW())
+        RETURNING *`,
+        [
+          id,
+          receiptCode,
+          customerName,
+          customerMobile,
+          bookCount,
+          unitPrice,
+          spiralCount,
+          spiralUnitPrice,
+          stapleCount,
+          stapleUnitPrice,
+          coverCount,
+          coverUnitPrice,
+          discount,
+          totalPrice,
+          description,
+          paymentStatus,
+          workStatus,
+          resolvedChatId,
+          userContext?.userId || null,
+        ]
+      );
+
+      // ۳. در صورت پرداخت نقدی، ثبت خودکار در دفتر معین خزانه
+      if (paymentStatus === 'paid' && totalPrice > 0) {
+        const trxId = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        await client.query(
+          `INSERT INTO treasury_transactions (
+            id, transaction_type, source_module, reference_id, amount,
+            payment_method, account_title, description, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [
+            trxId,
+            'sale_income',
+            'services',
+            id,
+            totalPrice,
+            'cash',
+            'صندوق خدمات فنرزنی',
+            `دریافت نقدی سفارش فنرزنی ${receiptCode} - مشتری ${customerName}`,
+          ]
+        );
+      }
+
+      // ۴. ثبت لاگ حسابرسی
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+            id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+          ) VALUES ($1, $2, $3, $4, 'binding_orders', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            userContext?.userId || null,
+            userContext?.username || 'مدیر سیستم',
+            `ثبت سفارش فنرزنی جدید ${receiptCode} برای مشتری ${customerName} (${bookCount} جلد)`,
+            id,
+            JSON.stringify({ receiptCode, customerName, customerMobile, bookCount, totalPrice, paymentStatus, workStatus }),
+            userContext?.ip || '127.0.0.1',
+            'Admin Panel',
+          ]
+        );
+      } catch {}
+
+      const r = insertRes.rows[0];
+      return {
+        id: r.id,
+        receiptCode: r.receipt_code,
+        customerName: r.customer_name,
+        customerMobile: r.customer_mobile,
+        bookCount: Number(r.book_count || 1),
+        unitPrice: Number(r.unit_price || 0),
+        spiralCount: Number(r.spiral_count ?? r.book_count ?? 0),
+        spiralUnitPrice: Number(r.spiral_unit_price ?? r.unit_price ?? 0),
+        stapleCount: Number(r.staple_count || 0),
+        stapleUnitPrice: Number(r.staple_unit_price || 0),
+        coverCount: Number(r.cover_count || 0),
+        coverUnitPrice: Number(r.cover_unit_price || 0),
+        discount: Number(r.discount || 0),
+        totalPrice: Number(r.total_price || 0),
+        description: r.description || '',
+        paymentStatus: r.payment_status || 'unpaid',
+        workStatus: r.work_status || 'pending',
+        eitaaIntakeSent: Boolean(r.eitaa_intake_sent),
+        eitaaReadySent: Boolean(r.eitaa_ready_sent),
+        eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
+        eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
+        hasEitaaChat: Boolean(resolvedChatId),
+        customerEitaaChatId: resolvedChatId || undefined,
+        createdBy: r.created_by,
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
+  },
+
+  async updateBindingOrder(
+    id: string,
+    data: Partial<BindingOrder>,
+    userContext?: { userId?: string; username?: string; ip?: string }
+  ): Promise<BindingOrder> {
+    return await withTransaction(async (client) => {
+      const prevRes = await client.query(`SELECT * FROM binding_orders WHERE id = $1 FOR UPDATE`, [id]);
+      if (prevRes.rows.length === 0) {
+        throw new Error(`سفارش فنرزنی با شناسه ${id} یافت نشد.`);
+      }
+      const prev = prevRes.rows[0];
+
+      const customerName = data.customerName !== undefined ? data.customerName.trim() : prev.customer_name;
+      const customerMobile = data.customerMobile !== undefined ? data.customerMobile.trim() : prev.customer_mobile;
+
+      const spiralCount = data.spiralCount !== undefined ? Math.max(0, Number(data.spiralCount)) : Number(prev.spiral_count ?? prev.book_count ?? 0);
+      const spiralUnitPrice = data.spiralUnitPrice !== undefined ? Math.max(0, Number(data.spiralUnitPrice)) : Number(prev.spiral_unit_price ?? prev.unit_price ?? 0);
+      const stapleCount = data.stapleCount !== undefined ? Math.max(0, Number(data.stapleCount)) : Number(prev.staple_count || 0);
+      const stapleUnitPrice = data.stapleUnitPrice !== undefined ? Math.max(0, Number(data.stapleUnitPrice)) : Number(prev.staple_unit_price || 0);
+      const coverCount = data.coverCount !== undefined ? Math.max(0, Number(data.coverCount)) : Number(prev.cover_count || 0);
+      const coverUnitPrice = data.coverUnitPrice !== undefined ? Math.max(0, Number(data.coverUnitPrice)) : Number(prev.cover_unit_price || 0);
+
+      const totalCalculated = spiralCount + stapleCount + coverCount;
+      const bookCount = data.bookCount !== undefined ? Math.max(1, Number(data.bookCount)) : (totalCalculated > 0 ? totalCalculated : Number(prev.book_count || 1));
+      const unitPrice = data.unitPrice !== undefined ? Math.max(0, Number(data.unitPrice)) : (spiralUnitPrice || Number(prev.unit_price || 0));
+      const discount = data.discount !== undefined ? Math.max(0, Number(data.discount)) : Number(prev.discount);
+
+      const rawSum = (spiralCount * spiralUnitPrice) + (stapleCount * stapleUnitPrice) + (coverCount * coverUnitPrice);
+      const computedTotal = Math.max(0, (rawSum > 0 ? rawSum : (bookCount * unitPrice)) - discount);
+      const totalPrice = data.totalPrice !== undefined ? Number(data.totalPrice) : (rawSum > 0 ? computedTotal : Number(prev.total_price));
+      const description = data.description !== undefined ? data.description : prev.description;
+      const paymentStatus = data.paymentStatus !== undefined ? data.paymentStatus : prev.payment_status;
+      const workStatus = data.workStatus !== undefined ? data.workStatus : prev.work_status;
+      const eitaaIntakeSent = data.eitaaIntakeSent !== undefined ? Boolean(data.eitaaIntakeSent) : Boolean(prev.eitaa_intake_sent);
+      const eitaaReadySent = data.eitaaReadySent !== undefined ? Boolean(data.eitaaReadySent) : Boolean(prev.eitaa_ready_sent);
+      const eitaaIntakeStatus = data.eitaaIntakeStatus !== undefined ? data.eitaaIntakeStatus : prev.eitaa_intake_status;
+      const eitaaReadyStatus = data.eitaaReadyStatus !== undefined ? data.eitaaReadyStatus : prev.eitaa_ready_status;
+      const customerEitaaChatId = data.customerEitaaChatId !== undefined ? data.customerEitaaChatId : prev.customer_eitaa_chat_id;
+
+      await client.query(
+        `UPDATE binding_orders SET
+          customer_name = $1,
+          customer_mobile = $2,
+          book_count = $3,
+          unit_price = $4,
+          spiral_count = $5,
+          spiral_unit_price = $6,
+          staple_count = $7,
+          staple_unit_price = $8,
+          cover_count = $9,
+          cover_unit_price = $10,
+          discount = $11,
+          total_price = $12,
+          description = $13,
+          payment_status = $14,
+          work_status = $15,
+          eitaa_intake_sent = $16,
+          eitaa_ready_sent = $17,
+          eitaa_intake_status = $18,
+          eitaa_ready_status = $19,
+          customer_eitaa_chat_id = $20,
+          updated_at = NOW()
+         WHERE id = $21`,
+        [
+          customerName,
+          customerMobile,
+          bookCount,
+          unitPrice,
+          spiralCount,
+          spiralUnitPrice,
+          stapleCount,
+          stapleUnitPrice,
+          coverCount,
+          coverUnitPrice,
+          discount,
+          totalPrice,
+          description,
+          paymentStatus,
+          workStatus,
+          eitaaIntakeSent,
+          eitaaReadySent,
+          eitaaIntakeStatus,
+          eitaaReadyStatus,
+          customerEitaaChatId,
+          id,
+        ]
+      );
+
+      // اگر قبلاً پرداخت نشده بود و حالا پرداخت شد، به خزانه اضافه کن
+      if (prev.payment_status !== 'paid' && paymentStatus === 'paid' && totalPrice > 0) {
+        const trxId = `trx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        await client.query(
+          `INSERT INTO treasury_transactions (
+            id, transaction_type, source_module, reference_id, amount,
+            payment_method, account_title, description, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+          [
+            trxId,
+            'sale_income',
+            'services',
+            id,
+            totalPrice,
+            'cash',
+            'صندوق خدمات فنرزنی',
+            `تسویه سفارش فنرزنی ${prev.receipt_code} - مشتری ${customerName}`,
+          ]
+        );
+      }
+
+      // ثبت لاگ حسابرسی
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+            id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+          ) VALUES ($1, $2, $3, $4, 'binding_orders', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            userContext?.userId || null,
+            userContext?.username || 'مدیر سیستم',
+            `ویرایش سفارش فنرزنی ${prev.receipt_code} (وضعیت کار: ${workStatus}، وضعیت پرداخت: ${paymentStatus})`,
+            id,
+            JSON.stringify({ previous: prev, updated: { customerName, customerMobile, bookCount, totalPrice, paymentStatus, workStatus } }),
+            userContext?.ip || '127.0.0.1',
+            'Admin Panel',
+          ]
+        );
+      } catch {}
+
+      const updatedRes = await client.query(
+        `SELECT bo.*,
+                CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
+                COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+         FROM binding_orders bo
+         LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
+         WHERE bo.id = $1`,
+        [id]
+      );
+      const r = updatedRes.rows[0];
+      return {
+        id: r.id,
+        receiptCode: r.receipt_code,
+        customerName: r.customer_name,
+        customerMobile: r.customer_mobile,
+        bookCount: Number(r.book_count || 1),
+        unitPrice: Number(r.unit_price || 0),
+        spiralCount: Number(r.spiral_count ?? r.book_count ?? 0),
+        spiralUnitPrice: Number(r.spiral_unit_price ?? r.unit_price ?? 0),
+        stapleCount: Number(r.staple_count || 0),
+        stapleUnitPrice: Number(r.staple_unit_price || 0),
+        coverCount: Number(r.cover_count || 0),
+        coverUnitPrice: Number(r.cover_unit_price || 0),
+        discount: Number(r.discount || 0),
+        totalPrice: Number(r.total_price || 0),
+        description: r.description || '',
+        paymentStatus: r.payment_status || 'unpaid',
+        workStatus: r.work_status || 'pending',
+        eitaaIntakeSent: Boolean(r.eitaa_intake_sent),
+        eitaaReadySent: Boolean(r.eitaa_ready_sent),
+        eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
+        eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
+        hasEitaaChat: Boolean(r.has_eitaa_chat),
+        customerEitaaChatId: r.resolved_chat_id || r.customer_eitaa_chat_id || undefined,
+        createdBy: r.created_by,
+        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+      };
+    });
+  },
+
+  async deleteBindingOrder(
+    id: string,
+    userContext?: { userId?: string; username?: string; ip?: string }
+  ): Promise<boolean> {
+    return await withTransaction(async (client) => {
+      const res = await client.query(`SELECT * FROM binding_orders WHERE id = $1`, [id]);
+      if (res.rows.length === 0) return false;
+      const inv = res.rows[0];
+
+      await client.query(`DELETE FROM binding_orders WHERE id = $1`, [id]);
+
+      try {
+        await client.query(
+          `INSERT INTO audit_logs (
+            id, user_id, username, action, module, target_id, details, ip, user_agent, status, created_at
+          ) VALUES ($1, $2, $3, $4, 'binding_orders', $5, $6, $7, $8, 'success', NOW())`,
+          [
+            `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            userContext?.userId || null,
+            userContext?.username || 'مدیر سیستم',
+            `حذف سفارش فنرزنی ${inv.receipt_code} (مشتری: ${inv.customer_name})`,
+            id,
+            JSON.stringify(inv),
+            userContext?.ip || '127.0.0.1',
+            'Admin Panel',
+          ]
+        );
+      } catch {}
+
+      return true;
+    });
+  },
+
+  async getBindingSettings(): Promise<BindingSettings> {
+    const res = await query(`SELECT * FROM binding_settings WHERE id = 'default'`);
+    if (res.rows.length === 0) {
+      return {
+        id: 'default',
+        storeName: 'خطی‌نو',
+        storePhone: '021-66990000',
+        storeAddress: 'تهران، میدان انقلاب، خیابان انقلاب',
+        storePostalCode: '13145-1234',
+        storeWorkingHours: 'شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰',
+        storeMapLink: 'https://maps.google.com/?q=35.7006,51.3912',
+        storeNeshanLink: 'https://neshan.org',
+        storeBaladLink: 'https://balad.ir',
+        storeLat: 35.7006,
+        storeLng: 51.3912,
+        defaultPaperSize: 'A6',
+        defaultUnitPrice: 35000,
+        defaultSpiralPrice: 35000,
+        defaultStaplePrice: 10000,
+        defaultCoverPrice: 20000,
+        autoSendIntake: true,
+        autoSendReady: true,
+        intakeMessageTemplate: '',
+        readyMessageTemplate: '',
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    const r = res.rows[0];
+    return {
+      id: r.id,
+      storeName: r.store_name || 'خطی‌نو',
+      storePhone: r.store_phone || '',
+      storeAddress: r.store_address || '',
+      storePostalCode: r.store_postal_code || '',
+      storeWorkingHours: r.store_working_hours || 'شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰',
+      storeMapLink: r.store_map_link || '',
+      storeNeshanLink: r.store_neshan_link || '',
+      storeBaladLink: r.store_balad_link || '',
+      storeLat: r.store_lat !== null ? Number(r.store_lat) : undefined,
+      storeLng: r.store_lng !== null ? Number(r.store_lng) : undefined,
+      defaultPaperSize: (r.default_paper_size as any) || 'A6',
+      defaultUnitPrice: Number(r.default_spiral_price || r.default_unit_price || 35000),
+      defaultSpiralPrice: Number(r.default_spiral_price || r.default_unit_price || 35000),
+      defaultStaplePrice: Number(r.default_staple_price || 10000),
+      defaultCoverPrice: Number(r.default_cover_price || 20000),
+      eitaaBotToken: r.eitaa_bot_token || undefined,
+      eitaaBotAppUrl: r.eitaa_bot_app_url || 'https://eitaa.com/khatynoo_app/fanar',
+      eitaaBotUsername: r.eitaa_bot_username || 'khatynoo_app',
+      autoSendIntake: r.auto_send_intake !== false,
+      autoSendReady: r.auto_send_ready !== false,
+      intakeMessageTemplate: r.intake_message_template || '',
+      readyMessageTemplate: r.ready_message_template || '',
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+    };
+  },
+
+  async updateBindingSettings(s: Partial<BindingSettings>): Promise<BindingSettings> {
+    await query(
+      `INSERT INTO binding_settings (
+        id, store_name, store_phone, store_address, default_paper_size,
+        default_unit_price, default_spiral_price, default_staple_price, default_cover_price,
+        store_postal_code, store_working_hours, store_map_link, store_neshan_link, store_balad_link,
+        store_lat, store_lng, eitaa_bot_token, eitaa_bot_app_url, eitaa_bot_username, auto_send_intake, auto_send_ready,
+        intake_message_template, ready_message_template, updated_at
+      ) VALUES (
+        'default', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, NOW()
+      ) ON CONFLICT (id) DO UPDATE SET
+        store_name = COALESCE($1, binding_settings.store_name),
+        store_phone = COALESCE($2, binding_settings.store_phone),
+        store_address = COALESCE($3, binding_settings.store_address),
+        default_paper_size = COALESCE($4, binding_settings.default_paper_size),
+        default_unit_price = COALESCE($5, binding_settings.default_unit_price),
+        default_spiral_price = COALESCE($6, binding_settings.default_spiral_price),
+        default_staple_price = COALESCE($7, binding_settings.default_staple_price),
+        default_cover_price = COALESCE($8, binding_settings.default_cover_price),
+        store_postal_code = COALESCE($9, binding_settings.store_postal_code),
+        store_working_hours = COALESCE($10, binding_settings.store_working_hours),
+        store_map_link = COALESCE($11, binding_settings.store_map_link),
+        store_neshan_link = COALESCE($12, binding_settings.store_neshan_link),
+        store_balad_link = COALESCE($13, binding_settings.store_balad_link),
+        store_lat = COALESCE($14, binding_settings.store_lat),
+        store_lng = COALESCE($15, binding_settings.store_lng),
+        eitaa_bot_token = COALESCE($16, binding_settings.eitaa_bot_token),
+        eitaa_bot_app_url = COALESCE($17, binding_settings.eitaa_bot_app_url),
+        eitaa_bot_username = COALESCE($18, binding_settings.eitaa_bot_username),
+        auto_send_intake = COALESCE($19, binding_settings.auto_send_intake),
+        auto_send_ready = COALESCE($20, binding_settings.auto_send_ready),
+        intake_message_template = COALESCE($21, binding_settings.intake_message_template),
+        ready_message_template = COALESCE($22, binding_settings.ready_message_template),
+        updated_at = NOW()`,
+      [
+        s.storeName,
+        s.storePhone,
+        s.storeAddress,
+        s.defaultPaperSize,
+        s.defaultSpiralPrice !== undefined ? Number(s.defaultSpiralPrice) : (s.defaultUnitPrice !== undefined ? Number(s.defaultUnitPrice) : null),
+        s.defaultSpiralPrice !== undefined ? Number(s.defaultSpiralPrice) : null,
+        s.defaultStaplePrice !== undefined ? Number(s.defaultStaplePrice) : null,
+        s.defaultCoverPrice !== undefined ? Number(s.defaultCoverPrice) : null,
+        s.storePostalCode !== undefined ? s.storePostalCode : null,
+        s.storeWorkingHours !== undefined ? s.storeWorkingHours : null,
+        s.storeMapLink !== undefined ? s.storeMapLink : null,
+        s.storeNeshanLink !== undefined ? s.storeNeshanLink : null,
+        s.storeBaladLink !== undefined ? s.storeBaladLink : null,
+        s.storeLat !== undefined ? s.storeLat : null,
+        s.storeLng !== undefined ? s.storeLng : null,
+        s.eitaaBotToken !== undefined ? s.eitaaBotToken : null,
+        s.eitaaBotAppUrl !== undefined ? s.eitaaBotAppUrl : null,
+        s.eitaaBotUsername !== undefined ? s.eitaaBotUsername : null,
+        s.autoSendIntake !== undefined ? s.autoSendIntake : null,
+        s.autoSendReady !== undefined ? s.autoSendReady : null,
+        s.intakeMessageTemplate !== undefined ? s.intakeMessageTemplate : null,
+        s.readyMessageTemplate !== undefined ? s.readyMessageTemplate : null,
+      ]
+    );
+    return this.getBindingSettings();
+  },
+
+  async getPublicBindingTracking(trackingQuery: string): Promise<BindingOrder[]> {
+    const clean = trackingQuery.trim();
+    if (!clean) return [];
+
+    let sql = `
+      SELECT bo.*,
+             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
+             COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+      FROM binding_orders bo
+      LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
+      WHERE (bo.receipt_code ILIKE $1 OR bo.customer_mobile ILIKE $1 OR bo.customer_mobile ILIKE $2 OR bo.customer_eitaa_chat_id = $3 OR ecc.chat_id = $3)
+      ORDER BY bo.created_at DESC
+      LIMIT 10
+    `;
+    const q1 = `%${clean}%`;
+    const q2 = `%${clean.replace(/^0/, '')}%`;
+    const q3 = clean;
+    const res = await query(sql, [q1, q2, q3]);
+    return res.rows.map((r: any) => ({
+      id: r.id,
+      receiptCode: r.receipt_code,
+      customerName: r.customer_name,
+      customerMobile: r.customer_mobile ? r.customer_mobile.replace(/(\d{4})\d{4}(\d{3})/, '$1****$2') : '',
+      bookCount: Number(r.book_count || 1),
+      unitPrice: Number(r.unit_price || 0),
+      spiralCount: Number(r.spiral_count ?? r.book_count ?? 0),
+      spiralUnitPrice: Number(r.spiral_unit_price ?? r.unit_price ?? 0),
+      stapleCount: Number(r.staple_count || 0),
+      stapleUnitPrice: Number(r.staple_unit_price || 0),
+      coverCount: Number(r.cover_count || 0),
+      coverUnitPrice: Number(r.cover_unit_price || 0),
+      discount: Number(r.discount || 0),
+      totalPrice: Number(r.total_price || 0),
+      description: r.description || '',
+      paymentStatus: r.payment_status || 'unpaid',
+      workStatus: r.work_status || 'pending',
+      eitaaIntakeSent: Boolean(r.eitaa_intake_sent),
+      eitaaReadySent: Boolean(r.eitaa_ready_sent),
+      eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
+      eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
+      hasEitaaChat: Boolean(r.has_eitaa_chat),
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
+    }));
+  },
+
+  async getEitaaCustomerChats(search?: string): Promise<EitaaCustomerChat[]> {
+    let sql = 'SELECT * FROM eitaa_customer_chats WHERE 1=1';
+    const params: any[] = [];
+    if (search?.trim()) {
+      params.push(`%${search.trim()}%`);
+      sql += ` AND (mobile ILIKE $1 OR chat_id ILIKE $1 OR first_name ILIKE $1 OR username ILIKE $1)`;
+    }
+    sql += ' ORDER BY updated_at DESC LIMIT 100';
+    const res = await query(sql, params);
+    return res.rows.map((r: any) => ({
+      mobile: r.mobile,
+      chatId: r.chat_id,
+      eitaaUserId: r.eitaa_user_id || undefined,
+      firstName: r.first_name || undefined,
+      username: r.username || undefined,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+      updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+    }));
+  },
+
+  async deleteEitaaCustomerChat(mobile: string): Promise<boolean> {
+    const res = await query('DELETE FROM eitaa_customer_chats WHERE mobile = $1', [mobile]);
+    return (res.rowCount || 0) > 0;
   },
 
   // ============================================================================

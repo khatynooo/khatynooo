@@ -3,6 +3,8 @@
  * (Multi-Channel Publication Database Repository)
  */
 
+import fs from 'fs';
+import path from 'path';
 import { query, withTransaction } from '../dbClient';
 import {
   PublicationChannel,
@@ -14,11 +16,143 @@ import {
   PublicationSettings,
 } from './publicationTypes';
 
+const STORE_DIR = path.join(process.cwd(), 'uploads');
+const CHANNELS_STORE_FILE = path.join(STORE_DIR, 'publication_channels_store.json');
+const SETTINGS_STORE_FILE = path.join(STORE_DIR, 'publication_settings_store.json');
+
+function ensureStoreDir() {
+  try {
+    if (!fs.existsSync(STORE_DIR)) {
+      fs.mkdirSync(STORE_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Failed to create store directory:', err);
+  }
+}
+
+/**
+ * ذخیره ایمن وضعیت کامل کانال‌ها روی فایل دیسک
+ * برای جلوگیری قطعی از پاک شدن تنظیمات در ریستارت‌های سرور
+ */
+function persistChannelsToDisk(channels: any[]) {
+  try {
+    ensureStoreDir();
+    fs.writeFileSync(CHANNELS_STORE_FILE, JSON.stringify(channels, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Failed to persist channels to disk:', err);
+  }
+}
+
+function loadChannelsFromDisk(): any[] | null {
+  try {
+    if (fs.existsSync(CHANNELS_STORE_FILE)) {
+      const data = fs.readFileSync(CHANNELS_STORE_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Failed to read channels from disk:', err);
+  }
+  return null;
+}
+
+function persistSettingsToDisk(settings: PublicationSettings) {
+  try {
+    ensureStoreDir();
+    fs.writeFileSync(SETTINGS_STORE_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Failed to persist settings to disk:', err);
+  }
+}
+
+function loadSettingsFromDisk(): PublicationSettings | null {
+  try {
+    if (fs.existsSync(SETTINGS_STORE_FILE)) {
+      const data = fs.readFileSync(SETTINGS_STORE_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Failed to read settings from disk:', err);
+  }
+  return null;
+}
+
+// پرچم جهت اطمینان از همگام‌سازی یکباره کانال‌های ذخیره‌شده با دیتابیس
+let isChannelsSynced = false;
+
+async function syncWithDiskBackupIfNeeded() {
+  if (isChannelsSynced) return;
+  isChannelsSynced = true;
+
+  try {
+    const diskChannels = loadChannelsFromDisk();
+    if (diskChannels && diskChannels.length > 0) {
+      for (const chan of diskChannels) {
+        if (!chan.id || !chan.provider) continue;
+        const configStr = JSON.stringify(parseChannelConfig(chan.config));
+        await query(
+          `INSERT INTO publication_channels (id, provider, name, enabled, config, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5::jsonb, NOW(), NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name,
+             enabled = EXCLUDED.enabled,
+             config = EXCLUDED.config,
+             updated_at = NOW()`,
+          [chan.id, chan.provider, chan.name, Boolean(chan.enabled), configStr]
+        ).catch(() => null);
+      }
+    }
+
+    const diskSettings = loadSettingsFromDisk();
+    if (diskSettings) {
+      await updateSettings(diskSettings).catch(() => null);
+    }
+  } catch (err) {
+    console.warn('⚠️ [Publication Store] Disk backup sync error:', err);
+  }
+}
+
+/**
+ * تبدیل ایمن فیلد config به آبجکت جاوااسکریپت و ترمیم خودکار ساختارهای خراب
+ */
+export function parseChannelConfig(rawConfig: any): PublicationChannelConfig {
+  if (!rawConfig) return {};
+  if (typeof rawConfig === 'object') {
+    // جلوگیری از تجزیه اشتباه رشته‌ها به اندیس‌های کاراکتری {'0': '{', ...}
+    if ('0' in rawConfig && typeof rawConfig['0'] === 'string') {
+      try {
+        const reconstructed = Object.keys(rawConfig)
+          .sort((a, b) => Number(a) - Number(b))
+          .map(k => rawConfig[k])
+          .join('');
+        return JSON.parse(reconstructed);
+      } catch {
+        return {};
+      }
+    }
+    return { ...rawConfig };
+  }
+  if (typeof rawConfig === 'string') {
+    try {
+      const parsed = JSON.parse(rawConfig);
+      if (typeof parsed === 'string') {
+        try { return JSON.parse(parsed); } catch { return {}; }
+      }
+      return parsed || {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 /**
  * ماسک‌کردن توکن‌ها و کلیدهای محرمانه برای جلوگیری اکید از نشت سکرت‌ها به فرانت‌اند
  */
 export function maskChannelSecrets(channel: any): PublicationChannel {
-  const config = { ...(channel.config || {}) };
+  const config = parseChannelConfig(channel.config);
   const rawToken = config.token || config.accessToken || '';
   const tokenConfigured = Boolean(rawToken && rawToken.trim().length > 0);
 
@@ -48,6 +182,7 @@ export function maskChannelSecrets(channel: any): PublicationChannel {
 }
 
 export async function getChannels(): Promise<PublicationChannel[]> {
+  await syncWithDiskBackupIfNeeded();
   const res = await query(
     `SELECT * FROM publication_channels ORDER BY 
      CASE provider 
@@ -63,13 +198,21 @@ export async function getChannels(): Promise<PublicationChannel[]> {
 }
 
 export async function getRawChannelById(id: string): Promise<any | null> {
+  await syncWithDiskBackupIfNeeded();
   const res = await query('SELECT * FROM publication_channels WHERE id = $1', [id]);
-  return res.rows[0] || null;
+  if (!res.rows[0]) return null;
+  const row = { ...res.rows[0] };
+  row.config = parseChannelConfig(row.config);
+  return row;
 }
 
 export async function getRawChannelByProvider(provider: PublicationProvider): Promise<any | null> {
+  await syncWithDiskBackupIfNeeded();
   const res = await query('SELECT * FROM publication_channels WHERE provider = $1', [provider]);
-  return res.rows[0] || null;
+  if (!res.rows[0]) return null;
+  const row = { ...res.rows[0] };
+  row.config = parseChannelConfig(row.config);
+  return row;
 }
 
 export async function createChannel(data: {
@@ -79,6 +222,7 @@ export async function createChannel(data: {
   enabled?: boolean;
   config?: PublicationChannelConfig;
 }): Promise<PublicationChannel> {
+  await syncWithDiskBackupIfNeeded();
   const res = await query(
     `INSERT INTO publication_channels (id, provider, name, enabled, config, created_at, updated_at)
      VALUES ($1, $2, $3, $4, $5::jsonb, NOW(), NOW())
@@ -91,6 +235,11 @@ export async function createChannel(data: {
       JSON.stringify(data.config || {}),
     ]
   );
+  
+  // ذخیره دیسکی
+  const allRes = await query('SELECT * FROM publication_channels');
+  persistChannelsToDisk(allRes.rows);
+
   return maskChannelSecrets(res.rows[0]);
 }
 
@@ -102,18 +251,41 @@ export async function updateChannel(
     config?: Partial<PublicationChannelConfig>;
   }
 ): Promise<PublicationChannel | null> {
-  const existing = await getRawChannelById(id);
+  await syncWithDiskBackupIfNeeded();
+  let existing = await getRawChannelById(id);
+  if (!existing) {
+    existing = await getRawChannelByProvider(id as any);
+  }
   if (!existing) return null;
 
-  let mergedConfig = { ...(existing.config || {}) };
+  const existingConfig = parseChannelConfig(existing.config);
+  let mergedConfig: PublicationChannelConfig = { ...existingConfig };
+
   if (updates.config) {
-    // اگر در فرانت‌اند توکن تغییر نکرده باشد (خالی ارسال شده)، توکن قبلی حفظ می‌شود
     const newConfig = { ...updates.config };
-    if (!newConfig.token && !newConfig.accessToken && (mergedConfig.token || mergedConfig.accessToken)) {
-      if (mergedConfig.token) newConfig.token = mergedConfig.token;
-      if (mergedConfig.accessToken) newConfig.accessToken = mergedConfig.accessToken;
+
+    // یکپارچه‌سازی و پاکسازی chat_id و channelId
+    if (newConfig.chat_id !== undefined || newConfig.channelId !== undefined) {
+      const activeId = String(newConfig.chat_id || newConfig.channelId || '').trim();
+      if (activeId) {
+        newConfig.chat_id = activeId;
+        newConfig.channelId = activeId;
+      }
     }
-    mergedConfig = { ...mergedConfig, ...newConfig };
+
+    // حفظ کلیدهای حساس قبلی اگر در درخواست جدید خالی ارسال شده باشند
+    if (!newConfig.token && !newConfig.accessToken) {
+      if (existingConfig.token) newConfig.token = existingConfig.token;
+      if (existingConfig.accessToken) newConfig.accessToken = existingConfig.accessToken;
+    } else {
+      if (!newConfig.token && existingConfig.token) newConfig.token = existingConfig.token;
+      if (!newConfig.accessToken && existingConfig.accessToken) newConfig.accessToken = existingConfig.accessToken;
+    }
+
+    if (!newConfig.password && existingConfig.password) newConfig.password = existingConfig.password;
+    if (!newConfig.secret && existingConfig.secret) newConfig.secret = existingConfig.secret;
+
+    mergedConfig = { ...existingConfig, ...newConfig };
   }
 
   const res = await query(
@@ -128,9 +300,13 @@ export async function updateChannel(
       updates.name !== undefined ? updates.name : null,
       updates.enabled !== undefined ? updates.enabled : null,
       JSON.stringify(mergedConfig),
-      id,
+      existing.id,
     ]
   );
+
+  // همگام‌سازی فوری با دیسک
+  const allRes = await query('SELECT * FROM publication_channels');
+  persistChannelsToDisk(allRes.rows);
 
   return maskChannelSecrets(res.rows[0]);
 }
@@ -209,7 +385,7 @@ export async function updateSettings(
   );
 
   const row = res.rows[0];
-  return {
+  const savedSettings: PublicationSettings = {
     id: row.id,
     publishOnCreate: Boolean(row.publish_on_create),
     publishOnUpdate: Boolean(row.publish_on_update),
@@ -220,6 +396,8 @@ export async function updateSettings(
     defaultTemplate: row.default_template || '',
     updatedAt: row.updated_at,
   };
+  persistSettingsToDisk(savedSettings);
+  return savedSettings;
 }
 
 /**

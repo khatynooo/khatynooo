@@ -18,7 +18,7 @@ export class BaleProvider implements PublicationProviderAdapter {
 
   private getCredentials() {
     const token = this.config.token || process.env.BALE_BOT_TOKEN;
-    const channelId = this.config.channelId || process.env.BALE_CHANNEL_ID;
+    const channelId = this.config.chat_id || this.config.channelId || process.env.BALE_CHANNEL_ID;
     const baseUrl = (this.config.baseUrl || process.env.BALE_API_BASE_URL || 'https://tapi.bale.ai/bot').replace(/\/+$/, '');
     return { token, channelId, baseUrl };
   }

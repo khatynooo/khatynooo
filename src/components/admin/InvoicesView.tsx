@@ -45,8 +45,11 @@ import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { ProductScanQuantityModal } from './ProductScanQuantityModal';
 import { UnknownBarcodeModal } from './UnknownBarcodeModal';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { useNavigate } from 'react-router-dom';
+import { PurchaseInvoiceExcelImportModal } from './PurchaseInvoiceExcelImportModal';
 
 export const InvoicesView: React.FC = () => {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,9 +71,11 @@ export const InvoicesView: React.FC = () => {
 
   // New Purchase Invoice Modal States
   const [showNewPurchaseModal, setShowNewPurchaseModal] = useState(false);
+  const [showExcelPurchaseModal, setShowExcelPurchaseModal] = useState(false);
   const [purchaseDraftBanner, setPurchaseDraftBanner] = useState<any>(null); // payload پیش‌نویس پیداشده، یا null
   const [purchaseSupplierId, setPurchaseSupplierId] = useState('');
   const [purchaseInvoiceNumber, setPurchaseInvoiceNumber] = useState('');
+  const [purchaseDocumentNumber, setPurchaseDocumentNumber] = useState('');
   const [purchaseInvoiceDate, setPurchaseInvoiceDate] = useState(
     new Date().toLocaleDateString('fa-IR')
   );
@@ -136,6 +141,7 @@ export const InvoicesView: React.FC = () => {
   const [editingPurchaseInvoice, setEditingPurchaseInvoice] = useState<PurchaseInvoice | null>(null);
   const [editPurchaseSupplierId, setEditPurchaseSupplierId] = useState('');
   const [editPurchaseInvoiceNumber, setEditPurchaseInvoiceNumber] = useState('');
+  const [editPurchaseDocumentNumber, setEditPurchaseDocumentNumber] = useState('');
   const [editPurchaseInvoiceDate, setEditPurchaseInvoiceDate] = useState('');
   const [editPurchaseWarehouseId, setEditPurchaseWarehouseId] = useState('wh_central');
   const [editPurchaseDiscount, setEditPurchaseDiscount] = useState<number | ''>(0);
@@ -526,6 +532,7 @@ export const InvoicesView: React.FC = () => {
         receiptImageUrl: purchaseReceiptImages[0] || undefined,
         invoiceNumber: purchaseInvoiceNumber.trim() || undefined,
         invoiceDate: purchaseInvoiceDate.trim() || undefined,
+        documentNumber: purchaseDocumentNumber.trim() || undefined,
       });
 
       // ۳. ثبت خودکار چک‌ها در ماژول چک‌ها (نوع: پرداختی به پخش/تامین‌کننده)
@@ -570,6 +577,7 @@ export const InvoicesView: React.FC = () => {
       setPurchaseCheques([]);
       setPurchaseReceiptImages([]);
       setPurchaseInvoiceNumber('');
+      setPurchaseDocumentNumber('');
       setPurchaseInvoiceDate(new Date().toLocaleDateString('fa-IR'));
       setPurchaseDiscount(0);
       setPurchasePaymentMethod('cash');
@@ -725,6 +733,7 @@ export const InvoicesView: React.FC = () => {
     setEditingPurchaseInvoice(inv);
     setEditPurchaseSupplierId(inv.supplierId || '');
     setEditPurchaseInvoiceNumber(inv.invoiceNumber || '');
+    setEditPurchaseDocumentNumber(inv.documentNumber || '');
     setEditPurchaseInvoiceDate(inv.invoiceDate || new Date(inv.createdAt).toLocaleDateString('fa-IR'));
     setEditPurchaseWarehouseId(inv.warehouseId || 'wh_central');
     setEditPurchaseDiscount(inv.discount || 0);
@@ -921,6 +930,7 @@ export const InvoicesView: React.FC = () => {
         warehouseId: editPurchaseWarehouseId,
         invoiceNumber: editPurchaseInvoiceNumber,
         invoiceDate: editPurchaseInvoiceDate,
+        documentNumber: editPurchaseDocumentNumber.trim() || undefined,
         discount: disc,
       });
 
@@ -967,13 +977,23 @@ export const InvoicesView: React.FC = () => {
         </div>
 
         {activeTab === 'purchase' && (
-          <button
-            onClick={() => setShowNewPurchaseModal(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>ثبت فاکتور خرید جدید (ورود به انبار)</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <button
+              onClick={() => setShowExcelPurchaseModal(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+              title="ورود اطلاعات فاکتور خرید همراه با راهنما، شماره سند و ثبت در کالاها"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+              <span>ورود فاکتور با اکسل</span>
+            </button>
+            <button
+              onClick={() => setShowNewPurchaseModal(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>ثبت فاکتور خرید جدید (ورود به انبار)</span>
+            </button>
+          </div>
         )}
 
         {activeTab === 'returns' && (
@@ -1062,7 +1082,7 @@ export const InvoicesView: React.FC = () => {
             <table className="w-full text-xs text-right">
               <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
                 <tr>
-                  <th className="p-3.5">شماره فاکتور</th>
+                  <th className="p-3.5">شماره فاکتور / سند</th>
                   <th className="p-3.5">تامین‌کننده / شرکت پخش</th>
                   <th className="p-3.5">تاریخ فاکتور</th>
                   <th className="p-3.5">مبلغ کل فاکتور</th>
@@ -1077,9 +1097,14 @@ export const InvoicesView: React.FC = () => {
                 {purchaseInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3.5 font-mono font-bold text-slate-800">
-                      <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md text-[11px]">
+                      <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md text-[11px] block w-fit">
                         {inv.invoiceNumber}
                       </span>
+                      {inv.documentNumber && (
+                        <span className="bg-indigo-50 text-indigo-700 border border-indigo-200/70 px-1.5 py-0.5 rounded text-[10px] font-bold block w-fit mt-1">
+                          سند: {inv.documentNumber}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3.5 font-bold text-slate-900">{inv.supplierName}</td>
                     <td className="p-3.5 text-slate-500 font-mono">
@@ -1387,6 +1412,17 @@ export const InvoicesView: React.FC = () => {
                     value={purchaseInvoiceNumber}
                     onChange={(e) => setPurchaseInvoiceNumber(e.target.value)}
                     placeholder="مثال: ۱۲۴۴۰ یا INV-981"
+                    className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none font-bold font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">شماره سند حسابداری / انبار (اختیاری):</label>
+                  <input
+                    type="text"
+                    value={purchaseDocumentNumber}
+                    onChange={(e) => setPurchaseDocumentNumber(e.target.value)}
+                    placeholder="مثال: DOC-8820"
                     className="w-full bg-white border border-slate-200 rounded-xl p-2 outline-none font-bold font-mono"
                   />
                 </div>
@@ -2101,6 +2137,27 @@ export const InvoicesView: React.FC = () => {
           onCancel={handleCancelPurchaseUnknownBarcode}
         />
       )}
+
+      {/* Purchase Invoice Excel Import Modal */}
+      <PurchaseInvoiceExcelImportModal
+        isOpen={showExcelPurchaseModal}
+        onClose={() => setShowExcelPurchaseModal(false)}
+        warehouses={warehouses}
+        suppliers={suppliers}
+        onSuccess={() => {
+          loadData();
+        }}
+        onEditProduct={(p) => {
+          sessionStorage.setItem('khatinoo_edit_product_id', p.id);
+          navigate('/admin/products');
+        }}
+        onNavigateToProducts={(query) => {
+          if (query) {
+            sessionStorage.setItem('khatinoo_product_search', query);
+          }
+          navigate('/admin/products');
+        }}
+      />
 
       {/* Full-Screen Multi-Image Receipt Viewer Modal */}
       {viewingReceiptUrls.length > 0 && (
@@ -2940,6 +2997,19 @@ export const InvoicesView: React.FC = () => {
                       onChange={(e) => setEditPurchaseInvoiceNumber(e.target.value)}
                       className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-slate-800 outline-none"
                       placeholder="INV-..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      شماره سند حسابداری / انبار:
+                    </label>
+                    <input
+                      type="text"
+                      value={editPurchaseDocumentNumber}
+                      onChange={(e) => setEditPurchaseDocumentNumber(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-slate-800 outline-none"
+                      placeholder="DOC-..."
                     />
                   </div>
 

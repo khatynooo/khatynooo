@@ -107,10 +107,18 @@ export const api = {
       body: JSON.stringify(cat),
     }).then(handleResponse),
 
-  deleteCategory: (id: string) =>
+  deleteCategory: (id: string, replacementCategoryId?: string) =>
     fetch(`${API_BASE}/categories/${id}`, {
       method: 'DELETE',
-      headers: getAuthHeader(),
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: replacementCategoryId ? JSON.stringify({ replacementCategoryId }) : undefined,
+    }).then(handleResponse),
+
+  replaceCategory: (data: { sourceCategoryId: string; targetCategoryId: string; targetSubCategoryId?: string }) =>
+    fetch(`${API_BASE}/categories/replace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
     }).then(handleResponse),
 
   createSubcategory: (categoryId: string, data: any) =>
@@ -153,6 +161,13 @@ export const api = {
     fetch(`${API_BASE}/units/${id}`, {
       method: 'DELETE',
       headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  replaceUnit: (data: { sourceUnit: string; targetUnit: string; subUnit?: string; conversionFactor?: number }) =>
+    fetch(`${API_BASE}/units/replace`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
     }).then(handleResponse),
 
   // POS & Pasargad
@@ -212,6 +227,13 @@ export const api = {
 
   createPurchaseInvoice: (data: any) =>
     fetch(`${API_BASE}/invoices/purchase`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  importPurchaseInvoiceExcel: (data: any) =>
+    fetch(`${API_BASE}/invoices/purchase/import-excel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
@@ -711,6 +733,85 @@ export const api = {
       body: JSON.stringify(record),
     }).then(handleResponse),
 
+  // -------------------------------------------------------------
+  // Binding Orders (سفارشات فنرزنی و مدیریت پیام مستقیم ایتا)
+  // -------------------------------------------------------------
+  getBindingOrders: (params?: { query?: string; paymentStatus?: string; workStatus?: string; limit?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.query) searchParams.append('query', params.query);
+    if (params?.paymentStatus) searchParams.append('paymentStatus', params.paymentStatus);
+    if (params?.workStatus) searchParams.append('workStatus', params.workStatus);
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return fetch(`${API_BASE}/binding-orders${qs ? `?${qs}` : ''}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse);
+  },
+
+  getBindingOrderById: (id: string) =>
+    fetch(`${API_BASE}/binding-orders/${id}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  createBindingOrder: (data: any) =>
+    fetch(`${API_BASE}/binding-orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  updateBindingOrder: (id: string, data: any) =>
+    fetch(`${API_BASE}/binding-orders/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  deleteBindingOrder: (id: string) =>
+    fetch(`${API_BASE}/binding-orders/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  sendBindingOrderEitaa: (id: string, type: 'intake' | 'ready') =>
+    fetch(`${API_BASE}/binding-orders/${id}/send-eitaa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ type }),
+    }).then(handleResponse),
+
+  getBindingSettings: () =>
+    fetch(`${API_BASE}/binding-orders/settings`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  updateBindingSettings: (settings: any) =>
+    fetch(`${API_BASE}/binding-orders/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(settings),
+    }).then(handleResponse),
+
+  getEitaaCustomerChats: (search?: string) => {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    return fetch(`${API_BASE}/binding-orders/eitaa-chats${qs}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse);
+  },
+
+  registerEitaaCustomerChat: (data: { mobile: string; chatId: string; firstName?: string; username?: string }) =>
+    fetch(`${API_BASE}/binding-orders/eitaa-chats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  deleteEitaaCustomerChat: (mobile: string) =>
+    fetch(`${API_BASE}/binding-orders/eitaa-chats/${encodeURIComponent(mobile)}`, {
+      method: 'DELETE',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
   getOnlineOrders: () =>
     fetch(`${API_BASE}/orders`, {
       headers: getAuthHeader(),
@@ -1055,6 +1156,17 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handleResponse),
 
+  importExcelInventory: (data: {
+    items: any[];
+    warehouseId: string;
+    conflictMode: 'increase_stock' | 'update_all' | 'skip_existing';
+  }) =>
+    fetch(`${API_BASE}/inventory/import-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
   getInventoryAdjustments: (limit = 50) =>
     fetch(`${API_BASE}/inventory/adjustments?limit=${limit}`, {
       headers: getAuthHeader(),
@@ -1186,6 +1298,13 @@ export const api = {
     fetch(`${API_BASE}/publication/channels/${id}/test`, {
       method: 'POST',
       headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  sendPublicationChannelTestMessage: (id: string, text?: string) =>
+    fetch(`${API_BASE}/publication/channels/${id}/send-test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ text }),
     }).then(handleResponse),
 
   publishProduct: (productId: string, payload: {

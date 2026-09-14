@@ -40,14 +40,16 @@ export interface UnitDefinition {
   subUnit: string; // e.g. عدد
   conversionFactor: number; // e.g. 24
   description?: string;
+  productCount?: number;
 }
 
 export interface SubCategory {
   id: string;
   categoryId: string;
-  categoryName: string;
+  categoryName?: string;
   name: string;
   description?: string;
+  productCount?: number;
 }
 
 export interface Category {
@@ -270,6 +272,7 @@ export interface PurchaseInvoice {
   receiptImageUrl?: string; // سازگاری با داده‌های قبلی
   chequeInfo?: ChequeInfo; // سازگاری با داده‌های قبلی
   notes?: string;
+  documentNumber?: string;
   warehouseId?: string;
   warehouseName?: string;
   createdAt: string;
@@ -547,6 +550,42 @@ export interface WebsiteSettings {
   locationTitle?: string;
   addressNotes?: string;
   responsiveLayout?: ResponsiveLayoutSettings;
+  layoutTemplates?: LayoutTemplatePreset[];
+  activeLayoutTemplateId?: string;
+}
+
+export interface LayoutTemplatePreset {
+  id: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  createdAt?: string;
+  settings?: {
+    siteFontFamily?: 'vazirmatn' | 'shabnam' | 'sahel';
+    siteFontScale?: 'sm' | 'base' | 'lg';
+    productImageSize?: 'compact' | 'normal' | 'large';
+    heroHeight?: 'compact' | 'normal' | 'tall';
+    sectionSpacing?: 'compact' | 'normal' | 'relaxed';
+    containerWidth?: 'standard' | 'wide' | 'full';
+    layoutColumns?: 3 | 4 | 5 | 6;
+    headerLayout?: 'standard' | 'compact' | 'centered' | 'fullwidth';
+    footerLayout?: 'default' | 'compact' | 'detailed' | 'multi_column' | 'card' | 'simple';
+    buttonColorTheme?: 'gold' | 'amber' | 'emerald' | 'indigo' | 'rose' | 'slate' | 'custom';
+    primaryColorHex?: string;
+    buttonBorderRadius?: 'rounded-md' | 'rounded-xl' | 'rounded-2xl' | 'rounded-full';
+  };
+  siteFontFamily?: 'vazirmatn' | 'shabnam' | 'sahel';
+  siteFontScale?: 'sm' | 'base' | 'lg';
+  productImageSize?: 'compact' | 'normal' | 'large';
+  heroHeight?: 'compact' | 'normal' | 'tall';
+  sectionSpacing?: 'compact' | 'normal' | 'relaxed';
+  containerWidth?: 'standard' | 'wide' | 'full';
+  layoutColumns?: 3 | 4 | 5 | 6;
+  headerLayout?: 'standard' | 'compact' | 'centered' | 'fullwidth';
+  footerLayout?: 'default' | 'compact' | 'detailed' | 'multi_column' | 'card' | 'simple';
+  buttonColorTheme?: 'gold' | 'amber' | 'emerald' | 'indigo' | 'rose' | 'slate' | 'custom';
+  primaryColorHex?: string;
+  buttonBorderRadius?: 'rounded-md' | 'rounded-xl' | 'rounded-2xl' | 'rounded-full';
 }
 
 export type SizeUnit = 'px' | 'rem' | '%' | 'vw' | 'vh';
@@ -920,7 +959,8 @@ export interface PageBuilderBlock {
     buttonText?: string;
     buttonLink?: string;
     buttonPosition?: 'left' | 'center' | 'right' | 'hidden';
-    buttonStyle?: 'gold' | 'amber' | 'dark' | 'outline';
+    buttonStyle?: 'gold' | 'amber' | 'dark' | 'outline' | 'gradient' | 'emerald';
+    buttonRadius?: 'rounded-md' | 'rounded-xl' | 'rounded-2xl' | 'rounded-full';
     customHtml?: string;
     bannerImageUrl?: string;
     badgeText?: string;
@@ -1260,6 +1300,80 @@ export interface PublicationStats {
   totalFailed: number;
   todaySent: number;
   providerBreakdown: Record<string, { sent: number; failed: number }>;
+}
+
+// =============================================================================
+// سفارشات فنرزنی و مدیریت پیام مستقیم ایتا (Binding Orders)
+// =============================================================================
+
+export type BindingPaymentStatus = 'unpaid' | 'paid';
+export type BindingWorkStatus = 'pending' | 'done' | 'cancelled';
+export type EitaaMessageStatus = 'sent' | 'no_chat_id' | 'failed' | 'not_sent' | 'not_configured';
+
+export interface BindingOrder {
+  id: string;
+  receiptCode: string;
+  customerName: string;
+  customerMobile: string;
+  bookCount: number; // مجموع کل کتاب‌ها/جزوات
+  unitPrice: number; // قیمت واحد پایه (یا میانگین)
+  spiralCount?: number; // تعداد فنرزنی
+  spiralUnitPrice?: number; // قیمت هر فنر
+  stapleCount?: number; // تعداد منگنه
+  stapleUnitPrice?: number; // قیمت هر منگنه
+  coverCount?: number; // تعداد جلد / جزوه
+  coverUnitPrice?: number; // قیمت هر جلد
+  discount: number;
+  totalPrice: number;
+  description?: string;
+  paymentStatus: BindingPaymentStatus;
+  workStatus: BindingWorkStatus;
+  eitaaIntakeSent: boolean;
+  eitaaReadySent: boolean;
+  eitaaIntakeStatus: EitaaMessageStatus;
+  eitaaReadyStatus: EitaaMessageStatus;
+  hasEitaaChat?: boolean;
+  customerEitaaChatId?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BindingSettings {
+  id: string;
+  storeName: string;
+  storePhone: string;
+  storeAddress: string;
+  storePostalCode?: string;
+  storeWorkingHours?: string;
+  storeMapLink?: string;
+  storeNeshanLink?: string;
+  storeBaladLink?: string;
+  storeLat?: number;
+  storeLng?: number;
+  defaultPaperSize: 'A6' | 'A7';
+  defaultUnitPrice: number;
+  defaultSpiralPrice?: number;
+  defaultStaplePrice?: number;
+  defaultCoverPrice?: number;
+  eitaaBotToken?: string;
+  eitaaBotAppUrl?: string; // e.g. https://eitaa.com/khatynoo_app/fanar
+  eitaaBotUsername?: string; // e.g. khatynoo_app
+  autoSendIntake: boolean;
+  autoSendReady: boolean;
+  intakeMessageTemplate: string;
+  readyMessageTemplate: string;
+  updatedAt: string;
+}
+
+export interface EitaaCustomerChat {
+  mobile: string;
+  chatId: string;
+  eitaaUserId?: string;
+  firstName?: string;
+  username?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 

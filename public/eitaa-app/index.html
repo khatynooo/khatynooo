@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>خطی‌نو | پیگیری سفارش، آدرس و برنامک ایتا</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Vazirmatn -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .status-pulse {
+      animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.96); opacity: 0.85; }
+      50% { transform: scale(1.04); opacity: 1; }
+      100% { transform: scale(0.96); opacity: 0.85; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-14">
+
+  <!-- هدر اصلی برنامک -->
+  <header class="bg-gradient-to-l from-emerald-600 via-teal-700 to-emerald-800 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-xs border border-white/20 shadow-inner">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 id="headerStoreName" class="text-base sm:text-lg font-black tracking-tight">خدمات صحافی خطی‌نو</h1>
+          <p class="text-[11px] text-emerald-100 font-light">فنرزنی، منگنه و جلد • اطلاع‌رسانی آماده‌سازی در ایتا</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <a id="headerPhoneLink" href="tel:" class="px-2.5 py-1.5 bg-white/15 hover:bg-white/25 transition rounded-lg text-xs font-semibold flex items-center gap-1 border border-white/20">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+          </svg>
+          <span>تماس</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- تب‌های ناوبری سریع -->
+    <div class="max-w-xl mx-auto px-4 flex border-t border-emerald-500/40 text-xs sm:text-sm">
+      <button onclick="switchTab('track')" id="tabBtnTrack" class="flex-1 py-2.5 text-center font-bold border-b-2 border-white text-white transition">
+        پیگیری سفارش
+      </button>
+      <button onclick="switchTab('address')" id="tabBtnAddress" class="flex-1 py-2.5 text-center font-medium text-emerald-100 hover:text-white border-b-2 border-transparent transition">
+        آدرس و مسیریابی
+      </button>
+      <button onclick="switchTab('calculator')" id="tabBtnCalc" class="flex-1 py-2.5 text-center font-medium text-emerald-100 hover:text-white border-b-2 border-transparent transition">
+        تعرفه‌ها و محاسبه
+      </button>
+    </div>
+  </header>
+
+  <!-- محتوای اصلی -->
+  <main class="max-w-xl mx-auto px-4 mt-3 space-y-3.5">
+
+    <!-- بنر وضعیت اتصال به ایتا -->
+    <div id="eitaaConnectedBadge" class="hidden bg-emerald-50 border border-emerald-200 rounded-2xl p-3.5 shadow-xs flex items-start gap-3">
+      <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+        </svg>
+      </div>
+      <div class="text-xs text-emerald-950 leading-relaxed flex-1">
+        <div class="font-black text-xs text-emerald-900 flex items-center gap-1.5 mb-0.5">
+          <span>حساب ایتای شما با موفقیت شناسایی و متصل شد</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+        </div>
+        <div>
+          شناسه چت ایتا: <span id="eitaaChatIdDisplay" class="font-mono font-bold text-emerald-700 dir-ltr inline-block">--</span>
+          <span id="eitaaUserNameDisplay" class="mr-2 text-slate-600"></span>
+        </div>
+        <p class="text-[11px] text-emerald-800 mt-1">
+          به محض اینکه فنرزنی یا صحافی کتاب‌های شما در کارگاه آماده شود، پیام آماده‌سازی به پی‌وی ایتای شما توسط بات <b id="botMentionText">@khatynoo_app</b> ارسال خواهد شد.
+        </p>
+      </div>
+    </div>
+
+    <!-- بنر راهنمای اتصال به ایتا در صورت عدم وجود chat_id -->
+    <div id="eitaaConnectPrompt" class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 shadow-xs flex flex-col gap-2.5">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+          </svg>
+        </div>
+        <div class="text-xs text-amber-950 leading-relaxed flex-1">
+          <div class="font-black text-xs text-amber-950 mb-0.5">اطلاع‌رسانی خودکار در پیام‌رسان ایتا 🚀</div>
+          سفارش فنرزنی، منگنه و صحافی خود را به کارگاه تحویل دهید؛ وقتی آماده شد، پیام آماده‌سازی مستقیماً در ایتا برای شما ارسال می‌شود.
+        </div>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 pt-1 border-t border-amber-200/60">
+        <a id="btnOpenEitaaBot" href="https://eitaa.com/khatynoo_app/fanar" target="_blank" class="flex-1 px-3 py-2 bg-gradient-to-l from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1.5 shadow-xs transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+          </svg>
+          <span>ورود مستقیم از طریق بات ایتا (@khatynoo_app)</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- تب ۱: پیگیری آنلاین سفارشات مشتری -->
+    <section id="tabContentTrack" class="space-y-3.5">
+      <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/80">
+        <h2 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2 mb-2.5">
+          <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          <span>استعلام وضعیت سفارش صحافی و فنرزنی</span>
+        </h2>
+        <div class="space-y-2">
+          <label class="text-[11px] text-slate-500">کد رسید (مثال: BND-1002) یا شماره موبایل تحویل کتاب را وارد کنید:</label>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              id="trackingInput"
+              placeholder="مثال: 09121234567 یا BND-1001"
+              class="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white text-slate-800 transition text-center tracking-wider"
+              dir="ltr"
+            />
+            <button
+              onclick="searchOrders()"
+              id="btnSearch"
+              class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-bold rounded-xl shadow-xs transition flex items-center gap-1 shrink-0"
+            >
+              <span>جستجو</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- اتصال سریع شماره موبایل به ایتا برای پیوند خودکار سفارشات -->
+      <div id="linkMobileBox" class="bg-white rounded-2xl p-3.5 shadow-xs border border-slate-200/80 hidden">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold text-slate-800">پیوند شماره همراه با شناسه ایتا:</span>
+          <span class="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">جهت دریافت پیامک ایتا</span>
+        </div>
+        <div class="flex gap-2">
+          <input
+            type="tel"
+            id="linkMobileInput"
+            placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)"
+            class="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-center font-mono"
+            dir="ltr"
+          />
+          <button
+            onclick="submitLinkMobile()"
+            id="btnLinkMobile"
+            class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition"
+          >
+            ثبت در ایتا
+          </button>
+        </div>
+      </div>
+
+      <!-- نتایج پیگیری سفارش -->
+      <div id="trackResultsContainer" class="space-y-3">
+        <!-- پیام پیش‌فرض راهنما -->
+        <div id="trackPlaceholder" class="text-center py-9 px-4 text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">
+          <svg class="w-12 h-12 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+          <p class="text-xs sm:text-sm font-bold text-slate-600">هنوز سفارشی جستجو نشده است</p>
+          <p class="text-[11px] text-slate-400 mt-1">شماره موبایل تحویل کتاب یا کد فیش فنرزنی را در کادر بالا وارد نمایید.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- تب ۲: آدرس فروشگاه، ساعات کاری و مسیریابی -->
+    <section id="tabContentAddress" class="space-y-3.5 hidden">
+      <div class="bg-white rounded-2xl p-4 sm:p-5 shadow-xs border border-slate-200/80 space-y-4">
+        
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-1">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+          </div>
+          <div class="flex-1">
+            <h3 class="text-xs sm:text-sm font-bold text-slate-900 mb-1">نشانی جهت تحویل و دریافت حضوری کتاب‌ها:</h3>
+            <p id="storeFullAddress" class="text-xs sm:text-sm text-slate-700 leading-relaxed font-medium bg-slate-50 p-3 rounded-xl border border-slate-200">
+              در حال بارگذاری نشانی فروشگاه...
+            </p>
+            <p id="storePostalCode" class="text-[11px] text-slate-500 mt-1.5"></p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-100">
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+            <div class="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
+              <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span>ساعات کاری</span>
+            </div>
+            <div id="storeWorkingHours" class="text-xs font-bold text-slate-800">
+              شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+            <div class="text-[11px] text-slate-500 flex items-center gap-1 mb-1">
+              <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+              </svg>
+              <span>تلفن تماس</span>
+            </div>
+            <a id="storePhoneLink" href="tel:" class="text-xs font-bold text-emerald-700 dir-ltr block text-right">
+              در حال دریافت...
+            </a>
+          </div>
+        </div>
+
+        <!-- دکمه‌های مسیریابی سریع روی نقشه -->
+        <div class="pt-3 border-t border-slate-100">
+          <div class="text-xs font-bold text-slate-700 mb-2.5">مسیریابی با اپلیکیشن‌های نقشه:</div>
+          <div class="grid grid-cols-3 gap-2">
+            <a id="btnNeshan" href="#" target="_blank" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 transition text-center">
+              <span class="text-xs font-bold">نشان</span>
+            </a>
+            <a id="btnBalad" href="#" target="_blank" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 transition text-center">
+              <span class="text-xs font-bold">بلد</span>
+            </a>
+            <a id="btnGoogleMap" href="#" target="_blank" class="flex flex-col items-center justify-center p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 transition text-center">
+              <span class="text-xs font-bold">گوگل مپ</span>
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- تب ۳: تعرفه‌ها و محاسبه‌گر هزینه -->
+    <section id="tabContentCalc" class="space-y-3.5 hidden">
+      
+      <!-- جدول تعرفه‌های رسمی مصوب -->
+      <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/80 space-y-3">
+        <h3 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+          </svg>
+          <span>تعرفه‌های به‌روز خدمات صحافی</span>
+        </h3>
+        
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
+            <div class="text-[11px] text-emerald-800 font-semibold mb-1">فنرزنی (سیمی)</div>
+            <div id="tariffSpiral" class="text-xs sm:text-sm font-black text-emerald-900">۳۵,۰۰۰</div>
+            <div class="text-[10px] text-emerald-600 mt-0.5">تومان / جلد</div>
+          </div>
+
+          <div class="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl">
+            <div class="text-[11px] text-indigo-800 font-semibold mb-1">منگنه جزوات</div>
+            <div id="tariffStaple" class="text-xs sm:text-sm font-black text-indigo-900">۱۰,۰۰۰</div>
+            <div class="text-[10px] text-indigo-600 mt-0.5">تومان / جلد</div>
+          </div>
+
+          <div class="p-3 bg-amber-50/70 border border-amber-200 rounded-xl">
+            <div class="text-[11px] text-amber-800 font-semibold mb-1">طلق و جلد پاپوش</div>
+            <div id="tariffCover" class="text-xs sm:text-sm font-black text-amber-900">۲۰,۰۰۰</div>
+            <div class="text-[10px] text-amber-600 mt-0.5">تومان / جلد</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ماشین‌حساب آنلاین قیمت خدمات -->
+      <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/80 space-y-3.5">
+        <h3 class="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-2">
+          <svg class="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+          </svg>
+          <span>محاسبه‌گر هزینه سفارش شما</span>
+        </h3>
+
+        <!-- ردیف فنرزنی -->
+        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <div>
+            <div class="text-xs font-bold text-slate-800">تعداد کتاب جهت فنرزنی:</div>
+            <div class="text-[10px] text-slate-400">سیمی فلزی یا فنر دوبل</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="changeCalcQty('spiral', -1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center">-</button>
+            <span id="calcSpiralQty" class="w-8 text-center font-bold text-xs sm:text-sm text-slate-800">1</span>
+            <button onclick="changeCalcQty('spiral', 1)" class="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center justify-center">+</button>
+          </div>
+        </div>
+
+        <!-- ردیف منگنه -->
+        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <div>
+            <div class="text-xs font-bold text-slate-800">تعداد جزوه جهت منگنه:</div>
+            <div class="text-[10px] text-slate-400">منگنه صنعتی مقاوم وسط یا گوشه</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="changeCalcQty('staple', -1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center">-</button>
+            <span id="calcStapleQty" class="w-8 text-center font-bold text-xs sm:text-sm text-slate-800">0</span>
+            <button onclick="changeCalcQty('staple', 1)" class="w-8 h-8 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 flex items-center justify-center">+</button>
+          </div>
+        </div>
+
+        <!-- ردیف طلق و جلد -->
+        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <div>
+            <div class="text-xs font-bold text-slate-800">تعداد جلد / طلق و پاپوش:</div>
+            <div class="text-[10px] text-slate-400">طلق ضخیم شفاف + جلد مقوایی</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="changeCalcQty('cover', -1)" class="w-8 h-8 rounded-lg bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center">-</button>
+            <span id="calcCoverQty" class="w-8 text-center font-bold text-xs sm:text-sm text-slate-800">0</span>
+            <button onclick="changeCalcQty('cover', 1)" class="w-8 h-8 rounded-lg bg-amber-600 text-white font-bold hover:bg-amber-700 flex items-center justify-center">+</button>
+          </div>
+        </div>
+
+        <!-- مجموع قیمت محاسبه شده -->
+        <div class="bg-gradient-to-l from-emerald-600 to-teal-700 text-white rounded-xl p-3.5 flex items-center justify-between shadow-xs">
+          <div>
+            <div class="text-xs text-emerald-100 font-medium">مجموع تقریبی هزینه:</div>
+            <div class="text-[10px] text-emerald-200 mt-0.5">بر اساس تعداد خدمات انتخابی بالا</div>
+          </div>
+          <div class="text-left">
+            <span id="calcTotalPrice" class="text-lg sm:text-xl font-black">۳۵,۰۰۰</span>
+            <span class="text-xs font-medium mr-1">تومان</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- اسکریپت‌های تعاملی برنامک ایتا -->
+  <script>
+    let appConfig = {
+      storeName: 'خطی‌نو',
+      storePhone: '',
+      storeAddress: '',
+      storePostalCode: '',
+      storeWorkingHours: 'شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰',
+      storeMapLink: '',
+      storeNeshanLink: '',
+      storeBaladLink: '',
+      eitaaBotAppUrl: 'https://eitaa.com/khatynoo_app/fanar',
+      eitaaBotUsername: 'khatynoo_app',
+      pricing: {
+        spiral: 35000,
+        staple: 10000,
+        cover: 20000
+      }
+    };
+
+    let currentUser = {
+      chatId: '',
+      mobile: '',
+      firstName: '',
+      username: '',
+      receiptCode: ''
+    };
+
+    let calcState = {
+      spiral: 1,
+      staple: 0,
+      cover: 0
+    };
+
+    // تعویض تب
+    function switchTab(tab) {
+      const tabs = ['track', 'address', 'calculator'];
+      tabs.forEach(t => {
+        const content = document.getElementById(`tabContent${capitalize(t)}`);
+        const btn = document.getElementById(`tabBtn${capitalize(t)}`);
+        if (content) content.classList.add('hidden');
+        if (btn) {
+          btn.classList.remove('border-white', 'font-bold', 'text-white');
+          btn.classList.add('border-transparent', 'font-medium', 'text-emerald-100');
+        }
+      });
+
+      const activeContent = document.getElementById(`tabContent${capitalize(tab)}`);
+      const activeBtn = document.getElementById(`tabBtn${capitalize(tab)}`);
+      if (activeContent) activeContent.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.remove('border-transparent', 'font-medium', 'text-emerald-100');
+        activeBtn.classList.add('border-white', 'font-bold', 'text-white');
+      }
+    }
+
+    function capitalize(s) {
+      if (s === 'track') return 'Track';
+      if (s === 'address') return 'Address';
+      if (s === 'calculator') return 'Calc';
+      return s;
+    }
+
+    // لود تنظیمات فروشگاه و تعرفه‌ها
+    async function loadStoreInfo() {
+      try {
+        const res = await fetch('/api/public/binding-info');
+        if (res.ok) {
+          const data = await res.json();
+          appConfig = { ...appConfig, ...data };
+          applyStoreInfo();
+        }
+      } catch (err) {
+        console.warn('Failed to load store info:', err);
+      }
+    }
+
+    function applyStoreInfo() {
+      if (appConfig.storeName) {
+        document.getElementById('headerStoreName').textContent = appConfig.storeName;
+      }
+      if (appConfig.storePhone) {
+        document.getElementById('headerPhoneLink').href = `tel:${appConfig.storePhone}`;
+        document.getElementById('storePhoneLink').href = `tel:${appConfig.storePhone}`;
+        document.getElementById('storePhoneLink').textContent = appConfig.storePhone;
+      }
+      if (appConfig.storeAddress) {
+        document.getElementById('storeFullAddress').textContent = appConfig.storeAddress;
+      }
+      if (appConfig.storePostalCode) {
+        document.getElementById('storePostalCode').textContent = `کد پستی: ${appConfig.storePostalCode}`;
+      }
+      if (appConfig.storeWorkingHours) {
+        document.getElementById('storeWorkingHours').textContent = appConfig.storeWorkingHours;
+      }
+      if (appConfig.eitaaBotAppUrl) {
+        const botBtn = document.getElementById('btnOpenEitaaBot');
+        if (botBtn) botBtn.href = appConfig.eitaaBotAppUrl;
+      }
+      if (appConfig.eitaaBotUsername) {
+        const mention = document.getElementById('botMentionText');
+        if (mention) mention.textContent = `@${appConfig.eitaaBotUsername}`;
+      }
+
+      // لینک‌های نقشه
+      const defaultLat = appConfig.storeLat || 35.7006;
+      const defaultLng = appConfig.storeLng || 51.3912;
+
+      const neshanUrl = appConfig.storeNeshanLink || `https://neshan.org/maps/@${defaultLat},${defaultLng},16z`;
+      const baladUrl = appConfig.storeBaladLink || `https://balad.ir/location?latitude=${defaultLat}&longitude=${defaultLng}`;
+      const gmapUrl = appConfig.storeMapLink || `https://www.google.com/maps/search/?api=1&query=${defaultLat},${defaultLng}`;
+
+      document.getElementById('btnNeshan').href = neshanUrl;
+      document.getElementById('btnBalad').href = baladUrl;
+      document.getElementById('btnGoogleMap').href = gmapUrl;
+
+      // نمایش تعرفه‌ها در تب ۳
+      document.getElementById('tariffSpiral').textContent = Number(appConfig.pricing.spiral || 35000).toLocaleString('fa-IR');
+      document.getElementById('tariffStaple').textContent = Number(appConfig.pricing.staple || 10000).toLocaleString('fa-IR');
+      document.getElementById('tariffCover').textContent = Number(appConfig.pricing.cover || 20000).toLocaleString('fa-IR');
+
+      recalcTotal();
+    }
+
+    // استخراج اطلاعات کاربر و chat_id از URL، Hash و یا Eitaa WebApp API
+    function extractEitaaContext() {
+      const urlParams = new URLSearchParams(window.location.search);
+
+      // ۱. بررسی پارامترهای مستقیم کوئری
+      let chatId = urlParams.get('chat_id') || urlParams.get('chatId') || urlParams.get('cid') || urlParams.get('id') || urlParams.get('user_id') || urlParams.get('userId');
+      let mobile = urlParams.get('mobile') || urlParams.get('phone') || urlParams.get('tel');
+      let firstName = urlParams.get('name') || urlParams.get('first_name') || urlParams.get('customer_name');
+      let username = urlParams.get('username');
+      let receiptCode = urlParams.get('track') || urlParams.get('receipt') || urlParams.get('code');
+
+      // ۲. بررسی Hash استاندارد برنامک‌های ایتا / تلگرام (#tgWebAppData=... یا #eitaaWebAppData=...)
+      if (window.location.hash) {
+        try {
+          const hashStr = window.location.hash.replace(/^#/, '');
+          const hashParams = new URLSearchParams(hashStr);
+          const rawUserData = hashParams.get('user');
+          if (rawUserData) {
+            const parsedUser = JSON.parse(decodeURIComponent(rawUserData));
+            if (parsedUser && parsedUser.id) {
+              if (!chatId) chatId = String(parsedUser.id);
+              if (!firstName) firstName = parsedUser.first_name || parsedUser.name;
+              if (!username) username = parsedUser.username;
+              if (!mobile && parsedUser.phone_number) mobile = parsedUser.phone_number;
+            }
+          }
+        } catch (e) {
+          console.warn('Error parsing hash webapp data:', e);
+        }
+      }
+
+      // ۳. بررسی شیء سراسری پنجره در وب‌اپلیکیشن ایتا / تلگرام
+      try {
+        const eitaaUser = window.Eitaa?.WebApp?.initDataUnsafe?.user || window.Telegram?.WebApp?.initDataUnsafe?.user;
+        if (eitaaUser) {
+          if (!chatId && eitaaUser.id) chatId = String(eitaaUser.id);
+          if (!firstName && eitaaUser.first_name) firstName = eitaaUser.first_name;
+          if (!username && eitaaUser.username) username = eitaaUser.username;
+          if (!mobile && eitaaUser.phone_number) mobile = eitaaUser.phone_number;
+        }
+      } catch (e) {
+        console.warn('Error checking global WebApp object:', e);
+      }
+
+      // ۴. بازیابی از حافظه محلی مرورگر در صورت عدم وجود در پارامترها
+      if (!chatId) {
+        try {
+          const saved = localStorage.getItem('khatynoo_eitaa_user');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.chatId) chatId = parsed.chatId;
+            if (!mobile && parsed.mobile) mobile = parsed.mobile;
+            if (!firstName && parsed.firstName) firstName = parsed.firstName;
+          }
+        } catch (e) {}
+      }
+
+      return {
+        chatId: chatId ? String(chatId).trim() : '',
+        mobile: mobile ? String(mobile).trim() : '',
+        firstName: firstName ? String(firstName).trim() : '',
+        username: username ? String(username).trim() : '',
+        receiptCode: receiptCode ? String(receiptCode).trim() : ''
+      };
+    }
+
+    // ارسال خودکار و ثبت chat_id و اطلاعات کاربر در دیتابیس سیستم
+    async function syncEitaaCustomer(ctx) {
+      if (!ctx.chatId) return;
+
+      try {
+        const res = await fetch('/api/public/eitaa-connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: ctx.chatId,
+            mobile: ctx.mobile || undefined,
+            firstName: ctx.firstName || undefined,
+            username: ctx.username || undefined,
+            receiptCode: ctx.receiptCode || undefined
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          // ذخیره در localStorage جهت مراجعات بعدی
+          localStorage.setItem('khatynoo_eitaa_user', JSON.stringify({
+            chatId: ctx.chatId,
+            mobile: ctx.mobile || data.mobile || '',
+            firstName: ctx.firstName || ''
+          }));
+
+          // به‌روزرسانی نمایش کارت اتصال
+          showConnectedBadge(ctx);
+
+          // اگر سفارشاتی مستقیماً یافت شدند، نمایش دهیم
+          if (data.orders && data.orders.length > 0) {
+            renderOrdersList(data.orders);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to auto-sync eitaa customer:', err);
+      }
+    }
+
+    // نمایش نشان اتصال موفق ایتا
+    function showConnectedBadge(ctx) {
+      const badge = document.getElementById('eitaaConnectedBadge');
+      const promptBox = document.getElementById('eitaaConnectPrompt');
+      const linkBox = document.getElementById('linkMobileBox');
+      const chatIdSpan = document.getElementById('eitaaChatIdDisplay');
+      const userNameSpan = document.getElementById('eitaaUserNameDisplay');
+
+      if (badge && chatIdSpan) {
+        badge.classList.remove('hidden');
+        chatIdSpan.textContent = ctx.chatId;
+        if (ctx.firstName) {
+          userNameSpan.textContent = `(${ctx.firstName})`;
+        }
+      }
+      if (promptBox) {
+        promptBox.classList.add('hidden');
+      }
+      // اگر شماره موبایل هنوز ثبت نشده، کادر پیوند موبایل را نشان دهیم
+      if (!ctx.mobile && linkBox) {
+        linkBox.classList.remove('hidden');
+      }
+    }
+
+    // ثبت دستی شماره موبایل و اتصال به chat_id کاربر
+    async function submitLinkMobile() {
+      const mobileInput = document.getElementById('linkMobileInput');
+      const mobile = (mobileInput?.value || '').trim();
+      if (!mobile || mobile.length < 10) {
+        alert('لطفاً شماره همراه معتبر (مثلاً 09121234567) وارد نمایید.');
+        return;
+      }
+
+      if (!currentUser.chatId) {
+        alert('شناسه چت ایتا یافت نشد. لطفاً از طریق بات ایتا وارد شوید.');
+        return;
+      }
+
+      const btn = document.getElementById('btnLinkMobile');
+      if (btn) btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/public/eitaa-connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: currentUser.chatId,
+            mobile: mobile,
+            firstName: currentUser.firstName || undefined
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          currentUser.mobile = mobile;
+          localStorage.setItem('khatynoo_eitaa_user', JSON.stringify(currentUser));
+          document.getElementById('linkMobileBox')?.classList.add('hidden');
+          alert('شماره همراه شما با موفقیت به حساب ایتا متصل شد. اطلاعیه‌های سفارش به ایتا ارسال خواهند شد.');
+          searchOrders(mobile);
+        } else {
+          alert(data.error || 'خطا در ثبت شماره');
+        }
+      } catch (err) {
+        alert('خطا در ارتباط با سرور');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // جستجوی وضعیت سفارش
+    async function searchOrders(customQuery) {
+      const q = (customQuery || document.getElementById('trackingInput').value || '').trim();
+      if (!q) {
+        alert('لطفاً شماره تماس یا کد رسید خود را وارد کنید.');
+        return;
+      }
+
+      const container = document.getElementById('trackResultsContainer');
+      container.innerHTML = `
+        <div class="text-center py-8 text-slate-500 bg-white rounded-2xl border border-slate-200 shadow-xs">
+          <div class="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+          <p class="text-xs">در حال استعلام وضعیت سفارش از پایگاه داده خطی‌نو...</p>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/api/public/binding-track?query=${encodeURIComponent(q)}`);
+        const data = await res.json();
+
+        if (!res.ok || !data.orders || data.orders.length === 0) {
+          container.innerHTML = `
+            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center text-amber-900 shadow-xs">
+              <svg class="w-10 h-10 mx-auto text-amber-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+              </svg>
+              <div class="font-bold text-xs sm:text-sm mb-1">سفارشی با این مشخصات یافت نشد</div>
+              <p class="text-[11px] text-amber-700 leading-relaxed">
+                لطفاً از صحیح بودن کد فیش (مانند BND-1001) یا شماره همراه اطمینان حاصل فرمایید. در صورت تحویل حضوری کتاب‌ها به فروشگاه، رسید به زودی در سامانه ثبت می‌شود.
+              </p>
+            </div>
+          `;
+          return;
+        }
+
+        renderOrdersList(data.orders);
+      } catch (err) {
+        container.innerHTML = `
+          <div class="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-center text-rose-800 text-xs shadow-xs">
+            خطا در برقراری ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی نمایید.
+          </div>
+        `;
+      }
+    }
+
+    // رندر فهرست کارت‌های سفارش
+    function renderOrdersList(ordersList) {
+      const container = document.getElementById('trackResultsContainer');
+      container.innerHTML = ordersList.map(order => renderOrderCard(order)).join('');
+    }
+
+    // رندر کارت سفارش اختصاصی
+    function renderOrderCard(order) {
+      const isDone = order.workStatus === 'done' || order.workStatus === 'delivered';
+      const isDelivered = order.workStatus === 'delivered';
+      const isProcessing = order.workStatus === 'in_progress';
+
+      let statusBadge = '';
+      if (isDelivered) {
+        statusBadge = '<span class="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-full text-[11px] font-bold">تحویل داده شد ✔</span>';
+      } else if (isDone) {
+        statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-black flex items-center gap-1 status-pulse shadow-xs">آماده تحویل ✨</span>';
+      } else if (isProcessing) {
+        statusBadge = '<span class="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-[11px] font-bold">در حال صحافی و فنرزنی ⚙️</span>';
+      } else {
+        statusBadge = '<span class="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-[11px] font-bold">در نوبت کارگاه ⏳</span>';
+      }
+
+      // ریز خدمات
+      const services = [];
+      if (order.spiralCount && order.spiralCount > 0) {
+        services.push(`<b>${order.spiralCount}</b> جلد فنرزنی`);
+      }
+      if (order.stapleCount && order.stapleCount > 0) {
+        services.push(`<b>${order.stapleCount}</b> جلد منگنه`);
+      }
+      if (order.coverCount && order.coverCount > 0) {
+        services.push(`<b>${order.coverCount}</b> جلد طلق/پاپوش`);
+      }
+      const servicesText = services.length > 0 ? services.join(' • ') : `<b>${order.bookCount || 1}</b> جلد صحافی`;
+
+      return `
+        <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div>
+              <span class="text-[11px] text-slate-400 font-medium">کد رسید:</span>
+              <span class="text-xs sm:text-sm font-black text-slate-900 mr-1 font-mono">${order.receiptCode}</span>
+            </div>
+            ${statusBadge}
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span class="text-slate-400 block mb-0.5 text-[10px]">سفارش‌دهنده:</span>
+              <span class="font-bold text-slate-800">${order.customerName}</span>
+            </div>
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <span class="text-slate-400 block mb-0.5 text-[10px]">شماره تماس:</span>
+              <span class="font-bold text-slate-800 dir-ltr inline-block font-mono">${order.customerMobile || '-'}</span>
+            </div>
+          </div>
+
+          <div class="bg-emerald-50/70 border border-emerald-100 rounded-xl p-3 text-xs text-emerald-950">
+            <div class="flex items-center justify-between text-emerald-800 font-medium text-[11px] mb-1">
+              <span>ریز خدمات پذیرفته شده:</span>
+              <span class="text-[10px] font-bold text-emerald-700">کل: ${order.bookCount || 1} جلد</span>
+            </div>
+            <div class="font-bold text-xs text-emerald-900">${servicesText}</div>
+          </div>
+
+          <div class="flex items-center justify-between pt-1 text-xs">
+            <div>
+              <span class="text-slate-400">مبلغ سفارش:</span>
+              <span class="font-black text-xs sm:text-sm text-slate-900 mr-1 font-mono">${Number(order.totalPrice || 0).toLocaleString('fa-IR')}</span>
+              <span class="text-[10px] text-slate-500">تومان</span>
+            </div>
+            <div>
+              ${order.paymentStatus === 'paid' 
+                ? '<span class="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full text-[11px]">تسویه شده ✔</span>' 
+                : '<span class="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full text-[11px]">پرداخت هنگام تحویل</span>'}
+            </div>
+          </div>
+
+          ${isDone ? `
+            <div class="mt-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl p-3 text-center space-y-2 shadow-xs">
+              <div class="font-bold text-xs flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>کتاب‌های شما آماده تحویل است؛ لطفاً جهت دریافت مراجعه نمایید!</span>
+              </div>
+              <button onclick="switchTab('address')" class="px-4 py-1.5 bg-white text-emerald-900 rounded-lg text-xs font-bold hover:bg-emerald-50 transition shadow-xs">
+                مشاهده آدرس، ساعت کاری و مسیریابی 📍
+              </button>
+            </div>
+          ` : `
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-2.5 text-[11px] text-blue-800 flex items-center gap-2">
+              <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-ping shrink-0"></span>
+              <span>همکاران کارگاه در حال آماده‌سازی سفارش هستند. به محض تکمیل در ایتا پیام دریافت خواهید کرد.</span>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    // مدیریت ماشین‌حساب تعرفه
+    function changeCalcQty(type, delta) {
+      calcState[type] = Math.max(0, calcState[type] + delta);
+      document.getElementById(`calc${capitalizeType(type)}Qty`).textContent = calcState[type];
+      recalcTotal();
+    }
+
+    function capitalizeType(t) {
+      if (t === 'spiral') return 'Spiral';
+      if (t === 'staple') return 'Staple';
+      if (t === 'cover') return 'Cover';
+      return t;
+    }
+
+    function recalcTotal() {
+      const sp = (calcState.spiral || 0) * (appConfig.pricing.spiral || 35000);
+      const st = (calcState.staple || 0) * (appConfig.pricing.staple || 10000);
+      const cv = (calcState.cover || 0) * (appConfig.pricing.cover || 20000);
+      const total = sp + st + cv;
+      document.getElementById('calcTotalPrice').textContent = total.toLocaleString('fa-IR');
+    }
+
+    // راه‌اندازی اولیه صفحه
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadStoreInfo();
+
+      // ۱. استخراج اطلاعات کاربری از ایتا و URL
+      currentUser = extractEitaaContext();
+
+      // ۲. اگر شناسه چت ایتا دریافت شده، سریعاً همگام‌سازی و در دیتابیس ثبت شود
+      if (currentUser.chatId) {
+        showConnectedBadge(currentUser);
+        await syncEitaaCustomer(currentUser);
+      }
+
+      // ۳. اگر شماره یا کد رهگیری ارسال شده، فوراً وضعیت را استعلام کنیم
+      const queryTarget = currentUser.receiptCode || currentUser.mobile || (currentUser.chatId ? currentUser.chatId : null);
+      if (queryTarget) {
+        document.getElementById('trackingInput').value = currentUser.receiptCode || currentUser.mobile || '';
+        searchOrders(queryTarget);
+      }
+    });
+  </script>
+</body>
+</html>

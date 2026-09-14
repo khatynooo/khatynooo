@@ -66,9 +66,85 @@ import {
   SizeUnit,
   SizeValue,
   ResponsiveLayoutSettings,
+  LayoutTemplatePreset,
 } from '../../types';
 import { useToast } from '../common/Toast';
 import { BackupRestoreSection } from './BackupRestoreSection';
+
+const BUILTIN_LAYOUT_PRESETS: LayoutTemplatePreset[] = [
+  {
+    id: 'preset_gold_standard',
+    name: 'زرین تجاری خطی‌نو (استاندارد)',
+    description: 'چیدمان متوازن ۵ ستونه با قلم وزیرمتن، رنگ طلایی اختصاصی، دکمه‌های ۱۲px، هدر کامل و فوتر ۴ ستونه',
+    createdAt: '2026-01-01',
+    isDefault: true,
+    siteFontFamily: 'vazirmatn',
+    siteFontScale: 'base',
+    layoutColumns: 5,
+    productImageSize: 'normal',
+    heroHeight: 'normal',
+    sectionSpacing: 'normal',
+    buttonColorTheme: 'gold',
+    primaryColorHex: '#C9A227',
+    buttonBorderRadius: 'rounded-xl',
+    headerLayout: 'standard',
+    footerLayout: 'multi_column',
+  },
+  {
+    id: 'preset_luxury_pill',
+    name: 'لوکس کپسولی (Pill & Luxury)',
+    description: 'دکمه‌های تمام گرد کپسولی، قلم شبنم، اسلایدر سینمایی ۵۲۰px، فاصله‌گذاری دلباز و فوتر غنی',
+    createdAt: '2026-01-01',
+    isDefault: true,
+    siteFontFamily: 'shabnam',
+    siteFontScale: 'lg',
+    layoutColumns: 4,
+    productImageSize: 'large',
+    heroHeight: 'tall',
+    sectionSpacing: 'relaxed',
+    buttonColorTheme: 'amber',
+    primaryColorHex: '#D97706',
+    buttonBorderRadius: 'rounded-full',
+    headerLayout: 'centered',
+    footerLayout: 'detailed',
+  },
+  {
+    id: 'preset_dense_wide',
+    name: 'تجاری متراکم پرسرعت (High Density)',
+    description: 'چیدمان ۶ ستونه عریض، قلم فشرده، دکمه‌های با زاویه ملایم برای بیشترین نمایش اقلام در مانیتور دسکتاپ',
+    createdAt: '2026-01-01',
+    isDefault: true,
+    siteFontFamily: 'vazirmatn',
+    siteFontScale: 'sm',
+    layoutColumns: 6,
+    productImageSize: 'compact',
+    heroHeight: 'compact',
+    sectionSpacing: 'compact',
+    buttonColorTheme: 'indigo',
+    primaryColorHex: '#4F46E5',
+    buttonBorderRadius: 'rounded-md',
+    headerLayout: 'compact',
+    footerLayout: 'compact',
+  },
+  {
+    id: 'preset_emerald_minimal',
+    name: 'زمردی مینیمال ارگانیک (Emerald)',
+    description: 'هارمونی آرامش‌بخش سبز زمردی، قلم ساحل، گوشه‌های نرم ۱۶ پیکسل و طراحی ارگانیک مدرن',
+    createdAt: '2026-01-01',
+    isDefault: true,
+    siteFontFamily: 'sahel',
+    siteFontScale: 'base',
+    layoutColumns: 4,
+    productImageSize: 'normal',
+    heroHeight: 'normal',
+    sectionSpacing: 'normal',
+    buttonColorTheme: 'emerald',
+    primaryColorHex: '#059669',
+    buttonBorderRadius: 'rounded-2xl',
+    headerLayout: 'standard',
+    footerLayout: 'multi_column',
+  },
+];
 
 export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 'gateways' | 'shipping' | 'settings' }> = ({
   initialTab = 'orders',
@@ -93,6 +169,131 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
   const [isUploadingEnamad, setIsUploadingEnamad] = useState(false);
   const [isUploadingSamandehi, setIsUploadingSamandehi] = useState(false);
   const [isUploadingCustomSymbol, setIsUploadingCustomSymbol] = useState(false);
+
+  // Layout & Button Templates Management State
+  const [isSaveLayoutTemplateModalOpen, setIsSaveLayoutTemplateModalOpen] = useState(false);
+  const [layoutTemplateName, setLayoutTemplateName] = useState('');
+  const [layoutTemplateDesc, setLayoutTemplateDesc] = useState('');
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+
+  // Save layout and button settings globally
+  const handleSaveLayoutGlobally = async () => {
+    if (!webSettings) return;
+    setIsSavingLayout(true);
+    try {
+      await api.updateWebsiteSettings(webSettings);
+      showToast('تنظیمات چیدمان، دکمه‌ها و تایپوگرافی ذخیره کلی شد و بلافاصله بر تمامی بخش‌های فروشگاه اعمال گردید.', 'success');
+      window.dispatchEvent(new CustomEvent('khatinoo-settings-updated'));
+      localStorage.setItem('khatinoo_last_sync', Date.now().toString());
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ذخیره کلی چیدمان', 'error');
+    } finally {
+      setIsSavingLayout(false);
+    }
+  };
+
+  // Save layout as reusable template
+  const handleSaveAsLayoutTemplate = async () => {
+    if (!webSettings) return;
+    if (!layoutTemplateName.trim()) {
+      showToast('لطفاً یک عنوان برای قالب چیدمان وارد کنید.', 'warning');
+      return;
+    }
+
+    const newPreset: LayoutTemplatePreset = {
+      id: `tpl_layout_${Date.now()}`,
+      name: layoutTemplateName.trim(),
+      description: layoutTemplateDesc.trim() || 'قالب سفارشی چیدمان ذخیره شده توسط مدیر',
+      createdAt: new Date().toISOString(),
+      isDefault: false,
+      siteFontFamily: webSettings.siteFontFamily || 'vazirmatn',
+      siteFontScale: webSettings.siteFontScale || 'base',
+      productImageSize: webSettings.productImageSize || 'normal',
+      heroHeight: webSettings.heroHeight || 'normal',
+      sectionSpacing: webSettings.sectionSpacing || 'normal',
+      containerWidth: webSettings.containerWidth || 'standard',
+      layoutColumns: webSettings.layoutColumns || 5,
+      headerLayout: webSettings.headerLayout || 'standard',
+      footerLayout: webSettings.footerLayout || 'multi_column',
+      buttonColorTheme: webSettings.buttonColorTheme || 'gold',
+      primaryColorHex: webSettings.primaryColorHex || '#C9A227',
+      buttonBorderRadius: (webSettings as any).buttonBorderRadius || 'rounded-xl',
+    };
+
+    const currentTemplates = webSettings.layoutTemplates || [];
+    const updatedSettings: WebsiteSettings = {
+      ...webSettings,
+      layoutTemplates: [...currentTemplates, newPreset],
+      activeLayoutTemplateId: newPreset.id,
+    };
+
+    setWebSettings(updatedSettings);
+    setIsSavingLayout(true);
+    try {
+      await api.updateWebsiteSettings(updatedSettings);
+      showToast(`قالب چیدمان «${newPreset.name}» با موفقیت ذخیره شد و به عنوان قالب فعال تنظیم گردید.`, 'success');
+      window.dispatchEvent(new CustomEvent('khatinoo-settings-updated'));
+      setIsSaveLayoutTemplateModalOpen(false);
+      setLayoutTemplateName('');
+      setLayoutTemplateDesc('');
+    } catch (err: any) {
+      showToast(err.message || 'خطا در ذخیره قالب چیدمان', 'error');
+    } finally {
+      setIsSavingLayout(false);
+    }
+  };
+
+  // Apply layout template
+  const handleApplyLayoutTemplate = async (template: LayoutTemplatePreset) => {
+    if (!webSettings) return;
+    const updatedSettings: WebsiteSettings = {
+      ...webSettings,
+      activeLayoutTemplateId: template.id,
+      siteFontFamily: template.siteFontFamily || webSettings.siteFontFamily,
+      siteFontScale: template.siteFontScale || webSettings.siteFontScale,
+      productImageSize: template.productImageSize || webSettings.productImageSize,
+      heroHeight: template.heroHeight || webSettings.heroHeight,
+      sectionSpacing: template.sectionSpacing || webSettings.sectionSpacing,
+      containerWidth: template.containerWidth || webSettings.containerWidth,
+      layoutColumns: template.layoutColumns || webSettings.layoutColumns,
+      headerLayout: template.headerLayout || webSettings.headerLayout,
+      footerLayout: template.footerLayout || webSettings.footerLayout,
+      buttonColorTheme: template.buttonColorTheme || webSettings.buttonColorTheme,
+      primaryColorHex: template.primaryColorHex || webSettings.primaryColorHex,
+      buttonBorderRadius: template.buttonBorderRadius || (webSettings as any).buttonBorderRadius,
+    };
+
+    setWebSettings(updatedSettings);
+    setIsSavingLayout(true);
+    try {
+      await api.updateWebsiteSettings(updatedSettings);
+      showToast(`قالب «${template.name}» با موفقیت بر فروشگاه اعمال و کلیه تنظیمات ذخیره گردید.`, 'success');
+      window.dispatchEvent(new CustomEvent('khatinoo-settings-updated'));
+    } catch (err: any) {
+      showToast(err.message || 'خطا در اعمال قالب چیدمان', 'error');
+    } finally {
+      setIsSavingLayout(false);
+    }
+  };
+
+  // Delete custom layout template
+  const handleDeleteLayoutTemplate = async (templateId: string, templateName: string) => {
+    if (!webSettings) return;
+    if (!confirm(`آیا از حذف قالب چیدمان «${templateName}» اطمینان دارید؟`)) return;
+    const filtered = (webSettings.layoutTemplates || []).filter(t => t.id !== templateId);
+    const updatedSettings = {
+      ...webSettings,
+      layoutTemplates: filtered,
+    };
+    setWebSettings(updatedSettings);
+    try {
+      await api.updateWebsiteSettings(updatedSettings);
+      showToast('قالب سفارشی با موفقیت حذف گردید.', 'info');
+      window.dispatchEvent(new CustomEvent('khatinoo-settings-updated'));
+    } catch (err: any) {
+      showToast('خطا در حذف قالب', 'error');
+    }
+  };
 
   // Helper to read responsive logo height
   const getResponsiveLogoHeight = (device: 'desktop' | 'tablet' | 'mobile'): SizeValue => {
@@ -1458,9 +1659,234 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
             </div>
           )}
 
-          {/* SUB-TAB: LAYOUT & TYPOGRAPHY */}
+          {/* SUB-TAB: LAYOUT & TYPOGRAPHY & BUTTON STYLES */}
           {settingsSubTab === 'layout' && (
             <div className="space-y-6">
+              {/* TOP ACTION & PERSISTENCE BANNER */}
+              <div className="bg-gradient-to-r from-[#1E1B13] via-[#161619] to-[#12141C] p-5 rounded-2xl border border-[#C9A227]/30 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-[#C9A227]" />
+                    <h3 className="text-sm font-black text-[#F3F4F6]">مدیریت جامع چیدمان، دکمه‌ها و قالب‌ها</h3>
+                    <span className="text-[10px] bg-[#C9A227]/20 text-[#C9A227] px-2 py-0.5 rounded-full font-bold">
+                      ذخیره‌سازی کلی و قالب‌پذیری
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#8E9299]">
+                    تنظیمات چیدمان، استایل دکمه‌ها و تایپوگرافی را به صورت کلی ذخیره کنید یا به عنوان قالب‌های اختصاصی جهت استفاده‌های بعدی بسازید.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap">
+                  {/* Save as Template Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsSaveLayoutTemplateModalOpen(true)}
+                    className="flex-1 md:flex-initial px-4 py-2.5 bg-[#202026] hover:bg-[#2A2A32] text-[#E0E0E0] border border-[#3D3D45] rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 text-[#C9A227]" />
+                    <span>ذخیره به عنوان قالب جدید</span>
+                  </button>
+
+                  {/* Save & Publish Globally Button */}
+                  <button
+                    type="button"
+                    disabled={isSavingLayout}
+                    onClick={handleSaveLayoutGlobally}
+                    className="flex-1 md:flex-initial px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#C9A227] to-[#B38E1E] hover:brightness-110 active:scale-98 text-slate-950 rounded-xl text-xs font-black shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>{isSavingLayout ? 'در حال انتشار...' : 'ذخیره کلی چیدمان و انتشار در فروشگاه'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* TEMPLATES LIBRARY SECTION */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <Layers className="w-4 h-4" />
+                    <span>کتابخانه قالب‌های آماده و قالب‌های سفارشی شما</span>
+                  </div>
+                  <span className="text-[11px] text-[#8E9299]">
+                    قالب فعال: <strong className="text-[#C9A227]">{webSettings.layoutTemplates?.find(t => t.id === webSettings.activeLayoutTemplateId)?.name || BUILTIN_LAYOUT_PRESETS.find(t => t.id === webSettings.activeLayoutTemplateId)?.name || 'چیدمان سفارشی'}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                  {/* Builtin & Custom Presets */}
+                  {[...BUILTIN_LAYOUT_PRESETS, ...(webSettings.layoutTemplates || [])].map((tpl) => {
+                    const isActive = webSettings.activeLayoutTemplateId === tpl.id;
+                    const isCustom = !tpl.isDefault;
+                    return (
+                      <div
+                        key={tpl.id}
+                        className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
+                          isActive
+                            ? 'bg-[#1C1A12] border-[#C9A227] shadow-sm ring-1 ring-[#C9A227]/50'
+                            : 'bg-[#111113] border-[#25252B] hover:border-[#3A3A45]'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-1">
+                            <h4 className="font-bold text-xs text-[#F3F4F6] flex items-center gap-1.5">
+                              {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-[#C9A227] shrink-0" />}
+                              <span>{tpl.name}</span>
+                            </h4>
+                            {isCustom ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLayoutTemplate(tpl.id, tpl.name)}
+                                title="حذف قالب سفارشی"
+                                className="text-red-400 hover:text-red-300 p-1 rounded-md hover:bg-red-500/10 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold">
+                                پیش‌فرض
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[#8E9299] line-clamp-2 leading-relaxed">
+                            {tpl.description}
+                          </p>
+
+                          {/* Quick spec pills */}
+                          <div className="flex flex-wrap gap-1 pt-1 text-[9px] text-slate-300">
+                            <span className="bg-[#1C1C22] px-1.5 py-0.5 rounded border border-[#2D2D35]">
+                              {tpl.layoutColumns} ستونه
+                            </span>
+                            <span className="bg-[#1C1C22] px-1.5 py-0.5 rounded border border-[#2D2D35]">
+                              فونت {tpl.siteFontFamily === 'shabnam' ? 'شبنم' : tpl.siteFontFamily === 'sahel' ? 'ساحل' : 'وزیر'}
+                            </span>
+                            <span className="bg-[#1C1C22] px-1.5 py-0.5 rounded border border-[#2D2D35]">
+                              گوشه دکمه {tpl.buttonBorderRadius === 'rounded-full' ? 'کپسولی' : tpl.buttonBorderRadius === 'rounded-2xl' ? 'خمیده' : tpl.buttonBorderRadius === 'rounded-md' ? 'تیز' : 'استاندارد'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleApplyLayoutTemplate(tpl)}
+                          className={`w-full py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                            isActive
+                              ? 'bg-[#C9A227] text-slate-950'
+                              : 'bg-[#1C1C22] hover:bg-[#25252D] text-[#E0E0E0] border border-[#2D2D33]'
+                          }`}
+                        >
+                          {isActive ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>قالب فعال کنونی</span>
+                            </>
+                          ) : (
+                            <span>اعمال این قالب</span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* BUTTON APPEARANCE & BORDER RADIUS */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                  <Palette className="w-4 h-4" />
+                  <span>چیدمان، استایل و شعاع گوشه‌های دکمه‌ها (Button Style & Corner Radius)</span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  فرم انحنای گوشه‌ها و تم رنگی دکمه‌های خرید، افزودن به سبد و دکمه‌های فراخوان (CTA) در تمامی صفحات و کارت‌های کالا.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Button Corner Radius */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">شعاع گوشه دکمه‌های فروشگاه (Border Radius):</label>
+                    <select
+                      value={(webSettings as any).buttonBorderRadius || 'rounded-xl'}
+                      onChange={(e) => setWebSettings({ ...webSettings, buttonBorderRadius: e.target.value as any } as any)}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="rounded-md">کلاسیک با زاویه ملایم (۶ پیکسل - رسمی و شیک)</option>
+                      <option value="rounded-xl">مدرن استاندارد (۱۲ پیکسل - پیش‌فرض خطی‌نو)</option>
+                      <option value="rounded-2xl">خمیده لوکس و نرم (۱۶ پیکسل - فانتزی و چشم‌نواز)</option>
+                      <option value="rounded-full">کاملاً کپسولی تمام گرد (Pill Shape - حداکثر گردی)</option>
+                    </select>
+                  </div>
+
+                  {/* Button Color Theme */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">تم رنگی دکمه‌های فروشگاه:</label>
+                    <select
+                      value={webSettings.buttonColorTheme || 'gold'}
+                      onChange={(e) => setWebSettings({ ...webSettings, buttonColorTheme: e.target.value as any })}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="gold">طلایی زرین خطی‌نو (Gold & Black - لوکس)</option>
+                      <option value="amber">کهربایی گرم (Warm Amber)</option>
+                      <option value="emerald">سبز زمردی فروشگاهی (Emerald Green)</option>
+                      <option value="indigo">نیلی مدرن (Indigo Royal)</option>
+                      <option value="rose">سرخ یاقوتی جذاب (Ruby Rose)</option>
+                      <option value="slate">دودی تیره متالیک (Dark Slate)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live Button Interactive Preview */}
+                <div className="p-4 bg-[#111113] rounded-xl border border-[#222225] space-y-2">
+                  <span className="text-[10px] text-[#8E9299] font-bold block">پیش‌نمایش تعاملی دکمه‌ها با تنظیمات انتخابی شما:</span>
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      className={`px-5 py-2.5 font-black text-xs shadow-md transition-all ${
+                        (webSettings as any).buttonBorderRadius || 'rounded-xl'
+                      } ${
+                        webSettings.buttonColorTheme === 'emerald'
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : webSettings.buttonColorTheme === 'indigo'
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                          : webSettings.buttonColorTheme === 'amber'
+                          ? 'bg-amber-600 text-white hover:bg-amber-700'
+                          : webSettings.buttonColorTheme === 'rose'
+                          ? 'bg-rose-600 text-white hover:bg-rose-700'
+                          : webSettings.buttonColorTheme === 'slate'
+                          ? 'bg-slate-700 text-white hover:bg-slate-800'
+                          : 'bg-[#C9A227] text-slate-950 hover:bg-[#B38E1E]'
+                      }`}
+                    >
+                      افزودن به سبد خرید
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`px-4 py-2 font-bold text-xs border-2 transition-all ${
+                        (webSettings as any).buttonBorderRadius || 'rounded-xl'
+                      } ${
+                        webSettings.buttonColorTheme === 'emerald'
+                          ? 'border-emerald-600 text-emerald-400 bg-transparent'
+                          : webSettings.buttonColorTheme === 'indigo'
+                          ? 'border-indigo-600 text-indigo-400 bg-transparent'
+                          : webSettings.buttonColorTheme === 'amber'
+                          ? 'border-amber-600 text-amber-400 bg-transparent'
+                          : webSettings.buttonColorTheme === 'rose'
+                          ? 'border-rose-600 text-rose-400 bg-transparent'
+                          : webSettings.buttonColorTheme === 'slate'
+                          ? 'border-slate-500 text-slate-300 bg-transparent'
+                          : 'border-[#C9A227] text-[#C9A227] bg-transparent'
+                      }`}
+                    >
+                      مشاهده جزئیات محصول
+                    </button>
+
+                    <span className="text-[11px] text-slate-400 mr-auto">
+                      فرم انتخابی: <strong className="text-white">{(webSettings as any).buttonBorderRadius || 'rounded-xl'}</strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Typography & Font Scaling */}
               <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
                 <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
@@ -3019,6 +3445,69 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Save Layout As Template Modal */}
+      {isSaveLayoutTemplateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <div className="bg-[#111113] rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#2D2D33] space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-black text-[#F3F4F6] text-sm flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#C9A227]" />
+                <span>ذخیره چیدمان جاری به عنوان قالب جدید</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsSaveLayoutTemplateModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-[#8E9299]">
+              این قالب شامل تنظیمات کنونی فونت، تعداد ستون‌ها، فواصل، استایل دکمه‌ها، تم رنگی و معماری هدر/فوتر خواهد بود تا هر زمان که مایل بودید بتوانید تنها با یک کلیک آن را مجدداً بارگذاری کنید.
+            </p>
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-[#8E9299] block mb-1">نام یا عنوان قالب:</label>
+                <input
+                  type="text"
+                  required
+                  value={layoutTemplateName}
+                  onChange={(e) => setLayoutTemplateName(e.target.value)}
+                  placeholder="مثلاً: قالب یلدایی خطی‌نو، چیدمان طلایی لوکس"
+                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 font-bold outline-none text-[#E0E0E0]"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-[#8E9299] block mb-1">توضیحات مختصر قالب (اختیاری):</label>
+                <textarea
+                  rows={2}
+                  value={layoutTemplateDesc}
+                  onChange={(e) => setLayoutTemplateDesc(e.target.value)}
+                  placeholder="توضیحاتی برای یادآوری کاربرد یا ویژگی‌های این چیدمان..."
+                  className="w-full bg-[#161619] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl p-2.5 outline-none text-[#E0E0E0] resize-none"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  disabled={isSavingLayout}
+                  onClick={handleSaveAsLayoutTemplate}
+                  className="flex-1 bg-[#C9A227] hover:bg-[#B38E1E] text-slate-950 font-black py-2.5 rounded-xl shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingLayout ? 'در حال ذخیره‌سازی...' : 'ذخیره و ثبت قالب'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSaveLayoutTemplateModalOpen(false)}
+                  className="px-4 bg-[#1C1C20] hover:bg-[#25252B] text-[#E0E0E0] font-bold rounded-xl cursor-pointer"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

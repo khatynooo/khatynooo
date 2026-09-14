@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Cpu,
   Radio,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleTitle, getRoleBadgeClass } from '../../lib/utils';
@@ -38,6 +39,7 @@ export type AdminTab =
   | 'customers_suppliers'
   | 'cheques'
   | 'services'
+  | 'binding_orders'
   | 'production'
   | 'torob'
   | 'ai'
@@ -72,6 +74,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'customers_suppliers', label: 'مشتریان و تامین‌کنندگان', icon: Users, roles: ['admin', 'seller', 'accountant', 'chief_accountant'] },
     { id: 'cheques', label: 'مدیریت چک و سامانه صیاد', icon: CreditCard, roles: ['admin', 'accountant', 'chief_accountant'] },
     { id: 'services', label: 'خدمات کپی و پرینت', icon: Printer, roles: ['admin', 'seller', 'site_manager', 'chief_accountant'] },
+    { id: 'binding_orders', label: 'سفارشات فنرزنی و ایتا', icon: BookOpen, roles: ['admin', 'seller', 'site_manager', 'chief_accountant'] },
     { id: 'production', label: 'تولید و فرمولاسیون کارگاهی', icon: Factory, roles: ['admin', 'chief_accountant', 'accountant'] },
     { id: 'torob', label: 'هوش بازار و رصد قیمت ترب', icon: TrendingUp, roles: ['admin', 'site_manager', 'chief_accountant'] },
     { id: 'ai', label: 'دستیار هوشمند Gemini AI', icon: Bot, roles: ['admin', 'site_manager', 'chief_accountant', 'accountant'] },

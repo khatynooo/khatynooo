@@ -569,6 +569,168 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_purchase_draft_per_user
     ON invoice_drafts (created_by_user_id)
     WHERE draft_type = 'purchase';
 
+-- =============================================================================
+-- سیستم انتشار چندکاناله در پیام‌رسان‌ها (Multi-Channel Publication System)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS publication_channels (
+    id VARCHAR(64) PRIMARY KEY,
+    provider VARCHAR(50) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_pub_channels_provider ON publication_channels(provider);
+CREATE INDEX IF NOT EXISTS idx_pub_channels_enabled ON publication_channels(enabled);
+
+CREATE TABLE IF NOT EXISTS product_publications (
+    id VARCHAR(64) PRIMARY KEY,
+    product_id VARCHAR(64) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    channel_id VARCHAR(64) REFERENCES publication_channels(id) ON DELETE SET NULL,
+    provider VARCHAR(50) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    idempotency_key VARCHAR(255) UNIQUE,
+    message_id VARCHAR(255),
+    external_url TEXT,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_code VARCHAR(100),
+    error_message TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+    next_attempt_at TIMESTAMP WITH TIME ZONE,
+    processing_started_at TIMESTAMP WITH TIME ZONE,
+    sent_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_pub_product ON product_publications(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_pub_channel ON product_publications(channel_id);
+CREATE INDEX IF NOT EXISTS idx_product_pub_status ON product_publications(status);
+CREATE INDEX IF NOT EXISTS idx_product_pub_created ON product_publications(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS publication_settings (
+    id VARCHAR(32) PRIMARY KEY DEFAULT 'default',
+    publish_on_create BOOLEAN DEFAULT FALSE,
+    publish_on_update BOOLEAN DEFAULT FALSE,
+    publish_on_price_change BOOLEAN DEFAULT FALSE,
+    publish_on_restock BOOLEAN DEFAULT FALSE,
+    send_image_by_default BOOLEAN DEFAULT TRUE,
+    generate_hashtags_by_default BOOLEAN DEFAULT TRUE,
+    default_template TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- ماژول سفارشات خدمات صحافی، فنرزنی، منگنه و پیام‌رسان ایتا
+-- =============================================================================
+CREATE SEQUENCE IF NOT EXISTS binding_order_seq START WITH 1001 INCREMENT BY 1;
+
+CREATE TABLE IF NOT EXISTS binding_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    receipt_code VARCHAR(32) UNIQUE NOT NULL,
+    customer_name VARCHAR(150) NOT NULL,
+    customer_mobile VARCHAR(30) NOT NULL,
+    book_count INT NOT NULL DEFAULT 1,
+    unit_price BIGINT NOT NULL DEFAULT 0,
+    spiral_count INT DEFAULT 0,
+    spiral_unit_price BIGINT DEFAULT 0,
+    staple_count INT DEFAULT 0,
+    staple_unit_price BIGINT DEFAULT 0,
+    cover_count INT DEFAULT 0,
+    cover_unit_price BIGINT DEFAULT 0,
+    discount BIGINT NOT NULL DEFAULT 0,
+    total_price BIGINT NOT NULL DEFAULT 0,
+    description TEXT,
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid', -- 'unpaid' | 'paid'
+    work_status VARCHAR(20) NOT NULL DEFAULT 'pending',   -- 'pending' | 'done' | 'cancelled'
+    customer_eitaa_chat_id VARCHAR(100),
+    eitaa_intake_sent BOOLEAN DEFAULT FALSE,
+    eitaa_ready_sent BOOLEAN DEFAULT FALSE,
+    eitaa_intake_status VARCHAR(50) DEFAULT 'not_sent',   -- 'sent' | 'no_chat_id' | 'failed' | 'not_sent'
+    eitaa_ready_status VARCHAR(50) DEFAULT 'not_sent',    -- 'sent' | 'no_chat_id' | 'failed' | 'not_sent'
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_binding_orders_receipt ON binding_orders(receipt_code);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_customer_name ON binding_orders(customer_name);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_customer_mobile ON binding_orders(customer_mobile);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_chat_id ON binding_orders(customer_eitaa_chat_id);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_work_status ON binding_orders(work_status);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_payment_status ON binding_orders(payment_status);
+CREATE INDEX IF NOT EXISTS idx_binding_orders_created_at ON binding_orders(created_at DESC);
+
+-- جدول مشتریان و چت‌های فعال ایتا جهت ارتباط مستقیم و ردیابی سفارش
+CREATE TABLE IF NOT EXISTS eitaa_customer_chats (
+    id SERIAL PRIMARY KEY,
+    chat_id VARCHAR(100) NOT NULL,
+    mobile VARCHAR(30),
+    eitaa_user_id VARCHAR(100),
+    first_name VARCHAR(100),
+    username VARCHAR(100),
+    source VARCHAR(50) DEFAULT 'mini_app',
+    receipt_codes TEXT[] DEFAULT '{}',
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_eitaa_chats_chat_id_unique ON eitaa_customer_chats(chat_id);
+CREATE INDEX IF NOT EXISTS idx_eitaa_chats_mobile ON eitaa_customer_chats(mobile);
+
+CREATE TABLE IF NOT EXISTS binding_settings (
+    id VARCHAR(32) PRIMARY KEY DEFAULT 'default',
+    store_name VARCHAR(150) DEFAULT 'خطی‌نو',
+    store_phone VARCHAR(50) DEFAULT '021-66990000',
+    store_address TEXT DEFAULT 'تهران، خیابان انقلاب، پرتال خدمات خطی‌نو',
+    store_postal_code VARCHAR(30) DEFAULT '',
+    store_working_hours VARCHAR(255) DEFAULT 'شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰',
+    store_map_link TEXT DEFAULT 'https://maps.google.com',
+    store_neshan_link TEXT DEFAULT 'https://neshan.org',
+    store_balad_link TEXT DEFAULT 'https://balad.ir',
+    store_lat NUMERIC(10, 7) DEFAULT 35.7000,
+    store_lng NUMERIC(10, 7) DEFAULT 51.4000,
+    default_paper_size VARCHAR(10) DEFAULT 'A6',
+    default_unit_price BIGINT DEFAULT 35000,
+    default_spiral_price BIGINT DEFAULT 35000,
+    default_staple_price BIGINT DEFAULT 10000,
+    default_cover_price BIGINT DEFAULT 20000,
+    eitaa_bot_token VARCHAR(255),
+    eitaa_bot_app_url VARCHAR(255) DEFAULT 'https://eitaa.com/khatynoo_app/fanar',
+    eitaa_bot_username VARCHAR(100) DEFAULT 'khatynoo_app',
+    auto_send_intake BOOLEAN DEFAULT TRUE,
+    auto_send_ready BOOLEAN DEFAULT TRUE,
+    intake_message_template TEXT DEFAULT 'سلام {customer_name} عزیز 🌸
+کتاب‌های شما جهت خدمات صحافی در {store_name} با موفقیت پذیرش شد.
+
+📋 مشخصات سفارش:
+{services_breakdown}
+🔖 کد پیگیری: {receipt_code}
+💰 مبلغ کل: {total_price} تومان
+
+پس از آماده‌سازی سفارش، از همین طریق به شما اطلاع‌رسانی خواهد شد. سپاس از اعتماد شما.',
+    ready_message_template TEXT DEFAULT 'سلام {customer_name} گرامی 🌺
+سفارش صحافی شما با کیفیت عالی آماده تحویل است! ✨
+
+🔖 کد پیگیری: {receipt_code}
+📍 محل تحویل: {store_address}
+🕒 ساعت کاری: {store_working_hours}
+📞 تلفن: {store_phone}
+
+منتظر دیدار شما در {store_name} هستیم.',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO binding_settings (id, store_name, default_paper_size, default_unit_price, default_spiral_price, default_staple_price, default_cover_price)
+VALUES ('default', 'خطی‌نو', 'A6', 35000, 35000, 10000, 20000)
+ON CONFLICT (id) DO NOTHING;
+
+
 
 
 

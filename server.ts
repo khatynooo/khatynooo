@@ -31,7 +31,8 @@ import { cmsEngine } from './server/cmsEngine';
 import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, getBackupStats } from './server/backupService';
 import { PublicationService } from './server/publication/publicationService';
 import { startPublicationWorker } from './server/publication/publicationWorker';
-import { UserRole } from './src/types';
+import { sendDirectEitaaMessage, registerEitaaCustomerChat, getEitaaChatIdForMobile, normalizeMobileNumber } from './server/publication/eitaaDirectMessenger';
+import { UserRole, BindingOrder, EitaaMessageStatus } from './src/types';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -182,6 +183,13 @@ app.get('/kvn-push-sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Service-Worker-Allowed', '/');
   res.send('importScripts("https://cdn.kavenegar.com/sdk/sw.js");');
+});
+
+// Eitaa Web App Serving Route
+const eitaaAppDir = path.join(process.cwd(), 'public', 'eitaa-app');
+app.use('/eitaa-app', express.static(eitaaAppDir));
+app.get(['/eitaa-app', '/eitaa-app/*'], (req, res) => {
+  res.sendFile(path.join(eitaaAppDir, 'index.html'));
 });
 
 // -------------------------------------------------------------
@@ -609,6 +617,183 @@ app.post('/api/inventory/adjust', authenticateToken, requireRole(['admin', 'site
   }
 });
 
+app.post('/api/inventory/import-excel', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant']), async (req: AuthRequest, res) => {
+  try {
+    const { items, warehouseId = 'wh_central', conflictMode = 'increase_stock' } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'لیست اقلام ارسالی از اکسل خالی یا نامعتبر است.' });
+    }
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const errors: string[] = [];
+
+    const toEnDigits = (str: any) => {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+                        .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).trim();
+    };
+
+    const allProducts = await db.getProducts();
+
+    for (let i = 0; i < items.length; i++) {
+      const row = items[i];
+      const rawName = String(row.name || row.title || '').trim();
+      if (!rawName) {
+        errors.push(`ردیف ${i + 1}: فاقد نام کالا است و نادیده گرفته شد.`);
+        skippedCount++;
+        continue;
+      }
+
+      const barcode = toEnDigits(row.barcode);
+      const boxBarcode = toEnDigits(row.boxBarcode);
+      const code = toEnDigits(row.code);
+      const stockQty = Number(toEnDigits(row.stock)) || 0;
+      const buyPrice = Number(toEnDigits(row.buyPrice)) || 0;
+      const salePrice = Number(toEnDigits(row.salePrice || row.priceShop1)) || 0;
+      const priceShop1 = Number(toEnDigits(row.priceShop1 || row.salePrice)) || 0;
+      const priceShop2 = Number(toEnDigits(row.priceShop2)) || priceShop1;
+      const priceShop3 = Number(toEnDigits(row.priceShop3)) || priceShop1;
+      const wholesalePrice = Number(toEnDigits(row.wholesalePrice)) || priceShop1;
+      const minAllowedPrice = Number(toEnDigits(row.minAllowedPrice)) || buyPrice;
+      const minStockAlert = Number(toEnDigits(row.minStockAlert)) || 5;
+      const unit = String(row.unit || 'عدد').trim();
+      const description = String(row.description || '').trim();
+      const categoryName = String(row.category || row.categoryName || '').trim();
+
+      const existing = allProducts.find(p => 
+        (barcode && toEnDigits(p.barcode) === barcode) ||
+        (code && toEnDigits(p.code) === code) ||
+        p.name.trim().toLowerCase() === rawName.toLowerCase()
+      );
+
+      if (existing) {
+        if (conflictMode === 'skip_existing') {
+          skippedCount++;
+          continue;
+        }
+
+        if (conflictMode === 'increase_stock') {
+          if (stockQty > 0) {
+            await db.adjustProductStock({
+              productId: existing.id,
+              warehouseId,
+              delta: stockQty,
+              reason: `ورودی انبار از طریق اکسل (${stockQty} ${unit})`,
+              notes: `ثبت دسته‌ای فایل اکسل توسط ${req.user?.username || 'مدیر انبار'}`,
+              userId: req.user?.id,
+              userName: req.user?.username,
+            });
+          }
+          const priceUpdates: any = {};
+          if (buyPrice > 0) priceUpdates.buyPrice = buyPrice;
+          if (priceShop1 > 0) {
+            priceUpdates.priceShop1 = priceShop1;
+            priceUpdates.salePrice = priceShop1;
+          }
+          if (priceShop2 > 0) priceUpdates.priceShop2 = priceShop2;
+          if (priceShop3 > 0) priceUpdates.priceShop3 = priceShop3;
+          if (wholesalePrice > 0) priceUpdates.wholesalePrice = wholesalePrice;
+          if (minAllowedPrice > 0) priceUpdates.minAllowedPrice = minAllowedPrice;
+          if (Object.keys(priceUpdates).length > 0) {
+            await db.updateProduct(existing.id, priceUpdates, {
+              userId: req.user?.id,
+              username: req.user?.username,
+              reason: 'به‌روزرسانی قیمت‌ها از طریق اکسل',
+            });
+          }
+          updatedCount++;
+        } else if (conflictMode === 'update_all') {
+          await db.adjustProductStock({
+            productId: existing.id,
+            warehouseId,
+            newStock: stockQty,
+            reason: `جایگزینی موجودی انبار از طریق اکسل (${stockQty} ${unit})`,
+            userId: req.user?.id,
+            userName: req.user?.username,
+          });
+          await db.updateProduct(existing.id, {
+            name: rawName,
+            buyPrice,
+            salePrice: priceShop1 || existing.salePrice,
+            priceShop1: priceShop1 || existing.priceShop1,
+            priceShop2: priceShop2 || existing.priceShop2,
+            priceShop3: priceShop3 || existing.priceShop3,
+            wholesalePrice: wholesalePrice || existing.wholesalePrice,
+            minAllowedPrice: minAllowedPrice || existing.minAllowedPrice,
+            unit,
+            minStockAlert,
+            description: description || existing.description,
+          }, {
+            userId: req.user?.id,
+            username: req.user?.username,
+            reason: 'به‌روزرسانی مشخصات از طریق اکسل',
+          });
+          updatedCount++;
+        }
+      } else {
+        const newProd = await db.createProduct({
+          name: rawName,
+          code: code || undefined,
+          barcode: barcode || undefined,
+          boxBarcode: boxBarcode || undefined,
+          unit,
+          stock: stockQty,
+          minStockAlert,
+          buyPrice,
+          salePrice: priceShop1 || 0,
+          priceShop1: priceShop1 || 0,
+          priceShop2: priceShop2 || priceShop1 || 0,
+          priceShop3: priceShop3 || priceShop1 || 0,
+          wholesalePrice: wholesalePrice || priceShop1 || 0,
+          minAllowedPrice: minAllowedPrice || buyPrice || 0,
+          description,
+          categoryName: categoryName || undefined,
+          showOnWebsite: true,
+          onlyAccounting: false,
+        });
+
+        if (warehouseId !== 'wh_central' && stockQty > 0) {
+          await db.adjustProductStock({
+            productId: newProd.id,
+            warehouseId,
+            newStock: stockQty,
+            reason: `ورودی اولیه انبار ${warehouseId} از فایل اکسل`,
+            userId: req.user?.id,
+            userName: req.user?.username,
+          });
+        }
+        createdCount++;
+      }
+    }
+
+    await db.createAuditLog({
+      userId: req.user?.id,
+      username: req.user?.username || 'کاربر سیستم',
+      action: `ورود دسته‌ای داده‌های انبار و کالا از طریق اکسل: ${createdCount} ایجاد شد، ${updatedCount} به‌روزرسانی شد، ${skippedCount} رد شد`,
+      module: 'inventory',
+      status: 'success',
+      details: { totalRows: items.length, warehouseId, conflictMode, createdCount, updatedCount, skippedCount, errorsCount: errors.length },
+      ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.json({
+      success: true,
+      message: `پردازش اکسل با موفقیت انجام شد: ${createdCount} کالای جدید افزوده شد، ${updatedCount} کالا و ورودی انبار به‌روزرسانی گردید.`,
+      total: items.length,
+      createdCount,
+      updatedCount,
+      skippedCount,
+      errors,
+    });
+  } catch (err: any) {
+    console.error('Error importing Excel inventory:', err);
+    res.status(500).json({ error: err.message || 'خطا در پردازش ورودی اکسل انبار' });
+  }
+});
+
 app.get('/api/inventory/adjustments', authenticateToken, async (req, res) => {
   try {
     const limit = Number(req.query.limit) || 50;
@@ -690,8 +875,22 @@ app.put('/api/categories/:id', authenticateToken, requireRole(['admin', 'site_ma
 
 app.delete('/api/categories/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
   try {
-    await db.deleteCategory(req.params.id);
+    const replacementCategoryId = (req.body?.replacementCategoryId || req.query.replacementCategoryId) as string | undefined;
+    await db.deleteCategory(req.params.id, replacementCategoryId);
     res.json({ message: 'دسته‌بندی با موفقیت حذف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/categories/replace', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+  try {
+    const { sourceCategoryId, targetCategoryId, targetSubCategoryId } = req.body;
+    if (!sourceCategoryId || !targetCategoryId) {
+      return res.status(400).json({ error: 'انتخاب دسته‌بندی مبدا و مقصد الزامی است.' });
+    }
+    const count = await db.replaceCategory(sourceCategoryId, targetCategoryId, targetSubCategoryId);
+    res.json({ success: true, updatedCount: count, message: `${count} کالا با موفقیت به دسته‌بندی مقصد منتقل شدند.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -764,6 +963,19 @@ app.delete('/api/units/:id', authenticateToken, requireRole(['admin', 'site_mana
   try {
     await db.deleteUnit(req.params.id);
     res.json({ message: 'واحد با موفقیت حذف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/units/replace', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req, res) => {
+  try {
+    const { sourceUnit, targetUnit, subUnit, conversionFactor } = req.body;
+    if (!sourceUnit || !targetUnit) {
+      return res.status(400).json({ error: 'واحد مبدا و مقصد الزامی است.' });
+    }
+    const count = await db.replaceUnit(sourceUnit, targetUnit, conversionFactor ? Number(conversionFactor) : undefined, subUnit);
+    res.json({ success: true, updatedCount: count, message: `واحد ${count} کالا با موفقیت از «${sourceUnit}» به «${targetUnit}» تغییر یافت.` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -949,6 +1161,7 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
   const warehouseId = req.body.warehouseId || req.body.warehouse_id;
   const invoiceNumber = req.body.invoiceNumber || req.body.invoice_number;
   const invoiceDate = req.body.invoiceDate || req.body.invoice_date;
+  const documentNumber = req.body.documentNumber || req.body.document_number;
   const discount = req.body.discount ?? 0;
   const receiptImageUrl = req.body.receiptImageUrl || req.body.receipt_image_url;
 
@@ -978,6 +1191,7 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
       warehouseId,
       invoiceNumber,
       invoiceDate,
+      documentNumber,
       discount: Number(discount || 0),
       receiptImageUrl,
     });
@@ -985,6 +1199,188 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
     res.json({ invoice, message: 'فاکتور خرید ثبت و موجودی انبار به صورت آنی افزایش یافت.' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole(['admin', 'chief_accountant', 'accountant', 'site_manager']), async (req: AuthRequest, res) => {
+  try {
+    const {
+      supplierName: rawSupplierName,
+      supplierId: rawSupplierId,
+      invoiceNumber: rawInvoiceNumber,
+      documentNumber: rawDocumentNumber,
+      invoiceDate: rawInvoiceDate,
+      warehouseId = 'wh_central',
+      paymentMethod = 'credit',
+      discount = 0,
+      paidAmount = 0,
+      notes,
+      items,
+    } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'لیست اقلام فاکتور خرید خالی یا نامعتبر است.' });
+    }
+
+    const toEnDigits = (str: any) => {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+                        .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).trim();
+    };
+
+    // 1. Resolve Supplier
+    const suppliers = await db.getSuppliers();
+    let finalSupplier: any = null;
+    const cleanSupplierName = String(rawSupplierName || '').trim();
+
+    if (rawSupplierId) {
+      finalSupplier = suppliers.find(s => s.id === rawSupplierId);
+    }
+    if (!finalSupplier && cleanSupplierName) {
+      finalSupplier = suppliers.find(s => s.name.trim().toLowerCase() === cleanSupplierName.toLowerCase());
+    }
+    if (!finalSupplier) {
+      finalSupplier = await db.createSupplier({
+        name: cleanSupplierName || 'تامین‌کننده ناشناس (فاکتور اکسل)',
+        contactPerson: `ثبت خودکار فاکتور اکسل ${rawInvoiceNumber || ''}`.trim(),
+        mobile: '',
+      });
+    }
+
+    // 2. Resolve & Create/Update Products
+    const allProducts = await db.getProducts();
+    const invoiceItems: any[] = [];
+    const newProducts: any[] = [];
+    const updatedProducts: any[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const row = items[i];
+      const rawName = String(row.name || row.description || row.title || '').trim();
+      if (!rawName) continue;
+
+      const code = toEnDigits(row.code);
+      const barcode = toEnDigits(row.barcode || row.code);
+      const quantity = Math.max(1, Number(toEnDigits(row.quantity || row.qty || row.amount)) || 1);
+      const buyPrice = Math.max(0, Number(toEnDigits(row.buyPrice || row.price || row.unitPrice)) || 0);
+      const salePrice = Number(toEnDigits(row.salePrice || row.priceShop1)) || 0;
+      const unit = String(row.unit || 'عدد').trim();
+
+      // Look up existing product
+      const existing = allProducts.find(p =>
+        (barcode && toEnDigits(p.barcode) === barcode) ||
+        (code && toEnDigits(p.code) === code) ||
+        p.name.trim().toLowerCase() === rawName.toLowerCase()
+      );
+
+      let targetProduct: any = null;
+
+      if (existing) {
+        targetProduct = existing;
+        const updates: any = {};
+        if (buyPrice > 0) updates.buyPrice = buyPrice;
+        if (salePrice > 0 && (!existing.salePrice || existing.salePrice === 0)) {
+          updates.salePrice = salePrice;
+          updates.priceShop1 = salePrice;
+        }
+        if (Object.keys(updates).length > 0) {
+          const updated = await db.updateProduct(existing.id, updates, {
+            userId: req.user?.id,
+            username: req.user?.username,
+            reason: `به‌روزرسانی قیمت از فاکتور خرید اکسل ${rawInvoiceNumber || ''}`,
+          });
+          targetProduct = updated;
+        }
+        updatedProducts.push(targetProduct);
+      } else {
+        const defaultSalePrice = salePrice > 0 ? salePrice : (buyPrice > 0 ? Math.round(buyPrice * 1.25) : 0);
+        targetProduct = await db.createProduct({
+          name: rawName,
+          code: code || undefined,
+          barcode: barcode || undefined,
+          unit,
+          stock: 0, // will be increased by createPurchaseInvoice
+          minStockAlert: 5,
+          buyPrice,
+          salePrice: defaultSalePrice,
+          priceShop1: defaultSalePrice,
+          priceShop2: defaultSalePrice,
+          priceShop3: defaultSalePrice,
+          wholesalePrice: defaultSalePrice,
+          minAllowedPrice: buyPrice,
+          showOnWebsite: true,
+          description: `ورودی فاکتور خرید ${rawInvoiceNumber || ''} - تامین‌کننده: ${finalSupplier.name}`,
+        });
+        newProducts.push(targetProduct);
+        allProducts.push(targetProduct);
+      }
+
+      invoiceItems.push({
+        productId: targetProduct.id,
+        productName: targetProduct.name,
+        quantity,
+        buyPrice,
+        unit: targetProduct.unit || unit,
+        total: quantity * buyPrice,
+      });
+    }
+
+    if (invoiceItems.length === 0) {
+      return res.status(400).json({ error: 'هیچ قلم کالای معتبری در اطلاعات ارسالی یافت نشد.' });
+    }
+
+    const totalAmount = invoiceItems.reduce((acc, it) => acc + (it.total || it.quantity * it.buyPrice), 0);
+
+    // 3. Register Purchase Invoice (handles atomic inventory stock addition & supplier debt)
+    const invoice = await db.createPurchaseInvoice({
+      supplierId: finalSupplier.id,
+      supplierName: finalSupplier.name,
+      items: invoiceItems,
+      totalAmount,
+      paidAmount: Number(paidAmount) || 0,
+      cashAmount: paymentMethod === 'cash' ? (Number(paidAmount) || totalAmount) : 0,
+      chequeAmount: 0,
+      cheques: [],
+      receiptImageUrls: [],
+      paymentMethod,
+      warehouseId,
+      invoiceNumber: rawInvoiceNumber?.trim() || `PUR-${Date.now().toString().slice(-6)}`,
+      invoiceDate: rawInvoiceDate?.trim() || new Date().toLocaleDateString('fa-IR'),
+      documentNumber: rawDocumentNumber?.trim() || undefined,
+      discount: Number(discount || 0),
+      notes: notes?.trim() || `ورود فاکتور از طریق فایل اکسل (شماره سند: ${rawDocumentNumber || 'فاقد سند'})`,
+    });
+
+    await db.createAuditLog({
+      userId: req.user?.id,
+      username: req.user?.username || 'کاربر سیستم',
+      action: `ثبت فاکتور خرید از طریق فایل اکسل: شماره فاکتور ${invoice.invoiceNumber}، سند ${invoice.documentNumber || '-'}، ${newProducts.length} کالای جدید، ${updatedProducts.length} کالای به‌روزرسانی شده`,
+      module: 'purchases',
+      status: 'success',
+      details: {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        documentNumber: invoice.documentNumber,
+        supplierName: finalSupplier.name,
+        newProductsCount: newProducts.length,
+        updatedProductsCount: updatedProducts.length,
+        totalAmount,
+      },
+      ip: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'],
+    });
+
+    res.json({
+      success: true,
+      message: `فاکتور خرید ${invoice.invoiceNumber} با موفقیت ثبت شد و کالاهای آن به انبار و فهرست کالاها افزوده گردید.`,
+      invoice,
+      supplier: finalSupplier,
+      newProducts,
+      updatedProducts,
+      allAffectedProducts: [...newProducts, ...updatedProducts],
+    });
+  } catch (err: any) {
+    console.error('Error importing Excel purchase invoice:', err);
+    res.status(500).json({ error: err.message || 'خطا در ثبت فاکتور خرید از طریق اکسل' });
   }
 });
 
@@ -1005,9 +1401,12 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
     warehouseId,
     invoiceNumber,
     invoiceDate,
+    documentNumber,
     discount,
     receiptImageUrl,
   } = req.body;
+
+  const docNumber = documentNumber || req.body.document_number;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'حداقل یک قلم کالا باید در فاکتور خرید وجود داشته باشد.' });
@@ -1029,6 +1428,7 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
       warehouseId,
       invoiceNumber,
       invoiceDate,
+      documentNumber: docNumber,
       discount: discount !== undefined ? Number(discount) : undefined,
       receiptImageUrl,
       userId: req.user?.id,
@@ -1586,6 +1986,501 @@ app.post('/api/services/records', authenticateToken, async (req, res) => {
   try {
     const record = await db.createServiceRecord(req.body);
     res.json({ record, message: 'سرویس با موفقیت در دیتابیس ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 8.5. BINDING ORDERS & DIRECT EITAA MESSAGING (سفارشات فنرزنی)
+// -------------------------------------------------------------
+async function sendBindingOrderEitaaNotification(
+  order: BindingOrder,
+  type: 'intake' | 'ready'
+): Promise<{ success: boolean; status: EitaaMessageStatus; error?: string }> {
+  try {
+    const settings = await db.getBindingSettings();
+    let template = type === 'intake' ? settings.intakeMessageTemplate : settings.readyMessageTemplate;
+    if (!template || !template.trim()) {
+      if (type === 'intake') {
+        template = `سلام {customer_name} عزیز 🌸\nسفارش شما در {store_name} با موفقیت ثبت شد.\n\n📚 خدمات ثبت شده: {services_summary}\n🔖 کد پیگیری رسید: {receipt_code}\n💰 مبلغ قابل پرداخت: {total_price} تومان\n\n📌 پیگیری آنلاین و مشاهده لوکیشن فروشگاه:\n{tracking_url}\n\nبه محض آماده شدن سفارش، همین‌جا به شما پیام خواهیم داد. سپاس از انتخاب شما.`;
+      } else {
+        template = `سلام {customer_name} گرامی 🌺\nسفارش شما آماده تحویل است! ✨\n\n📚 خدمات: {services_summary}\n🔖 کد رسید: {receipt_code}\n💰 مبلغ نهایی: {total_price} تومان\n\n📍 آدرس تحویل: {store_address}\n🕒 ساعات کاری: {store_working_hours}\n📞 تلفن هماهنگی: {store_phone}\n\nمنتظر دیدار شما در {store_name} هستیم.`;
+      }
+    }
+
+    const servicesList: string[] = [];
+    if (order.spiralCount && order.spiralCount > 0) {
+      servicesList.push(`فنرزنی (${order.spiralCount} جلد)`);
+    }
+    if (order.stapleCount && order.stapleCount > 0) {
+      servicesList.push(`منگنه (${order.stapleCount} جلد)`);
+    }
+    if (order.coverCount && order.coverCount > 0) {
+      servicesList.push(`جلد/جزوه (${order.coverCount} جلد)`);
+    }
+    const servicesSummary = servicesList.length > 0 ? servicesList.join('، ') : `${order.bookCount || 1} جلد کتاب/جزوه`;
+
+    const trackingUrl = `https://khatynoo.ir/eitaa-app/index.html?track=${encodeURIComponent(order.receiptCode || '')}${order.customerEitaaChatId ? `&chat_id=${encodeURIComponent(order.customerEitaaChatId)}` : ''}`;
+
+    const text = template
+      .replace(/\{customer_name\}/g, order.customerName || 'مشتری گرامی')
+      .replace(/\{book_count\}/g, String(order.bookCount || 1))
+      .replace(/\{spiral_count\}/g, String(order.spiralCount || 0))
+      .replace(/\{staple_count\}/g, String(order.stapleCount || 0))
+      .replace(/\{cover_count\}/g, String(order.coverCount || 0))
+      .replace(/\{services_summary\}/g, servicesSummary)
+      .replace(/\{receipt_code\}/g, order.receiptCode || '')
+      .replace(/\{unit_price\}/g, Number(order.unitPrice || 0).toLocaleString('fa-IR'))
+      .replace(/\{discount\}/g, Number(order.discount || 0).toLocaleString('fa-IR'))
+      .replace(/\{total_price\}/g, Number(order.totalPrice || 0).toLocaleString('fa-IR'))
+      .replace(/\{final_price\}/g, Number(order.totalPrice || 0).toLocaleString('fa-IR'))
+      .replace(/\{store_name\}/g, settings.storeName || 'خطی‌نو')
+      .replace(/\{store_phone\}/g, settings.storePhone || '')
+      .replace(/\{store_address\}/g, settings.storeAddress || '')
+      .replace(/\{store_working_hours\}/g, settings.storeWorkingHours || '۸:۳۰ الی ۲۱:۳۰')
+      .replace(/\{store_map_link\}/g, settings.storeMapLink || '')
+      .replace(/\{tracking_url\}/g, trackingUrl);
+
+    const result = await sendDirectEitaaMessage({
+      mobile: order.customerMobile,
+      directChatId: order.customerEitaaChatId,
+      receiptCode: order.receiptCode,
+      text,
+      title: `سفارش صحافی ${order.receiptCode}`,
+      customToken: settings.eitaaBotToken,
+    });
+
+    const status: EitaaMessageStatus = result.status;
+    const sent = result.success;
+
+    // به‌روزرسانی وضعیت سفارش در دیتابیس
+    if (type === 'intake') {
+      await db.updateBindingOrder(order.id, {
+        eitaaIntakeSent: sent,
+        eitaaIntakeStatus: status,
+      });
+    } else {
+      await db.updateBindingOrder(order.id, {
+        eitaaReadySent: sent,
+        eitaaReadyStatus: status,
+      });
+    }
+
+    return {
+      success: sent,
+      status,
+      error: result.error,
+    };
+  } catch (err: any) {
+    console.error(`Error sending ${type} eitaa message:`, err);
+    return {
+      success: false,
+      status: 'failed',
+      error: err.message,
+    };
+  }
+}
+
+// لیست و جستجوی سفارشات فنرزنی
+app.get('/api/binding-orders', authenticateToken, async (req, res) => {
+  try {
+    const queryStr = req.query.query ? String(req.query.query) : undefined;
+    const paymentStatus = req.query.paymentStatus ? String(req.query.paymentStatus) : undefined;
+    const workStatus = req.query.workStatus ? String(req.query.workStatus) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 200;
+
+    const orders = await db.getBindingOrders({
+      query: queryStr,
+      paymentStatus,
+      workStatus,
+      limit,
+    });
+    res.json({ orders });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// تنظیمات ماژول فنرزنی و قالب‌های ایتا
+app.get('/api/binding-orders/settings', authenticateToken, async (req, res) => {
+  try {
+    const settings = await db.getBindingSettings();
+    res.json({ settings });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/binding-orders/settings', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req, res) => {
+  try {
+    const updated = await db.updateBindingSettings(req.body);
+    res.json({ settings: updated, message: 'تنظیمات فنرزنی با موفقیت ذخیره شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// مدیریت نگاشت شماره موبایل مشتری به chat_id ایتا
+app.get('/api/binding-orders/eitaa-chats', authenticateToken, async (req, res) => {
+  try {
+    const search = req.query.search ? String(req.query.search) : undefined;
+    const chats = await db.getEitaaCustomerChats(search);
+    res.json({ chats });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/binding-orders/eitaa-chats', authenticateToken, async (req, res) => {
+  try {
+    const { mobile, chatId, firstName, username } = req.body;
+    if (!mobile || !chatId) {
+      return res.status(400).json({ error: 'شماره موبایل و شناسه چت ایتا (chat_id) الزامی است.' });
+    }
+    const success = await registerEitaaCustomerChat({
+      mobile,
+      chatId,
+      firstName,
+      username,
+    });
+    if (!success) {
+      return res.status(500).json({ error: 'خطا در ثبت شناسه چت ایتا' });
+    }
+    res.json({ success: true, message: 'شناسه چت ایتا برای این شماره با موفقیت ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/binding-orders/eitaa-chats/:mobile', authenticateToken, async (req, res) => {
+  try {
+    const success = await db.deleteEitaaCustomerChat(req.params.mobile);
+    res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// وبهوک بات ایتا جهت ثبت خودکار chat_id هنگام پیام دادن مشتری به بات
+app.post('/api/binding-orders/eitaa-webhook', async (req, res) => {
+  try {
+    const update = req.body || {};
+    const message = update.message || update;
+    const fromUser = message.from || {};
+    const chatId = String(message.chat?.id || fromUser.id || update.chat_id || '').trim();
+    const contact = message.contact;
+    const text = String(message.text || '').trim();
+
+    let extractedMobile = '';
+
+    if (contact?.phone_number) {
+      extractedMobile = contact.phone_number;
+    } else if (text) {
+      const match = text.match(/(09\d{9}|\+?989\d{9})/);
+      if (match) {
+        extractedMobile = match[0];
+      }
+    }
+
+    if (extractedMobile && chatId) {
+      await registerEitaaCustomerChat({
+        mobile: extractedMobile,
+        chatId,
+        eitaaUserId: String(fromUser.id || ''),
+        firstName: fromUser.first_name || fromUser.name,
+        username: fromUser.username,
+      });
+      console.log(`[Eitaa Webhook] Mapped mobile ${extractedMobile} to chat_id ${chatId}`);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.warn('[Eitaa Webhook Warning]:', err);
+    res.json({ ok: false });
+  }
+});
+
+// ثبت سفارش فنرزنی جدید
+app.post('/api/binding-orders', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const {
+      customerName,
+      customerMobile,
+      bookCount,
+      unitPrice,
+      spiralCount,
+      spiralUnitPrice,
+      stapleCount,
+      stapleUnitPrice,
+      coverCount,
+      coverUnitPrice,
+      discount,
+      totalPrice,
+      description,
+      paymentStatus,
+      workStatus,
+      customerEitaaChatId,
+    } = req.body;
+
+    if (!customerName || !customerName.trim()) {
+      return res.status(400).json({ error: 'نام مشتری الزامی است.' });
+    }
+    if (!customerMobile || !customerMobile.trim()) {
+      return res.status(400).json({ error: 'شماره تماس مشتری الزامی است.' });
+    }
+
+    const order = await db.createBindingOrder(
+      {
+        customerName,
+        customerMobile,
+        bookCount,
+        unitPrice,
+        spiralCount,
+        spiralUnitPrice,
+        stapleCount,
+        stapleUnitPrice,
+        coverCount,
+        coverUnitPrice,
+        discount,
+        totalPrice,
+        description,
+        paymentStatus,
+        workStatus,
+        customerEitaaChatId,
+      },
+      {
+        userId: req.user?.id,
+        username: req.user?.fullName || req.user?.username,
+        ip: getClientIp(req),
+      }
+    );
+
+    // ارسال خودکار پیام ورود در صورت فعال بودن در تنظیمات
+    const settings = await db.getBindingSettings();
+    let eitaaResult: any = null;
+
+    if (settings.autoSendIntake) {
+      // ارسال در پیش‌زمینه بدون بلاک کردن طولانی پاسخ
+      try {
+        eitaaResult = await sendBindingOrderEitaaNotification(order, 'intake');
+        if (eitaaResult) {
+          order.eitaaIntakeSent = eitaaResult.success;
+          order.eitaaIntakeStatus = eitaaResult.status;
+        }
+      } catch (eitaaErr: any) {
+        console.warn('Auto send intake Eitaa error:', eitaaErr);
+      }
+    }
+
+    res.json({
+      order,
+      eitaaResult,
+      message: `سفارش صحافی با کد رسید ${order.receiptCode} با موفقیت ثبت شد.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// دریافت جزئیات یک سفارش
+app.get('/api/binding-orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const order = await db.getBindingOrderById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: 'سفارش مورد نظر یافت نشد.' });
+    }
+    res.json({ order });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ویرایش یا تغییر وضعیت سفارش
+app.patch('/api/binding-orders/:id', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const prevOrder = await db.getBindingOrderById(req.params.id);
+    if (!prevOrder) {
+      return res.status(404).json({ error: 'سفارش مورد نظر یافت نشد.' });
+    }
+
+    const updatedOrder = await db.updateBindingOrder(
+      req.params.id,
+      req.body,
+      {
+        userId: req.user?.id,
+        username: req.user?.fullName || req.user?.username,
+        ip: getClientIp(req),
+      }
+    );
+
+    // در صورتی که وضعیت کار به 'done' تغییر کرده و پیام آماده‌سازی قبلاً ارسال نشده باشد
+    let eitaaResult: any = null;
+    const isNowDone = updatedOrder.workStatus === 'done' && prevOrder.workStatus !== 'done';
+    const settings = await db.getBindingSettings();
+
+    if (isNowDone && settings.autoSendReady && !updatedOrder.eitaaReadySent) {
+      try {
+        eitaaResult = await sendBindingOrderEitaaNotification(updatedOrder, 'ready');
+        if (eitaaResult) {
+          updatedOrder.eitaaReadySent = eitaaResult.success;
+          updatedOrder.eitaaReadyStatus = eitaaResult.status;
+        }
+      } catch (eitaaErr: any) {
+        console.warn('Auto send ready Eitaa error:', eitaaErr);
+      }
+    }
+
+    res.json({
+      order: updatedOrder,
+      eitaaResult,
+      message: 'سفارش فنرزنی با موفقیت به‌روزرسانی شد.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// حذف سفارش
+app.delete('/api/binding-orders/:id', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req: AuthRequest, res) => {
+  try {
+    const success = await db.deleteBindingOrder(req.params.id, {
+      userId: req.user?.id,
+      username: req.user?.fullName || req.user?.username,
+      ip: getClientIp(req),
+    });
+    if (!success) {
+      return res.status(404).json({ error: 'سفارش مورد نظر یافت نشد.' });
+    }
+    res.json({ success: true, message: 'سفارش فنرزنی با موفقیت حذف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ارسال دستی پیام ایتا (دریافت یا آماده‌سازی)
+app.post('/api/binding-orders/:id/send-eitaa', authenticateToken, async (req, res) => {
+  try {
+    const order = await db.getBindingOrderById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ error: 'سفارش مورد نظر یافت نشد.' });
+    }
+
+    const type = req.body.type === 'ready' ? 'ready' : 'intake';
+    const result = await sendBindingOrderEitaaNotification(order, type);
+
+    res.json({
+      success: result.success,
+      status: result.status,
+      error: result.error,
+      message: result.success
+        ? `پیام ${type === 'intake' ? 'دریافت' : 'آماده‌سازی'} با موفقیت به ایتا ارسال شد.`
+        : (result.error || 'خطا در ارسال پیام به ایتا'),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 8.6. PUBLIC APIS FOR EITAA MINI-APP & ORDER TRACKING
+// -------------------------------------------------------------
+app.get('/api/public/binding-info', async (req, res) => {
+  try {
+    const settings = await db.getBindingSettings();
+    res.json({
+      storeName: settings.storeName || 'خطی‌نو',
+      storePhone: settings.storePhone || '',
+      storeAddress: settings.storeAddress || '',
+      storePostalCode: settings.storePostalCode || '',
+      storeWorkingHours: settings.storeWorkingHours || 'شنبه تا پنج‌شنبه: ۸:۳۰ الی ۲۱:۳۰',
+      storeMapLink: settings.storeMapLink || '',
+      storeNeshanLink: settings.storeNeshanLink || '',
+      storeBaladLink: settings.storeBaladLink || '',
+      storeLat: settings.storeLat,
+      storeLng: settings.storeLng,
+      eitaaBotAppUrl: settings.eitaaBotAppUrl || 'https://eitaa.com/khatynoo_app/fanar',
+      eitaaBotUsername: settings.eitaaBotUsername || 'khatynoo_app',
+      pricing: {
+        spiral: settings.defaultSpiralPrice || settings.defaultUnitPrice || 35000,
+        staple: settings.defaultStaplePrice || 10000,
+        cover: settings.defaultCoverPrice || 20000,
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/public/binding-track', async (req, res) => {
+  try {
+    const queryStr = req.query.query ? String(req.query.query).trim() : '';
+    if (!queryStr) {
+      return res.status(400).json({ error: 'لطفاً کد پیگیری رسید یا شماره موبایل خود را وارد نمایید.' });
+    }
+    const orders = await db.getPublicBindingTracking(queryStr);
+    res.json({ orders });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/public/eitaa-connect', async (req, res) => {
+  try {
+    const { chatId, mobile, receiptCode, firstName, username, eitaaUserId } = req.body;
+    const cleanChatId = chatId ? String(chatId).trim() : '';
+    if (!cleanChatId) {
+      return res.status(400).json({ error: 'شناسه چت ایتا (chat_id) الزامی است.' });
+    }
+
+    const cleanMobile = mobile ? String(mobile).trim() : undefined;
+    const cleanReceipt = receiptCode ? String(receiptCode).trim() : undefined;
+
+    const success = await registerEitaaCustomerChat({
+      chatId: cleanChatId,
+      mobile: cleanMobile,
+      receiptCode: cleanReceipt,
+      eitaaUserId: eitaaUserId ? String(eitaaUserId).trim() : undefined,
+      firstName: firstName ? String(firstName).trim() : undefined,
+      username: username ? String(username).trim() : undefined,
+    });
+
+    // جستجوی سفارشات مرتبط با این کاربر جهت نمایش مستقیم در وب‌اپلیکیشن
+    const relatedOrders = await db.getPublicBindingTracking(cleanReceipt || cleanMobile || cleanChatId);
+
+    res.json({
+      success,
+      chatId: cleanChatId,
+      mobile: cleanMobile,
+      orders: relatedOrders,
+      message: 'حساب ایتای شما با موفقیت در سامانه خدمات خطی‌نو متصل شد. اطلاعیه‌های آماده‌سازی سفارش به صورت خودکار ارسال خواهد شد.',
+    });
+  } catch (err: any) {
+    console.error('Error in /api/public/eitaa-connect:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// دریافت سفارشات مرتبط با شناسه چت ایتا، شماره همراه یا کد فیش
+app.get('/api/public/eitaa-orders', async (req, res) => {
+  try {
+    const chatId = req.query.chat_id ? String(req.query.chat_id).trim() : '';
+    const mobile = req.query.mobile ? String(req.query.mobile).trim() : '';
+    const track = req.query.track ? String(req.query.track).trim() : '';
+
+    if (!chatId && !mobile && !track) {
+      return res.status(400).json({ error: 'حداقل یکی از پارامترهای chat_id، mobile یا track الزامی است.' });
+    }
+
+    let searchTarget = track || mobile || chatId;
+    let orders = await db.getPublicBindingTracking(searchTarget);
+
+    // اگر با پارامتر اول پیدا نشد و موبایل هم بود
+    if (orders.length === 0 && mobile && mobile !== searchTarget) {
+      orders = await db.getPublicBindingTracking(mobile);
+    }
+
+    res.json({ orders });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2919,7 +3814,7 @@ app.post('/api/publication/channels', authenticateToken, requireRole(['admin', '
 });
 
 // به‌روزرسانی کانال موجود
-app.put('/api/publication/channels/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+app.put('/api/publication/channels/:id', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant', 'seller']), async (req, res) => {
   try {
     const { name, enabled, config } = req.body;
     const channel = await PublicationService.updateChannel(req.params.id, { name, enabled, config });
@@ -2933,7 +3828,7 @@ app.put('/api/publication/channels/:id', authenticateToken, requireRole(['admin'
 });
 
 // حذف کانال
-app.delete('/api/publication/channels/:id', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
+app.delete('/api/publication/channels/:id', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'seller']), async (req, res) => {
   try {
     const success = await PublicationService.deleteChannel(req.params.id);
     res.json({ success, message: 'کانال مورد نظر با موفقیت حذف شد.' });
@@ -2943,12 +3838,23 @@ app.delete('/api/publication/channels/:id', authenticateToken, requireRole(['adm
 });
 
 // تست اتصال و احراز هویت کانال با درگاه خارجی
-app.post('/api/publication/channels/:id/test', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant']), async (req, res) => {
+app.post('/api/publication/channels/:id/test', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant', 'seller']), async (req, res) => {
   try {
     const testResult = await PublicationService.testChannel(req.params.id);
     res.json(testResult);
   } catch (err: any) {
     res.status(400).json({ success: false, message: err.message || 'خطا در تست اتصال کانال' });
+  }
+});
+
+// ارسال پیام آزمایشی به کانال برای اطمینان از دسترسی کامل بات
+app.post('/api/publication/channels/:id/send-test', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant', 'seller']), async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    const result = await PublicationService.sendTestMessage(req.params.id, text);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, message: err.message || 'خطا در ارسال پیام آزمایشی به کانال' });
   }
 });
 

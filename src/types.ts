@@ -1376,5 +1376,78 @@ export interface EitaaCustomerChat {
   updatedAt?: string;
 }
 
+// =============================================================================
+// تایپ‌های یکپارچه هویت و پیام‌رسانی ایتا (Eitaa CRM & Messaging Types)
+// =============================================================================
+
+export type EitaaConnectivityBadge = 'can_send' | 'incomplete_chat_id' | 'failed_blocked' | 'no_interaction';
+
+export interface EitaaIdentity {
+  id: string;
+  chatId: string;
+  eitaaUserId?: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  mobile?: string;
+  languageCode?: string;
+  source: string;
+  customerId?: string;
+  customerName?: string;
+  customerMobile?: string;
+  status: 'active' | 'inactive' | 'blocked';
+  isBlocked: boolean;
+  isVerified?: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  receiptCodes: string[];
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+  connectivityBadge: EitaaConnectivityBadge;
+  totalOrdersCount?: number;
+  totalPurchaseAmount?: number;
+  lastOrderReceipt?: string;
+}
+
+export interface EitaaMessage {
+  id: string;
+  identityId?: string;
+  customerId?: string;
+  eitaaUserId?: string;
+  chatId: string;
+  direction: 'incoming' | 'outgoing';
+  messageTitle?: string;
+  messageText: string;
+  status: 'queued' | 'sending' | 'sent' | 'failed' | 'retrying';
+  provider: string;
+  providerMessageId?: string;
+  attempts: number;
+  maxAttempts: number;
+  errorCode?: string;
+  errorMessage?: string;
+  httpStatus?: number;
+  payload?: Record<string, any>;
+  createdAt: string;
+  sentAt?: string;
+  updatedAt: string;
+}
+
+export interface EitaaConversation {
+  chatId: string;
+  identityId?: string;
+  contactName: string;
+  username?: string;
+  mobile?: string;
+  customerId?: string;
+  isBlocked: boolean;
+  lastMessageText: string;
+  lastMessageTime: string;
+  lastMessageStatus: string;
+  lastMessageDirection: 'incoming' | 'outgoing';
+  unreadCount: number;
+}
+
+
 
 

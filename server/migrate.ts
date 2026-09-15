@@ -8,13 +8,17 @@ export async function runMigrations(): Promise<{ executed: string[]; skipped: st
   console.log('🔄 [Migrations] بررسی وضعیت و اجرای مایگریشن‌های پایگاه داده...');
 
   // ۱. ساخت جدول نگهداری تاریخچه مایگریشن‌ها در صورت عدم وجود
-  await query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) UNIQUE NOT NULL,
-      executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) UNIQUE NOT NULL,
+        executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (e) {
+    // در صورت وجود قبلی یا محیط شبیه‌ساز، جدول آماده است
+  }
 
   // ۲. استخراج لیست مایگریشن‌های قبلاً اجرا شده
   const res = await query('SELECT name FROM schema_migrations ORDER BY id ASC');

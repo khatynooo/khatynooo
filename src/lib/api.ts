@@ -246,11 +246,14 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handleResponse),
 
-  deletePurchaseInvoice: (id: string) =>
-    fetch(`${API_BASE}/invoices/purchase/${id}`, {
+  deletePurchaseInvoice: (id: string, options?: { deleteUnusedProducts?: boolean }) => {
+    const query = options?.deleteUnusedProducts ? '?deleteUnusedProducts=true' : '';
+    return fetch(`${API_BASE}/invoices/purchase/${id}${query}`, {
       method: 'DELETE',
-      headers: getAuthHeader(),
-    }).then(handleResponse),
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(options || {}),
+    }).then(handleResponse);
+  },
 
   // Return Invoices
   getReturnInvoices: () =>
@@ -810,6 +813,84 @@ export const api = {
     fetch(`${API_BASE}/binding-orders/eitaa-chats/${encodeURIComponent(mobile)}`, {
       method: 'DELETE',
       headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  // -------------------------------------------------------------
+  // EITAA CRM CONTACTS & INBOX MESSAGING API
+  // -------------------------------------------------------------
+  getEitaaContacts: (params?: {
+    query?: string;
+    status?: string;
+    hasChatId?: string;
+    isCustomer?: string;
+    source?: string;
+    limit?: number;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.query) searchParams.append('query', params.query);
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.hasChatId) searchParams.append('hasChatId', params.hasChatId);
+    if (params?.isCustomer) searchParams.append('isCustomer', params.isCustomer);
+    if (params?.source) searchParams.append('source', params.source);
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return fetch(`${API_BASE}/eitaa/contacts${qs ? `?${qs}` : ''}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse);
+  },
+
+  getEitaaContactProfile: (chatId: string) =>
+    fetch(`${API_BASE}/eitaa/contacts/${encodeURIComponent(chatId)}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  saveEitaaContact: (data: any) =>
+    fetch(`${API_BASE}/eitaa/contacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  getEitaaInbox: () =>
+    fetch(`${API_BASE}/eitaa/inbox`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  getEitaaMessages: (params?: { chatId?: string; status?: string; direction?: string; limit?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.chatId) searchParams.append('chatId', params.chatId);
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.direction) searchParams.append('direction', params.direction);
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return fetch(`${API_BASE}/eitaa/messages${qs ? `?${qs}` : ''}`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse);
+  },
+
+  sendEitaaDirectMessage: (data: { chatId: string; text: string; title?: string; identityId?: string; customerId?: string }) =>
+    fetch(`${API_BASE}/eitaa/messages/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  retryEitaaMessage: (id: string) =>
+    fetch(`${API_BASE}/eitaa/messages/${id}/retry`, {
+      method: 'POST',
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  getEitaaBotSettings: () =>
+    fetch(`${API_BASE}/eitaa/bot-settings`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  updateEitaaBotSettings: (data: { token?: string; botUsername?: string; appUrl?: string }) =>
+    fetch(`${API_BASE}/eitaa/bot-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
     }).then(handleResponse),
 
   getOnlineOrders: () =>

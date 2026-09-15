@@ -5,6 +5,7 @@
 
 import { query } from '../dbClient';
 import { normalizeEitaaToken } from './providers/eitaaProvider';
+import { eitaaService } from '../eitaaService';
 
 export interface DirectMessageResult {
   success: boolean;
@@ -73,112 +74,22 @@ export async function registerEitaaCustomerChat(params: {
   username?: string;
   receiptCode?: string;
   source?: string;
+  isVerified?: boolean;
 }): Promise<boolean> {
   const cleanChatId = String(params.chatId || '').trim();
   if (!cleanChatId) return false;
 
-  const normMobile = params.mobile ? normalizeMobileNumber(params.mobile) : null;
-  const cleanReceiptCode = params.receiptCode ? String(params.receiptCode).trim().toUpperCase() : null;
-  const src = params.source || 'mini_app';
-
   try {
-    // ۱. بررسی وجود رکورد با chat_id یا mobile
-    const existing = await query(
-      `SELECT * FROM eitaa_customer_chats WHERE chat_id = $1 ${normMobile ? 'OR mobile = $2' : ''} LIMIT 1`,
-      normMobile ? [cleanChatId, normMobile] : [cleanChatId]
-    );
-
-    const targetMobile = normMobile || (existing.rows.length > 0 && existing.rows[0].mobile ? existing.rows[0].mobile : `eitaa_${cleanChatId}`);
-
-    if (existing.rows.length > 0) {
-      await query(
-        `UPDATE eitaa_customer_chats 
-         SET chat_id = $1,
-             mobile = $2,
-             eitaa_user_id = COALESCE($3, eitaa_user_id),
-             first_name = COALESCE($4, first_name),
-             username = COALESCE($5, username),
-             source = COALESCE($6, source),
-             last_seen = NOW(),
-             updated_at = NOW()
-         WHERE chat_id = $1 OR mobile = $2`,
-        [
-          cleanChatId,
-          targetMobile,
-          params.eitaaUserId || null,
-          params.firstName || null,
-          params.username || null,
-          src,
-        ]
-      );
-    } else {
-      await query(
-        `INSERT INTO eitaa_customer_chats (
-           chat_id, mobile, eitaa_user_id, first_name, username, source, last_seen, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-        [
-          cleanChatId,
-          targetMobile,
-          params.eitaaUserId || null,
-          params.firstName || null,
-          params.username || null,
-          src,
-        ]
-      );
-    }
-
-    // ۲. در صورت وجود کد رسید، افزودن به لیست رسیدهای این کاربر و پیوند سفارش
-    if (cleanReceiptCode) {
-      try {
-        await query(
-          `UPDATE eitaa_customer_chats 
-           SET receipt_codes = array_append(array_remove(receipt_codes, $1), $1),
-               updated_at = NOW()
-           WHERE chat_id = $2`,
-          [cleanReceiptCode, cleanChatId]
-        );
-
-        // پیوند مستقیم به جدول binding_orders
-        const orderRes = await query(
-          `UPDATE binding_orders 
-           SET customer_eitaa_chat_id = $1,
-               updated_at = NOW()
-           WHERE receipt_code ILIKE $2
-           RETURNING customer_mobile`,
-          [cleanChatId, cleanReceiptCode]
-        );
-
-        // اگر شماره موبایل در پارامترها نبود ولی سفارش دارای موبایل بود، شماره موبایل را هم در eitaa_customer_chats ذخیره کن
-        if (!normMobile && orderRes.rows.length > 0 && orderRes.rows[0].customer_mobile) {
-          const ordMobile = normalizeMobileNumber(orderRes.rows[0].customer_mobile);
-          if (ordMobile) {
-            await query(
-              `UPDATE eitaa_customer_chats SET mobile = $1 WHERE chat_id = $2 AND mobile IS NULL`,
-              [ordMobile, cleanChatId]
-            );
-          }
-        }
-      } catch (orderLinkErr) {
-        console.warn('Could not link receipt code to order:', orderLinkErr);
-      }
-    }
-
-    // ۳. اگر شماره موبایل معتبر داشتیم، تمامی سفارشات این مشتری را هم به chat_id او پیوند بده
-    if (normMobile) {
-      try {
-        await query(
-          `UPDATE binding_orders 
-           SET customer_eitaa_chat_id = $1,
-               updated_at = NOW()
-           WHERE (customer_mobile = $2 OR customer_mobile = $3)
-             AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '')`,
-          [cleanChatId, normMobile, normMobile.replace(/^0/, '')]
-        );
-      } catch (linkAllErr) {
-        console.warn('Could not link mobile orders to chat_id:', linkAllErr);
-      }
-    }
-
+    await eitaaService.upsertIdentity({
+      chatId: cleanChatId,
+      mobile: params.mobile,
+      eitaaUserId: params.eitaaUserId,
+      firstName: params.firstName,
+      username: params.username,
+      receiptCode: params.receiptCode,
+      source: params.source || 'mini_app',
+      isVerified: params.isVerified,
+    });
     return true;
   } catch (err) {
     console.error('Error registering eitaa customer chat:', err);
@@ -227,6 +138,8 @@ export async function resolveEitaaBotToken(customToken?: string): Promise<string
 export async function sendDirectEitaaMessage(params: {
   mobile?: string;
   directChatId?: string;
+  eitaaUserId?: string;
+  orderId?: string;
   receiptCode?: string;
   text: string;
   title?: string;
@@ -234,24 +147,62 @@ export async function sendDirectEitaaMessage(params: {
 }): Promise<DirectMessageResult> {
   let chatId = params.directChatId ? String(params.directChatId).trim() : '';
 
-  // ۱. در صورتی که directChatId نبود ولی کد رسید بود، از جدول eitaa_customer_chats جستجو می‌کنیم
-  if (!chatId && params.receiptCode) {
+  // ۱. اولویت اول: directChatId (اگر ارائه شده بود مستقیماً استفاده می‌شود)
+
+  // ۲. اولویت دوم: در صورت عدم وجود chatId، استعلام بر اساس eitaaUserId
+  if (!chatId && params.eitaaUserId) {
     try {
-      const recRes = await query(
-        `SELECT chat_id FROM eitaa_customer_chats WHERE $1 = ANY(receipt_codes) LIMIT 1`,
-        [params.receiptCode.trim().toUpperCase()]
+      const uRes = await query(
+        `SELECT chat_id FROM eitaa_identities WHERE eitaa_user_id = $1 AND chat_id IS NOT NULL AND chat_id <> '' LIMIT 1`,
+        [String(params.eitaaUserId).trim()]
       );
-      if (recRes.rows.length > 0 && recRes.rows[0].chat_id) {
-        chatId = String(recRes.rows[0].chat_id).trim();
+      if (uRes.rows.length > 0 && uRes.rows[0].chat_id) {
+        chatId = String(uRes.rows[0].chat_id).trim();
       }
     } catch {}
   }
 
-  // ۲. در صورتی که هنوز chatId نبود، از شماره موبایل استعلام می‌گیریم
+  // ۳. اولویت سوم: استعلام بر اساس شماره موبایل
   if (!chatId && params.mobile) {
     const normMobile = normalizeMobileNumber(params.mobile);
     if (normMobile) {
-      chatId = (await getEitaaChatIdForMobile(normMobile)) || '';
+      try {
+        const mobRes = await query(
+          `SELECT chat_id FROM eitaa_identities WHERE mobile = $1 OR mobile = $2 LIMIT 1`,
+          [normMobile, normMobile.replace(/^0/, '')]
+        );
+        if (mobRes.rows.length > 0 && mobRes.rows[0].chat_id) {
+          chatId = String(mobRes.rows[0].chat_id).trim();
+        } else {
+          chatId = (await getEitaaChatIdForMobile(normMobile)) || '';
+        }
+      } catch {
+        chatId = (await getEitaaChatIdForMobile(normMobile)) || '';
+      }
+    }
+  }
+
+  // ۴. اولویت چهارم: استعلام بر اساس کد رسید یا شناسه سفارش
+  const refCode = (params.receiptCode || params.orderId || '').trim().toUpperCase();
+  if (!chatId && refCode) {
+    try {
+      const recRes = await query(
+        `SELECT chat_id FROM eitaa_identities WHERE $1 = ANY(receipt_codes) LIMIT 1`,
+        [refCode]
+      );
+      if (recRes.rows.length > 0 && recRes.rows[0].chat_id) {
+        chatId = String(recRes.rows[0].chat_id).trim();
+      } else {
+        const ordRes = await query(
+          `SELECT customer_eitaa_chat_id FROM binding_orders WHERE (receipt_code = $1 OR id = $2) AND customer_eitaa_chat_id IS NOT NULL LIMIT 1`,
+          [refCode, refCode]
+        );
+        if (ordRes.rows.length > 0 && ordRes.rows[0].customer_eitaa_chat_id) {
+          chatId = String(ordRes.rows[0].customer_eitaa_chat_id).trim();
+        }
+      }
+    } catch (lookupErr: any) {
+      console.warn(`[EitaaDirectMessenger] هشدار در استعلام شناسه چت برای کد مرجع ${refCode}:`, lookupErr?.message || lookupErr);
     }
   }
 
@@ -261,80 +212,38 @@ export async function sendDirectEitaaMessage(params: {
       status: 'no_chat_id',
       error: params.mobile 
         ? `مشتری با شماره ${params.mobile} هنوز وارد برنامک ایتا نشده و شناسه چت (chat_id) او ثبت نگردیده است.`
-        : 'شناسه چت ایتا (chat_id) یا شماره موبایل معتبر یافت نشد.',
+        : 'شناسه چت ایتا (chat_id)، شناسه کاربری، یا شماره موبایل معتبر یافت نشد.',
     };
   }
-
-  // ۲. دریافت توکن بات
-  const token = await resolveEitaaBotToken(params.customToken);
-  if (!token) {
-    return {
-      success: false,
-      status: 'not_configured',
-      chatId,
-      error: 'توکن بات ایتا تنظیم نشده است. لطفاً توکن را در تنظیمات وارد نمایید.',
-    };
-  }
-
-  const baseUrl = (process.env.EITAA_API_BASE_URL || 'https://eitaayar.ir/api').replace(/\/+$/, '');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const formParams = new URLSearchParams();
-    formParams.append('chat_id', chatId);
-    formParams.append('text', params.text);
-    if (params.title) {
-      formParams.append('title', params.title);
-    }
-
-    const response = await fetch(`${baseUrl}/${token}/sendMessage`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formParams.toString(),
-      signal: controller.signal,
+    const sendRes = await eitaaService.sendMessage({
+      chatId,
+      text: params.text,
+      title: params.title,
     });
 
-    const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      const errorMsg = data.description || data.message || `خطای سرور ایتا (${response.status})`;
+    if (sendRes.success) {
+      return {
+        success: true,
+        status: 'sent',
+        chatId,
+        messageId: sendRes.message.providerMessageId || sendRes.message.id,
+      };
+    } else {
       return {
         success: false,
-        status: 'failed',
+        status: sendRes.message.errorCode === 'NO_TOKEN' ? 'not_configured' : 'failed',
         chatId,
-        error: `خطا در ارسال پیام ایتا: ${errorMsg}`,
+        error: sendRes.error || 'خطا در ارسال پیام به ایتا',
       };
     }
-
-    // بررسی پاسخ eitaayar (معمولاً { ok: true, result: { message_id: ... } })
-    const isOk = data.ok === true || data.success === true || (data.status && data.status !== 'error');
-    if (!isOk) {
-      return {
-        success: false,
-        status: 'failed',
-        chatId,
-        error: data.description || data.message || 'پاسخ ناموفق از وب‌سرویس ایتا دریافت شد.',
-      };
-    }
-
-    const messageId = String(data.result?.message_id || data.message_id || Date.now());
-    return {
-      success: true,
-      status: 'sent',
-      chatId,
-      messageId,
-    };
   } catch (err: any) {
     return {
       success: false,
       status: 'failed',
       chatId,
-      error: err.name === 'AbortError' ? 'مهلت زمانی ارتباط با سرور ایتا به پایان رسید.' : (err.message || 'خطای ناشناخته در ارتباط با ایتا'),
+      error: err.message || 'خطا در برقراری ارتباط با وب‌سرویس ایتا',
     };
-  } finally {
-    clearTimeout(timeout);
   }
 }

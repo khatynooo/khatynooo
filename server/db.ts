@@ -339,6 +339,38 @@ async function modifyLocationStock(
   return { newLocationStock: newLocStock, totalStock };
 }
 
+/**
+ * به‌روزرسانی ایمن بدهی تامین‌کننده با پشتیبانی از هر دو حالت وجود یا عدم وجود ستون updated_at
+ */
+async function safeUpdateSupplierDebt(client: any, supplierId: string, deltaDebt: number): Promise<void> {
+  if (!supplierId || deltaDebt === 0) return;
+  try {
+    if (deltaDebt > 0) {
+      await client.query(
+        `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1, updated_at = NOW() WHERE id = $2`,
+        [deltaDebt, supplierId]
+      );
+    } else {
+      await client.query(
+        `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
+        [Math.abs(deltaDebt), supplierId]
+      );
+    }
+  } catch (err: any) {
+    if (deltaDebt > 0) {
+      await client.query(
+        `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1 WHERE id = $2`,
+        [deltaDebt, supplierId]
+      );
+    } else {
+      await client.query(
+        `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1) WHERE id = $2`,
+        [Math.abs(deltaDebt), supplierId]
+      );
+    }
+  }
+}
+
 export const db = {
   // ============================================================================
   // ۱. کاربران و احراز هویت (Users & Auth)
@@ -1967,8 +1999,8 @@ export const db = {
 
   async deletePurchaseInvoice(
     id: string,
-    context?: { userId?: string; userName?: string; ip?: string; userAgent?: string }
-  ): Promise<{ success: boolean; message: string }> {
+    context?: { userId?: string; userName?: string; ip?: string; userAgent?: string; deleteUnusedProducts?: boolean }
+  ): Promise<{ success: boolean; message: string; deletedProductsCount?: number }> {
     return await withTransaction(async (client) => {
       const checkRes = await client.query('SELECT * FROM purchase_invoices WHERE id = $1 FOR UPDATE', [id]);
       if (checkRes.rows.length === 0) {
@@ -1991,18 +2023,77 @@ export const db = {
         }
       }
 
-      // ۲. کاهش بدهی ثبت شده به تامین‌کننده در صورت وجود مانده
-      if (remainingAmount > 0 && inv.supplier_id) {
-        await client.query(
-          `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
-          [remainingAmount, inv.supplier_id]
+      // ۲. بازگردانی بهای خرید یا حذف اقلام جدید تعریف‌شده در این فاکتور (نام‌ها و قیمت‌ها)
+      let deletedProductsCount = 0;
+      for (const it of items) {
+        if (!it.productId) continue;
+
+        // بررسی اینکه آیا این کالا در فاکتورهای فروش ثبت شده یا خیر
+        const salesCheck = await client.query(
+          `SELECT 1 FROM sales_invoices WHERE items::text LIKE '%' || $1 || '%' LIMIT 1`,
+          [it.productId]
         );
+        const hasSales = salesCheck.rows.length > 0;
+
+        // بررسی اینکه آیا در فاکتور خرید دیگری وجود دارد یا خیر
+        const otherPurchases = await client.query(
+          `SELECT items FROM purchase_invoices WHERE id != $1 AND items::text LIKE '%' || $2 || '%' ORDER BY created_at DESC LIMIT 5`,
+          [id, it.productId]
+        );
+        const hasOtherPurchases = otherPurchases.rows.length > 0;
+
+        // اگر کاربر درخواست پاکسازی اقلام بدون سابقه را داده باشد و کالا در هیچ فاکتور فروش یا فاکتور خرید دیگری نباشد
+        if (context?.deleteUnusedProducts && !hasSales && !hasOtherPurchases) {
+          const formulaCheck = await client.query(
+            `SELECT 1 FROM production_formulas WHERE output_product_id = $1 OR materials::text LIKE '%' || $1 || '%' LIMIT 1`,
+            [it.productId]
+          );
+          if (formulaCheck.rows.length === 0) {
+            // حذف کامل رکوردهای موجودی، سوابق و خود رکورد کالا
+            await client.query('DELETE FROM inventory_by_location WHERE product_id = $1', [it.productId]);
+            await client.query('DELETE FROM inventory_adjustments WHERE product_id = $1', [it.productId]);
+            await client.query('DELETE FROM inventory_transfers WHERE product_id = $1', [it.productId]);
+            await client.query('DELETE FROM products WHERE id = $1', [it.productId]);
+            deletedProductsCount++;
+            continue;
+          }
+        }
+
+        // در صورت عدم حذف کالا: بازگردانی قیمت خرید (buy_price)
+        if (hasOtherPurchases) {
+          let previousBuyPrice: number | null = null;
+          for (const row of otherPurchases.rows) {
+            const rowItems = typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []);
+            const match = rowItems.find((x: any) => x.productId === it.productId);
+            if (match && typeof match.buyPrice === 'number') {
+              previousBuyPrice = match.buyPrice;
+              break;
+            }
+          }
+          if (previousBuyPrice !== null) {
+            await client.query(
+              `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
+              [previousBuyPrice, it.productId]
+            );
+          }
+        } else {
+          // اگر فاکتور خرید دیگری ندارد، بهای خرید ریست می‌شود
+          await client.query(
+            `UPDATE products SET buy_price = 0, updated_at = NOW() WHERE id = $2`,
+            [it.productId]
+          );
+        }
+      }
+
+      // ۳. کاهش بدهی ثبت شده به تامین‌کننده در صورت وجود مانده
+      if (remainingAmount > 0 && inv.supplier_id) {
+        await safeUpdateSupplierDebt(client, inv.supplier_id, -remainingAmount);
         try {
           await client.query('DELETE FROM supplier_transactions WHERE invoice_id = $1', [id]);
         } catch (e) {}
       }
 
-      // ۳. لغو یا حذف چک‌های ثبت شده و تراکنش‌های خزانه این فاکتور
+      // ۴. لغو یا حذف چک‌های ثبت شده و تراکنش‌های خزانه این فاکتور
       try {
         await client.query("DELETE FROM treasury_transactions WHERE reference_id = $1 AND source_module = 'purchases'", [id]);
       } catch (e) {}
@@ -2011,10 +2102,10 @@ export const db = {
         await client.query("DELETE FROM cheques WHERE invoice_id = $1 AND (status = 'pending' OR status IS NULL)", [id]);
       } catch (e) {}
 
-      // ۴. حذف فاکتور خرید
+      // ۵. حذف فاکتور خرید
       await client.query('DELETE FROM purchase_invoices WHERE id = $1', [id]);
 
-      // ۵. ثبت در جدول audit_logs
+      // ۶. ثبت در جدول audit_logs
       try {
         await client.query(
           `INSERT INTO audit_logs (
@@ -2035,6 +2126,7 @@ export const db = {
               remainingAmount,
               warehouseId: whId,
               itemsCount: items.length,
+              deletedProductsCount,
               items: items.map((x: any) => ({ productId: x.productId, name: x.productName, quantity: x.quantity })),
             }),
             context?.ip || '127.0.0.1',
@@ -2043,9 +2135,15 @@ export const db = {
         );
       } catch (auditErr) {}
 
+      let successMsg = `فاکتور خرید ${inv.invoice_number} با موفقیت حذف گردید و اثرات موجودی انبار، بهای کالاها، چک‌ها، خزانه و بدهی حسابداری معکوس شد.`;
+      if (deletedProductsCount > 0) {
+        successMsg += ` (تعداد ${deletedProductsCount} قلم کالای منحصربه‌فرد این فاکتور نیز کلاً حذف شدند)`;
+      }
+
       return {
         success: true,
-        message: `فاکتور خرید ${inv.invoice_number} با موفقیت حذف گردید و اثرات انبار، چک‌ها، خزانه و بدهی حسابداری معکوس شد.`,
+        message: successMsg,
+        deletedProductsCount,
       };
     });
   },
@@ -2212,19 +2310,13 @@ export const db = {
       // ۴. تسویه و تطبیق حساب بدهی به تامین‌کننده
       if (oldSupplierId && targetSupplierId && oldSupplierId !== targetSupplierId) {
         if (oldRemaining > 0) {
-          await client.query(
-            `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
-            [oldRemaining, oldSupplierId]
-          );
+          await safeUpdateSupplierDebt(client, oldSupplierId, -oldRemaining);
           try {
             await client.query(`DELETE FROM supplier_transactions WHERE invoice_id = $1`, [id]);
           } catch (e) {}
         }
         if (remainingAmount > 0) {
-          await client.query(
-            `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1, updated_at = NOW() WHERE id = $2`,
-            [remainingAmount, targetSupplierId]
-          );
+          await safeUpdateSupplierDebt(client, targetSupplierId, remainingAmount);
           try {
             const supTxId = `sup_tx_${Date.now()}`;
             await client.query(
@@ -2236,16 +2328,8 @@ export const db = {
         }
       } else if (targetSupplierId) {
         const debtDelta = remainingAmount - oldRemaining;
-        if (debtDelta > 0) {
-          await client.query(
-            `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1, updated_at = NOW() WHERE id = $2`,
-            [debtDelta, targetSupplierId]
-          );
-        } else if (debtDelta < 0) {
-          await client.query(
-            `UPDATE suppliers SET debt_to_supplier = GREATEST(0, debt_to_supplier - $1), updated_at = NOW() WHERE id = $2`,
-            [Math.abs(debtDelta), targetSupplierId]
-          );
+        if (debtDelta !== 0) {
+          await safeUpdateSupplierDebt(client, targetSupplierId, debtDelta);
         }
 
         try {
@@ -2519,10 +2603,7 @@ export const db = {
 
       // ۲. افزایش بدهی به تامین‌کننده در صورت مانده‌حساب
       if (remainingAmount > 0) {
-        await client.query(
-          `UPDATE suppliers SET debt_to_supplier = debt_to_supplier + $1 WHERE id = $2`,
-          [remainingAmount, invoice.supplierId]
-        );
+        await safeUpdateSupplierDebt(client, invoice.supplierId, remainingAmount);
 
         try {
           const supTxId = `sup_tx_${Date.now()}`;
@@ -3973,14 +4054,14 @@ export const db = {
              COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
       FROM binding_orders bo
       LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
-      WHERE (bo.receipt_code ILIKE $1 OR bo.customer_mobile ILIKE $1 OR bo.customer_mobile ILIKE $2 OR bo.customer_eitaa_chat_id = $3 OR ecc.chat_id = $3)
+      WHERE (bo.receipt_code ILIKE $1 OR bo.customer_mobile ILIKE $2 OR bo.customer_mobile ILIKE $3 OR bo.customer_eitaa_chat_id = $4 OR ecc.chat_id = $5)
       ORDER BY bo.created_at DESC
       LIMIT 10
     `;
     const q1 = `%${clean}%`;
     const q2 = `%${clean.replace(/^0/, '')}%`;
     const q3 = clean;
-    const res = await query(sql, [q1, q2, q3]);
+    const res = await query(sql, [q1, q1, q2, q3, q3]);
     return res.rows.map((r: any) => ({
       id: r.id,
       receiptCode: r.receipt_code,
@@ -4013,8 +4094,9 @@ export const db = {
     let sql = 'SELECT * FROM eitaa_customer_chats WHERE 1=1';
     const params: any[] = [];
     if (search?.trim()) {
-      params.push(`%${search.trim()}%`);
-      sql += ` AND (mobile ILIKE $1 OR chat_id ILIKE $1 OR first_name ILIKE $1 OR username ILIKE $1)`;
+      const q = `%${search.trim()}%`;
+      params.push(q, q, q, q);
+      sql += ` AND (mobile ILIKE $1 OR chat_id ILIKE $2 OR first_name ILIKE $3 OR username ILIKE $4)`;
     }
     sql += ' ORDER BY updated_at DESC LIMIT 100';
     const res = await query(sql, params);
@@ -5002,12 +5084,20 @@ export const db = {
   },
 
   async getCustomerOrderById(orderId: string, customerId?: string, mobile?: string): Promise<OnlineOrder | null> {
-    const res = await query(
-      `SELECT * FROM online_orders 
-       WHERE (id = $1 OR order_number = $1)
-       ${customerId ? 'AND (customer_id = $2 OR customer_mobile = $3)' : ''}`,
-      customerId ? [orderId, customerId, mobile || ''] : [orderId]
-    );
+    const cleanOrderId = String(orderId || '').trim();
+    if (!cleanOrderId) return null;
+
+    const sql = customerId
+      ? `SELECT * FROM online_orders 
+         WHERE (id = $1 OR order_number = $2)
+         AND (customer_id = $3 OR customer_mobile = $4)`
+      : `SELECT * FROM online_orders 
+         WHERE (id = $1 OR order_number = $2)`;
+    const params = customerId
+      ? [cleanOrderId, cleanOrderId, String(customerId).trim(), String(mobile || '').trim()]
+      : [cleanOrderId, cleanOrderId];
+
+    const res = await query(sql, params);
     if (res.rows.length === 0) return null;
     const r = res.rows[0];
     return {

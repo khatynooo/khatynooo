@@ -3,6 +3,7 @@ import { Pool, PoolClient } from 'pg';
 import { newDb, IMemoryDb, DataType } from 'pg-mem';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { splitSqlStatements } from './sqlSplitter';
 import bcrypt from 'bcryptjs';
 
@@ -79,6 +80,21 @@ export async function testDbConnection(): Promise<boolean> {
         return () => {
           // در محیط تست حافظه‌ای، اجرای کدهای رویه‌ای plpgsql به صورت امن پذیرفته می‌شود
         };
+      });
+    } catch (e) {
+      // ignore
+    }
+
+    // ثبت تابع md5 برای محاسبات هش در محیط pg-mem
+    try {
+      memDb.public.registerFunction({
+        name: 'md5',
+        args: [DataType.text],
+        returns: DataType.text,
+        implementation: (val: any) => {
+          if (val == null) return null;
+          return crypto.createHash('md5').update(String(val)).digest('hex');
+        },
       });
     } catch (e) {
       // ignore
@@ -230,7 +246,33 @@ export async function query(text: string, params: any[] = []): Promise<any> {
     const res = await rawQuery(text, params);
     return res;
   } catch (err: any) {
-    console.error('❌ [SQL Execution Error]:', err.message, '\nQuery:', text, '\nParams:', params);
+    // لاگ امن و بدون افشای رمز عبور یا توکن‌های حساس
+    const safeParamTypes = (params || []).map((p, idx) => {
+      if (p === null) return `$${idx + 1}: null`;
+      if (p === undefined) return `$${idx + 1}: undefined`;
+      const type = typeof p;
+      if (type === 'string') {
+        const isSensitive = p.startsWith('$2') || p.length > 100;
+        return `$${idx + 1}: string(len=${p.length}${isSensitive ? ', [REDACTED]' : `, val="${p.slice(0, 30)}"`})`;
+      }
+      if (type === 'number') return `$${idx + 1}: number(${p})`;
+      if (type === 'boolean') return `$${idx + 1}: boolean(${p})`;
+      return `$${idx + 1}: ${type}`;
+    });
+
+    const isTypeDeductionError =
+      err?.code === '42P08' ||
+      (err?.message && String(err.message).toLowerCase().includes('inconsistent types deduced'));
+
+    console.error('❌ [SQL Execution Error]:', {
+      errorCode: err?.code || 'UNKNOWN',
+      errorMessage: err?.message,
+      querySnippet: text.trim().slice(0, 160).replace(/\s+/g, ' '),
+      parameterTypes: safeParamTypes,
+      ...(isTypeDeductionError && {
+        hint: 'خطای تناقض در تشخیص نوع پارامتر PostgreSQL (42P08). لطفاً اطمینان حاصل کنید که برای ستون‌هایی با تایپ‌های مختلف، پارامترهای مجزا ($1, $2, ...) استفاده شده باشد.',
+      }),
+    });
     throw err;
   }
 }

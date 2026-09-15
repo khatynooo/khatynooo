@@ -31,9 +31,13 @@ import { formatToman, toPersianDigits } from '../../lib/utils';
 import { BindingOrder, BindingSettings, EitaaCustomerChat, EitaaMessageStatus, BindingPaymentStatus, BindingWorkStatus } from '../../types';
 import { useToast } from '../common/Toast';
 import { CurrencyInput } from '../common/CurrencyInput';
+import { EitaaCrmView } from './eitaa/EitaaCrmView';
 
 export const BindingOrdersView: React.FC = () => {
   const { showToast } = useToast();
+
+  // ناوبری بین بخش‌های سفارشات فنر خالی و ایتا
+  const [mainViewMode, setMainViewMode] = useState<'orders' | 'eitaa'>('orders');
 
   // داده‌های اصلی
   const [orders, setOrders] = useState<BindingOrder[]>([]);
@@ -456,15 +460,43 @@ export const BindingOrdersView: React.FC = () => {
         }
       `}</style>
 
-      {/* ۱. هدر و دکمه‌های عملیاتی اصلی */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#121215] p-5 rounded-2xl border border-slate-200 dark:border-[#222225] shadow-xs">
+      {/* ناوبری سراسری سفارشات فنر خالی و ایتا */}
+      <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#161619] p-1.5 rounded-2xl border border-slate-200 dark:border-[#222225] w-fit">
+        <button
+          onClick={() => setMainViewMode('orders')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainViewMode === 'orders'
+              ? 'bg-white dark:bg-[#252529] text-slate-900 dark:text-white shadow-xs'
+              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          سفارشات فنر خالی و صدور فیش
+        </button>
+        <button
+          onClick={() => setMainViewMode('eitaa')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            mainViewMode === 'eitaa'
+              ? 'bg-white dark:bg-[#252529] text-slate-900 dark:text-white shadow-xs'
+              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+          }`}
+        >
+          صندوق پیام و مخاطبین ایتا (CRM)
+        </button>
+      </div>
+
+      {mainViewMode === 'eitaa' && <EitaaCrmView />}
+
+      {mainViewMode === 'orders' && (
+        <>
+          {/* ۱. هدر و دکمه‌های عملیاتی اصلی */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#121215] p-5 rounded-2xl border border-slate-200 dark:border-[#222225] shadow-xs">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 flex items-center justify-center text-[#C9A227]">
             <BookOpen className="w-6 h-6" />
           </div>
           <div>
             <h2 className="text-xl font-black text-slate-900 dark:text-[#F3F4F6]">
-              سفارشات فنرزنی، منگنه و جزوات
+              سفارشات فنر خالی
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               ثبت چندگانه خدمات (فنر، منگنه، طلق/جلد)، چاپ دو نسخه فیش (A6/A7) و سامانه پیگیری ایتا
@@ -1643,7 +1675,7 @@ export const BindingOrdersView: React.FC = () => {
               <div className="flex items-center justify-between border-b border-black pb-2 mb-2">
                 <div>
                   <h1 className="text-sm font-black">{settings?.storeName || 'خطی‌نو'}</h1>
-                  <span className="text-[10px]">رسید سفارش صحافی و فنرزنی (نسخه مشتری)</span>
+                  <span className="text-[10px]">رسید سفارش فنر خالی (نسخه مشتری)</span>
                 </div>
                 <div className="text-left font-mono font-black text-sm bg-black text-white px-2 py-0.5 rounded">
                   {activePrintOrder.receiptCode}
@@ -1770,6 +1802,8 @@ export const BindingOrdersView: React.FC = () => {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

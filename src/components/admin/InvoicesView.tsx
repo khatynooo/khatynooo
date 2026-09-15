@@ -158,6 +158,7 @@ export const InvoicesView: React.FC = () => {
   const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
   const [isDeletingPurchaseInvoice, setIsDeletingPurchaseInvoice] = useState(false);
   const [deletingPurchaseInvoiceTarget, setDeletingPurchaseInvoiceTarget] = useState<PurchaseInvoice | null>(null);
+  const [deleteUnusedProductsOnInvoiceDelete, setDeleteUnusedProductsOnInvoiceDelete] = useState<boolean>(true);
   const [isUploadingEditReceipt, setIsUploadingEditReceipt] = useState(false);
 
   useEffect(() => {
@@ -871,7 +872,9 @@ export const InvoicesView: React.FC = () => {
     if (!deletingPurchaseInvoiceTarget) return;
     setIsDeletingPurchaseInvoice(true);
     try {
-      const res = await api.deletePurchaseInvoice(deletingPurchaseInvoiceTarget.id);
+      const res = await api.deletePurchaseInvoice(deletingPurchaseInvoiceTarget.id, {
+        deleteUnusedProducts: deleteUnusedProductsOnInvoiceDelete,
+      });
       showToast(res.message || 'فاکتور خرید با موفقیت حذف شد و انبار و اسناد مالی برگشت داده شدند.', 'success');
       setDeletingPurchaseInvoiceTarget(null);
       await loadData();
@@ -3566,6 +3569,26 @@ export const InvoicesView: React.FC = () => {
                     این عملیات به همراه نام کاربر و مشخصات زمانی در دفتر لاگ‌های حسابرسی سیستم بایگانی خواهد شد.
                   </li>
                 </ul>
+              </div>
+
+              {/* Checkbox option to purge unique products and reset prices */}
+              <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={deleteUnusedProductsOnInvoiceDelete}
+                    onChange={(e) => setDeleteUnusedProductsOnInvoiceDelete(e.target.checked)}
+                    className="mt-0.5 rounded text-rose-600 focus:ring-rose-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-900 text-xs block">
+                      حذف کامل کالاها/نام‌هایی که فقط در این فاکتور ثبت شده‌اند و بازگردانی قیمت‌ها
+                    </span>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      در صورتی که اقلام جدیدی هنگام ثبت این فاکتور تعریف کرده‌اید و در فاکتور فروش یا سابقه دیگری به کار نرفته‌اند، نام کالا، موجودی و قیمت آنها کاملاً از فهرست کالاها حذف می‌شود و قیمت سایر کالاها نیز به مقدار قبل برمی‌گردد.
+                    </p>
+                  </div>
+                </label>
               </div>
 
               {/* Action Buttons */}

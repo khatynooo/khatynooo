@@ -473,17 +473,33 @@
       const urlParams = new URLSearchParams(window.location.search);
 
       // ۱. بررسی پارامترهای مستقیم کوئری
-      let chatId = urlParams.get('chat_id') || urlParams.get('chatId') || urlParams.get('cid') || urlParams.get('id') || urlParams.get('user_id') || urlParams.get('userId');
+      let chatId = urlParams.get('chat_id') || urlParams.get('chatId') || urlParams.get('cid') || urlParams.get('eitaa_chat_id');
       let mobile = urlParams.get('mobile') || urlParams.get('phone') || urlParams.get('tel');
       let firstName = urlParams.get('name') || urlParams.get('first_name') || urlParams.get('customer_name');
       let username = urlParams.get('username');
-      let receiptCode = urlParams.get('track') || urlParams.get('receipt') || urlParams.get('code');
+      let receiptCode = urlParams.get('track') || urlParams.get('receipt') || urlParams.get('code') || urlParams.get('startapp');
+
+      // اگر ایتا آن را به صورت start_param در initDataUnsafe بفرستد:
+      try {
+        const spFromWebApp = window.Eitaa?.WebApp?.initDataUnsafe?.start_param || window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        if (!receiptCode && spFromWebApp) receiptCode = spFromWebApp;
+      } catch (e) {}
+
+      // استخراج داده امضاشده خام (initData) از وب‌اپلیکیشن ایتا یا تلگرام
+      let rawInitData = '';
+      try {
+        rawInitData = window.Eitaa?.WebApp?.initData || window.Telegram?.WebApp?.initData || '';
+      } catch (e) {}
 
       // ۲. بررسی Hash استاندارد برنامک‌های ایتا / تلگرام (#tgWebAppData=... یا #eitaaWebAppData=...)
       if (window.location.hash) {
         try {
           const hashStr = window.location.hash.replace(/^#/, '');
           const hashParams = new URLSearchParams(hashStr);
+          if (!rawInitData) {
+            const rawHashInitData = hashParams.get('tgWebAppData') || hashParams.get('eitaaWebAppData');
+            if (rawHashInitData) rawInitData = rawHashInitData;
+          }
           const rawUserData = hashParams.get('user');
           if (rawUserData) {
             const parsedUser = JSON.parse(decodeURIComponent(rawUserData));
@@ -493,6 +509,10 @@
               if (!username) username = parsedUser.username;
               if (!mobile && parsedUser.phone_number) mobile = parsedUser.phone_number;
             }
+          }
+          if (!receiptCode) {
+            const spHash = hashParams.get('startapp') || hashParams.get('start_param');
+            if (spHash) receiptCode = spHash;
           }
         } catch (e) {
           console.warn('Error parsing hash webapp data:', e);
@@ -512,7 +532,26 @@
         console.warn('Error checking global WebApp object:', e);
       }
 
-      // ۴. بازیابی از حافظه محلی مرورگر در صورت عدم وجود در پارامترها
+      // ۴. در صورتی که initData خام وجود دارد اما مقادیر کاربر هنوز خوانده نشده
+      if (rawInitData && (!chatId || !firstName || !username)) {
+        try {
+          const p = new URLSearchParams(rawInitData);
+          const uVal = p.get('user');
+          if (uVal) {
+            const parsedU = JSON.parse(decodeURIComponent(uVal));
+            if (!chatId && parsedU.id) chatId = String(parsedU.id);
+            if (!firstName && parsedU.first_name) firstName = parsedU.first_name;
+            if (!username && parsedU.username) username = parsedU.username;
+            if (!mobile && parsedU.phone_number) mobile = parsedU.phone_number;
+          }
+          if (!receiptCode) {
+            const sp = p.get('start_param') || p.get('startapp');
+            if (sp) receiptCode = sp;
+          }
+        } catch (e) {}
+      }
+
+      // ۵. بازیابی از حافظه محلی مرورگر در صورت عدم وجود در پارامترها
       if (!chatId) {
         try {
           const saved = localStorage.getItem('khatynoo_eitaa_user');
@@ -530,20 +569,22 @@
         mobile: mobile ? String(mobile).trim() : '',
         firstName: firstName ? String(firstName).trim() : '',
         username: username ? String(username).trim() : '',
-        receiptCode: receiptCode ? String(receiptCode).trim() : ''
+        receiptCode: receiptCode ? String(receiptCode).trim() : '',
+        initDataRaw: rawInitData || ''
       };
     }
 
     // ارسال خودکار و ثبت chat_id و اطلاعات کاربر در دیتابیس سیستم
     async function syncEitaaCustomer(ctx) {
-      if (!ctx.chatId) return;
+      if (!ctx.chatId && !ctx.initDataRaw) return;
 
       try {
         const res = await fetch('/api/public/eitaa-connect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            chatId: ctx.chatId,
+            chatId: ctx.chatId || undefined,
+            initDataRaw: ctx.initDataRaw || undefined,
             mobile: ctx.mobile || undefined,
             firstName: ctx.firstName || undefined,
             username: ctx.username || undefined,
@@ -553,15 +594,19 @@
 
         if (res.ok) {
           const data = await res.json();
+          const resolvedChatId = data.chatId || ctx.chatId;
+          if (resolvedChatId) {
+            currentUser.chatId = resolvedChatId;
+          }
           // ذخیره در localStorage جهت مراجعات بعدی
           localStorage.setItem('khatynoo_eitaa_user', JSON.stringify({
-            chatId: ctx.chatId,
+            chatId: resolvedChatId,
             mobile: ctx.mobile || data.mobile || '',
             firstName: ctx.firstName || ''
           }));
 
           // به‌روزرسانی نمایش کارت اتصال
-          showConnectedBadge(ctx);
+          showConnectedBadge(currentUser);
 
           // اگر سفارشاتی مستقیماً یافت شدند، نمایش دهیم
           if (data.orders && data.orders.length > 0) {
@@ -816,8 +861,8 @@
       // ۱. استخراج اطلاعات کاربری از ایتا و URL
       currentUser = extractEitaaContext();
 
-      // ۲. اگر شناسه چت ایتا دریافت شده، سریعاً همگام‌سازی و در دیتابیس ثبت شود
-      if (currentUser.chatId) {
+      // ۲. اگر شناسه چت یا initData ایتا دریافت شده، سریعاً همگام‌سازی و در دیتابیس ثبت شود
+      if (currentUser.chatId || currentUser.initDataRaw) {
         showConnectedBadge(currentUser);
         await syncEitaaCustomer(currentUser);
       }

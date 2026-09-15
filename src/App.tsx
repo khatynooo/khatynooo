@@ -46,6 +46,7 @@ import { CustomersSuppliersView } from './components/admin/CustomersSuppliersVie
 import { ChequesView } from './components/admin/ChequesView';
 import { ServicesView } from './components/admin/ServicesView';
 import { BindingOrdersView } from './components/admin/BindingOrdersView';
+import { EitaaCrmView } from './components/admin/eitaa/EitaaCrmView';
 import { ProductionView } from './components/admin/ProductionView';
 import { TorobMarketView } from './components/admin/TorobMarketView';
 import { AiAssistantView } from './components/admin/AiAssistantView';
@@ -526,6 +527,7 @@ function AdminPortal() {
       {currentTab === 'cheques' && <ChequesView />}
       {currentTab === 'services' && <ServicesView />}
       {currentTab === 'binding_orders' && <BindingOrdersView />}
+      {currentTab === 'eitaa_crm' && <EitaaCrmView />}
       {currentTab === 'production' && <ProductionView />}
       {currentTab === 'torob' && <TorobMarketView />}
       {currentTab === 'ai' && <AiAssistantView />}

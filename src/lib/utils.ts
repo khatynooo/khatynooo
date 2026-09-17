@@ -1,10 +1,26 @@
-export function formatToman(amount: number | string | undefined | null): string {
-  if (amount === undefined || amount === null || amount === '') return '۰ تومان';
+let activeDisplayCurrency: 'IRT' | 'IRR' = 'IRT';
+
+export function setActiveDisplayCurrency(unit: 'IRT' | 'IRR') {
+  activeDisplayCurrency = unit;
+}
+
+export function getActiveDisplayCurrency(): 'IRT' | 'IRR' {
+  return activeDisplayCurrency;
+}
+
+export function formatToman(amount: number | string | undefined | null, overrideUnit?: 'IRT' | 'IRR'): string {
+  const unit = overrideUnit || activeDisplayCurrency;
+  const unitLabel = unit === 'IRR' ? 'ریال' : 'تومان';
+
+  if (amount === undefined || amount === null || amount === '') return `۰ ${unitLabel}`;
   const clean = typeof amount === 'string' ? toEnglishDigits(amount).replace(/[,،_\s]/g, '') : amount;
   const num = Number(clean);
-  if (isNaN(num)) return '۰ تومان';
-  const rounded = Math.round(num);
-  return rounded.toLocaleString('fa-IR') + ' تومان';
+  if (isNaN(num)) return `۰ ${unitLabel}`;
+
+  // اگر واحد ریال باشد، مبلغ تومان را در ۱۰ ضرب می‌کنیم
+  const converted = unit === 'IRR' ? num * 10 : num;
+  const rounded = Math.round(converted);
+  return rounded.toLocaleString('fa-IR') + ' ' + unitLabel;
 }
 
 export function formatNumber(num: number | string | undefined | null): string {

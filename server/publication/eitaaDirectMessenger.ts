@@ -6,6 +6,9 @@
 import { query } from '../dbClient';
 import { normalizeEitaaToken } from './providers/eitaaProvider';
 import { eitaaService } from '../eitaaService';
+import { normalizeIranianMobile, normalizeMobileNumber } from '../phoneUtils';
+
+export { normalizeIranianMobile, normalizeMobileNumber };
 
 export interface DirectMessageResult {
   success: boolean;
@@ -14,36 +17,6 @@ export interface DirectMessageResult {
   chatId?: string;
   error?: string;
 }
-
-/**
- * پاکسازی و نرمال‌سازی شماره تلفن همراه ایران (تبدیل به فرمت استاندارد 09xxxxxxxxx)
- */
-export function normalizeIranianMobile(input?: string | null): string {
-  if (!input) return '';
-  let cleaned = String(input).trim();
-  if (cleaned.startsWith('eitaa_') || cleaned.startsWith('temp_')) return '';
-  // تبدیل ارقام فارسی/عربی به انگلیسی
-  cleaned = cleaned.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-  cleaned = cleaned.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-  // حذف کاراکترهای غیر عددی
-  cleaned = cleaned.replace(/\D/g, '');
-
-  // تبدیل +98 یا 0098 به 0
-  if (cleaned.startsWith('0098')) {
-    cleaned = '0' + cleaned.slice(4);
-  } else if (cleaned.startsWith('98') && cleaned.length === 12) {
-    cleaned = '0' + cleaned.slice(2);
-  }
-
-  // اگر ۹ رقم بود و بدون صفر شروع شده
-  if (cleaned.length === 10 && cleaned.startsWith('9')) {
-    cleaned = '0' + cleaned;
-  }
-
-  return cleaned;
-}
-
-export const normalizeMobileNumber = normalizeIranianMobile;
 
 /**
  * یافتن chat_id مشتری از جدول eitaa_identities و eitaa_customer_chats

@@ -34,6 +34,7 @@ import {
   Pencil,
   Camera,
   Barcode,
+  Coins,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber, toEnglishDigits, findProductByBarcodeOrCode } from '../../lib/utils';
@@ -47,6 +48,7 @@ import { UnknownBarcodeModal } from './UnknownBarcodeModal';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 import { useNavigate } from 'react-router-dom';
 import { PurchaseInvoiceExcelImportModal } from './PurchaseInvoiceExcelImportModal';
+import { CorrectInvoiceCurrencyModal } from './CorrectInvoiceCurrencyModal';
 
 export const InvoicesView: React.FC = () => {
   const navigate = useNavigate();
@@ -68,6 +70,7 @@ export const InvoicesView: React.FC = () => {
   // Modals
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [correctCurrencyInvoice, setCorrectCurrencyInvoice] = useState<PurchaseInvoice | null>(null);
 
   // New Purchase Invoice Modal States
   const [showNewPurchaseModal, setShowNewPurchaseModal] = useState(false);
@@ -1183,6 +1186,15 @@ export const InvoicesView: React.FC = () => {
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
+                          onClick={() => setCorrectCurrencyInvoice(inv)}
+                          className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer"
+                          title="اصلاح واحد پول فاکتور (تبدیل ریال ⇄ تومان)"
+                        >
+                          <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>واحد پول</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleOpenEditPurchaseInvoice(inv)}
                           className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 transition-colors inline-flex items-center gap-1 font-bold text-[11px] cursor-pointer"
                           title="ویرایش فاکتور خرید"
@@ -2159,6 +2171,16 @@ export const InvoicesView: React.FC = () => {
             sessionStorage.setItem('khatinoo_product_search', query);
           }
           navigate('/admin/products');
+        }}
+      />
+
+      {/* Correct Purchase Invoice Currency Modal */}
+      <CorrectInvoiceCurrencyModal
+        isOpen={Boolean(correctCurrencyInvoice)}
+        invoice={correctCurrencyInvoice}
+        onClose={() => setCorrectCurrencyInvoice(null)}
+        onSuccess={() => {
+          loadData();
         }}
       />
 

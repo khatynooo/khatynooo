@@ -624,6 +624,7 @@ export interface StoreSettings {
   defaultReceiptFormat: '80mm' | '58mm' | 'a4' | 'a5';
   soundEffectsEnabled: boolean;
   currencySymbol: string;
+  displayCurrency?: 'IRT' | 'IRR';
   priceTier1Name: string; // e.g. حضوری و نقدی
   priceTier2Name: string; // e.g. آنلاین و ترب
   priceTier3Name: string; // e.g. عمده و همکار

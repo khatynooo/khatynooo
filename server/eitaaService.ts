@@ -3,10 +3,55 @@ import { normalizeIranianMobile } from './publication/eitaaDirectMessenger';
 import { EitaaIdentity, EitaaMessage, EitaaConversation, EitaaConnectivityBadge } from '../src/types';
 
 /**
+ * تکه‌کردن متون طولانی‌تر از سقف مجاز پیام‌رسان ایتا (حدود ۳۵۰۰ کاراکتر)
+ */
+export function splitMessageText(text: string, maxLength = 3500): string[] {
+  if (!text || text.length <= maxLength) return [text];
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLength) {
+    let splitIdx = remaining.lastIndexOf('\n\n', maxLength);
+    if (splitIdx === -1 || splitIdx < maxLength / 2) {
+      splitIdx = remaining.lastIndexOf('\n', maxLength);
+    }
+    if (splitIdx === -1 || splitIdx < maxLength / 2) {
+      splitIdx = remaining.lastIndexOf(' ', maxLength);
+    }
+    if (splitIdx === -1 || splitIdx < maxLength / 2) {
+      splitIdx = maxLength;
+    }
+    parts.push(remaining.slice(0, splitIdx).trim());
+    remaining = remaining.slice(splitIdx).trim();
+  }
+  if (remaining.length > 0) {
+    parts.push(remaining);
+  }
+  return parts;
+}
+
+interface QueuedEitaaTask {
+  id: string;
+  chatId: string;
+  text: string;
+  title?: string;
+  identityId?: string;
+  customerId?: string;
+  eitaaUserId?: string;
+  maxAttempts?: number;
+  resolve: (res: { success: boolean; message: EitaaMessage; error?: string }) => void;
+  reject: (err: any) => void;
+}
+
+/**
  * سرویس یکپارچه هویت، مخاطبین CRM و ارسال پیام‌های ایتا
  * با اولویت قطعی chat_id به عنوان شناسه اصلی
  */
 export class EitaaService {
+  private messageQueue: QueuedEitaaTask[] = [];
+  private isProcessingQueue = false;
+  private queueIntervalMs = 1000; // پیش‌فرض ۱ ثانیه فاصله بین ارسال‌ها
+  private backoffMultiplier = 1; // ضریب بازگشت نمایی در صورت بروز خطای نرخ/۴۲۹
+
   /**
    * دریافت توکن بات ایتا از جدول binding_settings
    */
@@ -55,6 +100,7 @@ export class EitaaService {
     receiptCode?: string;
     metadata?: Record<string, any>;
     isVerified?: boolean;
+    createCustomer?: boolean;
   }): Promise<EitaaIdentity> {
     const rawChatId = String(data.chatId || '').trim();
     if (!rawChatId) {
@@ -62,7 +108,7 @@ export class EitaaService {
     }
 
     // نرمال‌سازی استاندارد شماره همراه ایران
-    const cleanMobile: string | null = data.mobile ? (normalizeIranianMobile(data.mobile) || null) : null;
+    let cleanMobile: string | null = data.mobile ? (normalizeIranianMobile(data.mobile) || null) : null;
 
     return await withTransaction(async (client) => {
       // ۱. جستجوی مشتری موجود بر اساس شماره موبایل جهت پیوند بدون ساخت مشتری تکراری
@@ -134,8 +180,8 @@ export class EitaaService {
         );
         savedRow = updateRes.rows[0];
       } else {
-        // کاربر جدید ایتا: در صورت وجود شماره همراه معتبر واقعی، ایجاد مشتری اختصاصی در سیستم
-        if (!linkedCustomerId && cleanMobile) {
+        // کاربر جدید ایتا: فقط در صورتی که ساخت مشتری صراحتاً درخواست شده باشد و شماره همراه معتبر واقعی ایران داشته باشد
+        if (!linkedCustomerId && cleanMobile && data.createCustomer === true) {
           const newCustId = `cst_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
           const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.username || `مشتری ایتا ${cleanMobile}`;
           await client.query(
@@ -180,49 +226,55 @@ export class EitaaService {
       }
 
       // ۳. پیوند هوشمند با سفارشات فنرزنی
-      // الف) در صورت وجود کد فیش، اتصال مستقیم سفارش به شناسه چت
-      if (receiptCode) {
-        await client.query(
-          `UPDATE binding_orders 
-           SET customer_eitaa_chat_id = $1, updated_at = NOW() 
-           WHERE receipt_code = $2`,
-          [rawChatId, receiptCode]
-        );
+      // فقط در صورتی که هویت کاربر صراحتاً از داده مینی‌اپ تایید شده باشد (data.isVerified === true)
+      // و هرگز chat_id سفارشی که از قبل به شخص دیگری تعلق دارد بازنویسی نشود
+      if (data.isVerified === true) {
+        // الف) در صورت وجود کد فیش، اتصال سفارش به شناسه چت (فقط اگر خالی باشد یا متعلق به همین چت باشد)
+        if (receiptCode) {
+          await client.query(
+            `UPDATE binding_orders 
+             SET customer_eitaa_chat_id = $1, updated_at = NOW() 
+             WHERE receipt_code = $2
+               AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '' OR customer_eitaa_chat_id = $1)`,
+            [rawChatId, receiptCode]
+          );
 
-        // در صورتی که موبایل ثبت نشده بود، دریافت موبایل از سفارش و انتساب به هویت ایتا
-        if (!cleanMobile) {
-          try {
-            const boRes = await client.query(
-              `SELECT customer_mobile FROM binding_orders WHERE receipt_code = $1 LIMIT 1`,
-              [receiptCode]
-            );
-            if (boRes.rows.length > 0 && boRes.rows[0].customer_mobile) {
-              const detectedMob = boRes.rows[0].customer_mobile.trim();
-              if (detectedMob) {
-                cleanMobile = detectedMob;
-                await client.query(
-                  `UPDATE eitaa_identities SET mobile = $1, updated_at = NOW() WHERE chat_id = $2 AND (mobile IS NULL OR mobile = '')`,
-                  [cleanMobile, rawChatId]
-                );
+          // در صورتی که موبایل ثبت نشده بود، دریافت موبایل از سفارش و انتساب به هویت ایتا
+          if (!cleanMobile) {
+            try {
+              const boRes = await client.query(
+                `SELECT customer_mobile FROM binding_orders WHERE receipt_code = $1 LIMIT 1`,
+                [receiptCode]
+              );
+              if (boRes.rows.length > 0 && boRes.rows[0].customer_mobile) {
+                const detectedMob = boRes.rows[0].customer_mobile.trim();
+                if (detectedMob) {
+                  cleanMobile = detectedMob;
+                  await client.query(
+                    `UPDATE eitaa_identities SET mobile = $1, updated_at = NOW() WHERE chat_id = $2 AND (mobile IS NULL OR mobile = '')`,
+                    [cleanMobile, rawChatId]
+                  );
+                }
               }
-            }
-          } catch {}
+            } catch {}
+          }
+        }
+
+        // ب) در صورت وجود شماره موبایل، اتصال سفارشات قبلی و فعلی مشتری به شناسه چت ایتا (فقط رکوردهایی که chat_id ندارند)
+        if (cleanMobile) {
+          const noZeroMob = cleanMobile.replace(/^0/, '');
+          await client.query(
+            `UPDATE binding_orders 
+             SET customer_eitaa_chat_id = $1, updated_at = NOW() 
+             WHERE (customer_mobile = $2 OR customer_mobile = $3 OR customer_mobile = $4 OR customer_mobile = $5)
+               AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '')`,
+            [rawChatId, cleanMobile, noZeroMob, '0' + noZeroMob, '+98' + noZeroMob]
+          );
         }
       }
 
-      // ب) در صورت وجود شماره موبایل، اتصال تمام سفارشات قبلی و فعلی مشتری به شناسه چت ایتا
-      if (cleanMobile) {
-        const noZeroMob = cleanMobile.replace(/^0/, '');
-        await client.query(
-          `UPDATE binding_orders 
-           SET customer_eitaa_chat_id = $1, updated_at = NOW() 
-           WHERE (customer_mobile = $2 OR customer_mobile = $3 OR customer_mobile = $4 OR customer_mobile = $5)
-             AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '' OR customer_eitaa_chat_id <> $1)`,
-          [rawChatId, cleanMobile, noZeroMob, '0' + noZeroMob, '+98' + noZeroMob]
-        );
-      }
-
       // ۴. سازگاری رو به عقب با جدول قدیمی eitaa_customer_chats با کلید یکتای chat_id
+      // فقط در صورتی که شماره موبایل واقعی وجود داشته باشد ذخیره شود و هرگز مقدار ساختگی eitaa_<chatId> در فیلد موبایل نوشته نشود
       try {
         await client.query(
           `INSERT INTO eitaa_customer_chats (mobile, chat_id, eitaa_user_id, first_name, username, receipt_codes, last_seen, updated_at)
@@ -236,7 +288,7 @@ export class EitaaService {
              last_seen = NOW(),
              updated_at = NOW()`,
           [
-            cleanMobile || `eitaa_${rawChatId}`,
+            cleanMobile || null,
             rawChatId,
             data.eitaaUserId || null,
             data.firstName || null,
@@ -253,7 +305,49 @@ export class EitaaService {
   }
 
   /**
-   * ارسال مستقیم پیام به مخاطب ایتا با شناسه قطعی chat_id و لاگ کامل
+   * افزودن پیام به صف ارسال پیام‌های ایتا (همزمانی ۱، رعایت فاصله ۱ ثانیه، و مدیریت Backoff)
+   */
+  async enqueueMessage(params: {
+    chatId: string;
+    text: string;
+    title?: string;
+    identityId?: string;
+    customerId?: string;
+    eitaaUserId?: string;
+    maxAttempts?: number;
+  }): Promise<{ success: boolean; messageId?: string; queued: boolean }> {
+    const rawChatId = String(params.chatId || '').trim();
+    if (!rawChatId) {
+      throw new Error('شناسه گفتگوی ایتا (chat_id) نامعتبر است.');
+    }
+    const text = (params.text || '').trim();
+    if (!text) {
+      throw new Error('متن پیام نمی‌تواند خالی باشد.');
+    }
+
+    const chunks = splitMessageText(text, 3500);
+
+    for (const chunk of chunks) {
+      this.messageQueue.push({
+        id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        chatId: rawChatId,
+        text: chunk,
+        title: params.title,
+        identityId: params.identityId,
+        customerId: params.customerId,
+        eitaaUserId: params.eitaaUserId,
+        maxAttempts: params.maxAttempts || 3,
+        resolve: () => {},
+        reject: () => {},
+      });
+    }
+
+    this.processQueue();
+    return { success: true, queued: true };
+  }
+
+  /**
+   * ارسال مستقیم یا صف‌بندی‌شده پیام به مخاطب ایتا با شکستن متون طولانی
    */
   async sendMessage(params: {
     chatId: string;
@@ -272,6 +366,96 @@ export class EitaaService {
     if (!text) {
       throw new Error('متن پیام نمی‌تواند خالی باشد.');
     }
+
+    const chunks = splitMessageText(text, 3500);
+
+    // اگر پیام بیش از ۱ تکه بود، تکه‌ها را به نوبت ارسال کن
+    let lastResult: { success: boolean; message: EitaaMessage; error?: string } | null = null;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkTitle = chunks.length > 1 && i > 0 ? undefined : params.title;
+      lastResult = await new Promise((resolve, reject) => {
+        this.messageQueue.push({
+          id: `queue_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          chatId: rawChatId,
+          text: chunks[i],
+          title: chunkTitle,
+          identityId: params.identityId,
+          customerId: params.customerId,
+          eitaaUserId: params.eitaaUserId,
+          maxAttempts: params.maxAttempts || 3,
+          resolve,
+          reject,
+        });
+        this.processQueue();
+      });
+      if (!lastResult.success) break;
+    }
+
+    return lastResult!;
+  }
+
+  /**
+   * پردازنده صف پیام‌ها (Concurrency: 1، فاصله حداقل ۱ ثانیه، و Backoff در خطای ۴۲۹)
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.messageQueue.length > 0) {
+        const task = this.messageQueue.shift();
+        if (!task) break;
+
+        try {
+          const result = await this.sendSingleMessageDirect({
+            chatId: task.chatId,
+            text: task.text,
+            title: task.title,
+            identityId: task.identityId,
+            customerId: task.customerId,
+            eitaaUserId: task.eitaaUserId,
+            maxAttempts: task.maxAttempts,
+          });
+
+          task.resolve(result);
+
+          // بررسی خطای نرخ/محدودیت (Rate Limit / 429)
+          if (
+            result.message.httpStatus === 429 ||
+            (result.error && (result.error.includes('429') || result.error.toLowerCase().includes('flood') || result.error.includes('too many requests')))
+          ) {
+            this.backoffMultiplier = Math.min(this.backoffMultiplier * 2, 32);
+            console.warn(`[Eitaa Queue] اعمال Backoff به میزان ${this.backoffMultiplier}x به دلیل محدودیت نرخ ارسال`);
+          } else if (result.success) {
+            this.backoffMultiplier = 1;
+          }
+        } catch (err: any) {
+          task.reject(err);
+        }
+
+        // رعایت فاصله زمانی بین پیام‌ها (پیش‌فرض ۱ ثانیه * ضریب پس‌نشینی)
+        const delayMs = this.queueIntervalMs * this.backoffMultiplier;
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  /**
+   * ارسال مستقیم یک پیام تکی به وب‌سرویس ایتا و ثبت در دیتابیس
+   */
+  private async sendSingleMessageDirect(params: {
+    chatId: string;
+    text: string;
+    title?: string;
+    identityId?: string;
+    customerId?: string;
+    eitaaUserId?: string;
+    maxAttempts?: number;
+  }): Promise<{ success: boolean; message: EitaaMessage; error?: string }> {
+    const rawChatId = String(params.chatId || '').trim();
+    const text = (params.text || '').trim();
 
     const { token } = await this.getBotToken();
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

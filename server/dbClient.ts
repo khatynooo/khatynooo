@@ -630,7 +630,7 @@ export async function seedInitialData(): Promise<void> {
     }
 
     // ۴. محصولات اولیه کاتالوگ با قیمت‌گذاری ۵ سطحی و بارکد
-    const prodCountRes = await rawQuery('SELECT COUNT(*) FROM products');
+    const prodCountRes = await rawQuery("SELECT COUNT(*) FROM products WHERE id = 'prod_1'");
     if (parseInt(prodCountRes.rows[0].count, 10) === 0) {
       console.log('🌱 [Seed] در حال ایجاد محصولات اولیه کاتالوگ خطی‌نو...');
       const sampleProducts = [
@@ -822,7 +822,7 @@ export async function seedInitialData(): Promise<void> {
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10, $11, $12, $13, $14,
             $15, $16, $17, $18, $19, $20
-          )`,
+          ) ON CONFLICT (id) DO NOTHING`,
           [
             p.id, p.name, p.code, p.barcode, p.categoryId, p.subCategoryId, p.unit,
             p.buyPrice, p.salePrice, p.priceShop1, p.priceShop2, p.priceShop3, p.wholesalePrice, p.minAllowedPrice,
@@ -889,7 +889,7 @@ export async function seedInitialData(): Promise<void> {
         ) VALUES (
           'frm_1', 'تولید دفتر ۱۰۰ برگ سیمی جلد سخت خطی‌نو', 'prod_2', 'دفتر ۱۰۰ برگ سیمی جلد سخت خطی‌نو (تولید اختصاصی)',
           'cat_notebooks', 'جلد', 1, $1, $2, 65000, 'فرمولاسیون استاندارد تولید دفتر سیمی جلد سخت در کارگاه خطی‌نو'
-        )`,
+        ) ON CONFLICT (id) DO NOTHING`,
         [formula1Materials, formula1Overheads]
       );
     }

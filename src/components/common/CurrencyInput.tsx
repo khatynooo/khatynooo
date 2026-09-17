@@ -1,62 +1,129 @@
-import React from 'react';
-import { toEnglishDigits } from '../../lib/utils';
+import React, { useState, useEffect } from 'react';
+import { CurrencyUnit, getCurrencyLabel, convertToBase, convertFromBase } from '../../lib/currency';
+import { toEnglishDigits, toPersianDigits } from '../../lib/utils';
+import { useCurrency } from '../../context/CurrencyContext';
 
 interface CurrencyInputProps {
   id?: string;
-  value: number | string;
-  onChange: (val: number) => void;
-  label?: string;
+  value: number | string | null | undefined; // مبلغ در واحد پایه تومان
+  onChange: (valueInToman: number, displayValue: number) => void;
+  unit?: CurrencyUnit;
+  allowUnitToggle?: boolean;
   placeholder?: string;
-  disabled?: boolean;
-  required?: boolean;
   className?: string;
+  disabled?: boolean;
+  readOnly?: boolean;
+  label?: string;
+  error?: string;
   helperText?: string;
-  showRialConversion?: boolean;
+  showHelperWord?: boolean; // نمایش معادل حروفی فارسی
 }
 
-// فرمت سه‌رقم‌سه‌رقم
-function formatCommaSeparated(val: number | string): string {
-  if (val === undefined || val === null || val === '') return '';
-  const clean = toEnglishDigits(String(val)).replace(/[^0-9]/g, '');
-  if (!clean) return '';
-  return Number(clean).toLocaleString('fa-IR');
+// تابع تبدیل ساده عدد به حروف برای مبالغ رایج (هزار، میلیون، میلیارد)
+function numberToPersianWords(num: number, unitLabel: string): string {
+  if (!num || isNaN(num) || num <= 0) return '';
+  if (num >= 1_000_000_000) {
+    const b = (num / 1_000_000_000).toFixed(1).replace('.0', '');
+    return `${toPersianDigits(b)} میلیارد ${unitLabel}`;
+  }
+  if (num >= 1_000_000) {
+    const m = (num / 1_000_000).toFixed(1).replace('.0', '');
+    return `${toPersianDigits(m)} میلیون ${unitLabel}`;
+  }
+  if (num >= 1_000) {
+    const k = (num / 1_000).toFixed(1).replace('.0', '');
+    return `${toPersianDigits(k)} هزار ${unitLabel}`;
+  }
+  return `${toPersianDigits(num)} ${unitLabel}`;
 }
 
 export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   id,
   value,
   onChange,
-  label,
+  unit: propUnit,
+  allowUnitToggle = false,
   placeholder = '۰',
-  disabled = false,
-  required = false,
   className = '',
+  disabled = false,
+  readOnly = false,
+  label,
+  error,
   helperText,
-  showRialConversion = true,
+  showHelperWord = true,
 }) => {
-  const numValue = typeof value === 'number' ? value : Number(toEnglishDigits(String(value)).replace(/[^0-9]/g, '')) || 0;
+  const { currency: globalCurrency } = useCurrency();
+  const currentUnit = propUnit || globalCurrency;
+  const [internalUnit, setInternalUnit] = useState<CurrencyUnit>(currentUnit);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = toEnglishDigits(e.target.value).replace(/[^0-9]/g, '');
-    const parsed = raw ? parseInt(raw, 10) : 0;
-    onChange(parsed);
+  useEffect(() => {
+    if (propUnit) {
+      setInternalUnit(propUnit);
+    }
+  }, [propUnit]);
+
+  // تبدیل مقدار پایه (تومان) به واحد نمایشی ورودی
+  const numericToman = typeof value === 'number' ? value : Number(toEnglishDigits(value || 0).replace(/,/g, '')) || 0;
+  const displayNum = convertFromBase(numericToman, internalUnit);
+
+  const [displayString, setDisplayString] = useState<string>(() => {
+    return displayNum > 0 ? toPersianDigits(displayNum.toLocaleString('en-US')) : '';
+  });
+
+  useEffect(() => {
+    if (displayNum > 0) {
+      setDisplayString(toPersianDigits(displayNum.toLocaleString('en-US')));
+    } else if (value === 0 || value === '0') {
+      setDisplayString('۰');
+    } else {
+      setDisplayString('');
+    }
+  }, [value, internalUnit]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    const cleanEnglish = toEnglishDigits(rawVal).replace(/[,،_\s]/g, '');
+
+    if (!cleanEnglish) {
+      setDisplayString('');
+      onChange(0, 0);
+      return;
+    }
+
+    const parsed = Number(cleanEnglish);
+    if (isNaN(parsed)) return;
+
+    setDisplayString(toPersianDigits(parsed.toLocaleString('en-US')));
+    const valueInToman = convertToBase(parsed, internalUnit);
+    onChange(valueInToman, parsed);
   };
 
-  const rialEquivalent = numValue * 10;
+  const handleToggleUnit = () => {
+    if (!allowUnitToggle) return;
+    const newUnit: CurrencyUnit = internalUnit === 'IRT' ? 'IRR' : 'IRT';
+    setInternalUnit(newUnit);
+  };
+
+  const parsedCurrentNum = Number(toEnglishDigits(displayString).replace(/,/g, '')) || 0;
+  const helperWord = showHelperWord && parsedCurrentNum > 0 ? numberToPersianWords(parsedCurrentNum, getCurrencyLabel(internalUnit)) : '';
 
   return (
-    <div className={`flex flex-col gap-1.5 ${className}`}>
+    <div className="w-full">
       {label && (
-        <label htmlFor={id} className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center justify-between">
-          <span>
-            {label} {required && <span className="text-red-500">*</span>}
-          </span>
-          {numValue > 0 && showRialConversion && (
-            <span className="text-[11px] font-normal text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full">
-              معادل: {rialEquivalent.toLocaleString('fa-IR')} ریال
-            </span>
+        <div className="flex items-center justify-between mb-1.5">
+          <label htmlFor={id} className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+            {label}
+          </label>
+          {allowUnitToggle && (
+            <button
+              type="button"
+              onClick={handleToggleUnit}
+              className="text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:underline cursor-pointer"
+            >
+              تغییر به {getCurrencyLabel(internalUnit === 'IRT' ? 'IRR' : 'IRT')}
+            </button>
           )}
-        </label>
+        </div>
       )}
 
       <div className="relative flex items-center">
@@ -65,21 +132,34 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
           type="text"
           inputMode="numeric"
           dir="ltr"
-          disabled={disabled}
-          required={required}
-          value={numValue > 0 ? numValue.toLocaleString('en-US') : ''}
+          value={displayString}
+          onChange={handleInputChange}
           placeholder={placeholder}
-          onChange={handleChange}
-          className="w-full px-3 py-2.5 bg-stone-50 dark:bg-stone-800/90 border border-stone-300 dark:border-stone-700 rounded-xl text-stone-900 dark:text-stone-100 font-mono text-left tracking-wider text-base focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed pl-16"
+          disabled={disabled}
+          readOnly={readOnly}
+          className={`w-full bg-slate-50 dark:bg-[#1A1A1E] border ${
+            error ? 'border-rose-500 focus:border-rose-600' : 'border-slate-200 dark:border-[#2E2E33] focus:border-orange-500'
+          } rounded-xl px-3 py-2 text-sm font-mono text-right text-slate-900 dark:text-white outline-hidden transition-colors pl-14 ${className}`}
         />
-        <div className="absolute left-3 pointer-events-none text-xs font-bold text-stone-500 dark:text-stone-400 select-none">
-          تومان
+
+        <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-1">
+          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 bg-slate-200/60 dark:bg-[#2A2A2E] px-2 py-0.5 rounded-md">
+            {getCurrencyLabel(internalUnit)}
+          </span>
         </div>
       </div>
 
-      {helperText && (
-        <p className="text-[11px] text-stone-500 dark:text-stone-400">{helperText}</p>
-      )}
+      <div className="flex items-center justify-between mt-1 px-1">
+        {helperWord ? (
+          <span className="text-[11px] text-orange-600 dark:text-orange-400/90 font-medium">
+            «{helperWord}»
+          </span>
+        ) : helperText ? (
+          <span className="text-[11px] text-slate-400">{helperText}</span>
+        ) : null}
+
+        {error && <span className="text-[11px] text-rose-500 font-medium">{error}</span>}
+      </div>
     </div>
   );
 };

@@ -1948,6 +1948,7 @@ export const db = {
         warehouseId: r.warehouse_id || 'wh_central',
         documentNumber: r.document_number || undefined,
         notes: r.notes,
+        sourceCurrency: r.source_currency || 'toman',
         createdAt: r.created_at,
       };
     });
@@ -2012,6 +2013,7 @@ export const db = {
       warehouseId: r.warehouse_id || 'wh_central',
       documentNumber: r.document_number || undefined,
       notes: r.notes,
+      sourceCurrency: r.source_currency || 'toman',
       createdAt: r.created_at,
     };
   },
@@ -2550,6 +2552,92 @@ export const db = {
         createdAt: oldInv.created_at,
       };
     });
+  },
+
+  async correctPurchaseInvoiceCurrency(
+    id: string,
+    params: {
+      operation: 'divide_10' | 'multiply_10';
+      updateProductCosts?: boolean;
+      context?: { userId?: string; userName?: string; ip?: string; userAgent?: string };
+    }
+  ): Promise<{
+    invoice: PurchaseInvoice;
+    updatedProductsCount: number;
+    factor: number;
+  }> {
+    const factor = params.operation === 'divide_10' ? 0.1 : 10;
+    const inv = await this.getPurchaseInvoiceById(id);
+    if (!inv) {
+      throw new Error('فاکتور خرید مورد نظر یافت نشد.');
+    }
+
+    const newItems = (inv.items || []).map((it: any) => ({
+      productId: it.productId,
+      productName: it.productName,
+      quantity: Number(it.quantity || 0),
+      buyPrice: Math.round(Number(it.buyPrice || 0) * factor),
+      total: Math.round(Number(it.total || 0) * factor),
+    }));
+
+    const newTotalAmount = Math.round(Number(inv.totalAmount || 0) * factor);
+    const newPaidAmount = Math.round(Number(inv.paidAmount || 0) * factor);
+    const newCashAmount = Math.round(Number(inv.cashAmount || 0) * factor);
+    const newChequeAmount = Math.round(Number(inv.chequeAmount || 0) * factor);
+    const newDiscount = Math.round(Number(inv.discount || 0) * factor);
+
+    const newCheques = (inv.cheques || []).map((c: any) => ({
+      ...c,
+      amount: Math.round(Number(c.amount || 0) * factor),
+    }));
+
+    // بروزرسانی فاکتور با متد استاندارد برای تصحیح مانده بدهی و حساب‌ها
+    const updatedInvoice = await this.updatePurchaseInvoice(id, {
+      supplierId: inv.supplierId,
+      supplierName: inv.supplierName,
+      items: newItems,
+      totalAmount: newTotalAmount,
+      paidAmount: newPaidAmount,
+      cashAmount: newCashAmount,
+      chequeAmount: newChequeAmount,
+      cheques: newCheques,
+      discount: newDiscount,
+      paymentMethod: inv.paymentMethod,
+      warehouseId: inv.warehouseId,
+      invoiceNumber: inv.invoiceNumber,
+      invoiceDate: inv.invoiceDate,
+      documentNumber: inv.documentNumber,
+      notes: (inv.notes ? inv.notes + '\n' : '') + `[تصحیح واحد پول: ${params.operation === 'divide_10' ? 'تقسیم بر ۱۰ (ریال به تومان)' : 'ضرب در ۱۰ (تومان به ریال)'}]`,
+      userId: params.context?.userId,
+      userName: params.context?.userName,
+      ip: params.context?.ip,
+      userAgent: params.context?.userAgent,
+    });
+
+    // ثبت واحد اصلاح شده در جدول purchase_invoices
+    const newSourceCurrency = params.operation === 'divide_10' ? 'toman' : 'rial';
+    await query(`UPDATE purchase_invoices SET source_currency = $1 WHERE id = $2`, [newSourceCurrency, id]);
+    updatedInvoice.sourceCurrency = newSourceCurrency as any;
+
+    // در صورت انتخاب کاربر، به‌روزرسانی بهای خرید کالاها در جدول products
+    let updatedProductsCount = 0;
+    if (params.updateProductCosts) {
+      for (const item of newItems) {
+        if (item.productId && item.buyPrice > 0) {
+          await query(
+            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
+            [item.buyPrice, item.productId]
+          );
+          updatedProductsCount++;
+        }
+      }
+    }
+
+    return {
+      invoice: updatedInvoice,
+      updatedProductsCount,
+      factor,
+    };
   },
 
   async createPurchaseInvoice(invoice: {
@@ -4171,34 +4259,6 @@ export const db = {
       cleanChatId || clean,
     ]);
 
-    // اگر شناسه چت ایتا ارائه شده است، سفارشات یافت‌شده را بلافاصله به این چت پیوند دهیم
-    if (cleanChatId && res.rows.length > 0) {
-      const orderIds = res.rows.map((r: any) => r.id);
-      const receiptCodes = res.rows.map((r: any) => r.receipt_code).filter(Boolean);
-      const primaryMobile = res.rows.find((r: any) => r.customer_mobile)?.customer_mobile;
-
-      try {
-        await query(
-          `UPDATE binding_orders 
-           SET customer_eitaa_chat_id = $1, updated_at = NOW() 
-           WHERE id = ANY($2::text[]) AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '' OR customer_eitaa_chat_id <> $1)`,
-          [cleanChatId, orderIds]
-        );
-
-        await query(
-          `UPDATE eitaa_identities 
-           SET receipt_codes = ARRAY(SELECT DISTINCT unnest(COALESCE(receipt_codes, '{}') || $1::text[])),
-               mobile = COALESCE(NULLIF(mobile, ''), $2),
-               last_seen_at = NOW(),
-               updated_at = NOW()
-           WHERE chat_id = $3`,
-          [receiptCodes, primaryMobile || null, cleanChatId]
-        );
-      } catch (err) {
-        console.warn('Could not auto-link tracked orders to eitaa identity:', err);
-      }
-    }
-
     return res.rows.map((r: any) => ({
       id: r.id,
       receiptCode: r.receipt_code,
@@ -5379,6 +5439,7 @@ export const db = {
       defaultReceiptFormat: r.default_receipt_format,
       soundEffectsEnabled: r.sound_effects_enabled,
       currencySymbol: r.currency_symbol || 'تومان',
+      displayCurrency: r.display_currency || 'IRT',
       priceTier1Name: r.price_tier1_name,
       priceTier2Name: r.price_tier2_name,
       priceTier3Name: r.price_tier3_name,
@@ -5399,7 +5460,8 @@ export const db = {
         currency_symbol = COALESCE($9, currency_symbol),
         price_tier1_name = COALESCE($10, price_tier1_name),
         price_tier2_name = COALESCE($11, price_tier2_name),
-        price_tier3_name = COALESCE($12, price_tier3_name)
+        price_tier3_name = COALESCE($12, price_tier3_name),
+        display_currency = COALESCE($13, display_currency)
        WHERE id = 'default'`,
       [
         s.storeName,
@@ -5414,6 +5476,7 @@ export const db = {
         s.priceTier1Name,
         s.priceTier2Name,
         s.priceTier3Name,
+        s.displayCurrency,
       ]
     );
     return this.getStoreSettings();

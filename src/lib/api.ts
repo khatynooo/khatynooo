@@ -255,6 +255,13 @@ export const api = {
     }).then(handleResponse);
   },
 
+  correctPurchaseInvoiceCurrency: (id: string, data: { operation: 'divide_10' | 'multiply_10'; updateProductCosts?: boolean }) =>
+    fetch(`${API_BASE}/invoices/purchase/${id}/correct-currency`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
   // Return Invoices
   getReturnInvoices: () =>
     fetch(`${API_BASE}/invoices/returns`, {
@@ -292,6 +299,18 @@ export const api = {
     fetch(`${API_BASE}/customers/${id}`, {
       method: 'DELETE',
       headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  getGarbageCustomers: () =>
+    fetch(`${API_BASE}/customers/garbage`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  cleanupGarbageCustomers: (customerIds?: string[]) =>
+    fetch(`${API_BASE}/customers/cleanup-garbage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ customerIds }),
     }).then(handleResponse),
 
   getCustomerLedger: (id: string) =>
@@ -886,11 +905,17 @@ export const api = {
       headers: getAuthHeader(),
     }).then(handleResponse),
 
-  updateEitaaBotSettings: (data: { token?: string; botUsername?: string; appUrl?: string }) =>
+  updateEitaaBotSettings: (data: { token?: string; botUsername?: string; appUrl?: string; webhookSecret?: string }) =>
     fetch(`${API_BASE}/eitaa/bot-settings`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  generateEitaaWebhookSecret: () =>
+    fetch(`${API_BASE}/eitaa/generate-webhook-secret`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     }).then(handleResponse),
 
   getOnlineOrders: () =>

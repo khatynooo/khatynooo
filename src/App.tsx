@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
+import { CurrencyProvider } from './context/CurrencyContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CustomerAuthProvider } from './context/CustomerAuthContext';
 import { CartProvider } from './context/CartContext';
@@ -546,37 +547,39 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <AuthProvider>
-          <CustomerAuthProvider>
-            <CartProvider>
-              <ToastProvider>
-                <BrowserRouter>
-                  <Routes>
-                    {/* ویترین عمومی فروشگاه آنلاین */}
-                    <Route path="/" element={<Storefront />} />
-                    <Route path="/store" element={<Storefront />} />
-                    <Route path="/account" element={<Storefront initialAccountOpen={true} />} />
-                    <Route path="/profile" element={<Storefront initialAccountOpen={true} />} />
-                    <Route path="/orders" element={<Storefront initialAccountOpen={true} />} />
+        <CurrencyProvider>
+          <AuthProvider>
+            <CustomerAuthProvider>
+              <CartProvider>
+                <ToastProvider>
+                  <BrowserRouter>
+                    <Routes>
+                      {/* ویترین عمومی فروشگاه آنلاین */}
+                      <Route path="/" element={<Storefront />} />
+                      <Route path="/store" element={<Storefront />} />
+                      <Route path="/account" element={<Storefront initialAccountOpen={true} />} />
+                      <Route path="/profile" element={<Storefront initialAccountOpen={true} />} />
+                      <Route path="/orders" element={<Storefront initialAccountOpen={true} />} />
 
-                    {/* پنل اختصاصی مدیریت فروشگاه آنلاین (اسلایدرها، سفارشات اینترنتی، تنظیمات سایت) */}
-                    <Route path="/adminsite" element={<SiteAdminPortal />} />
-                    <Route path="/adminsite/:tab" element={<SiteAdminPortal />} />
-                    <Route path="/adminsite/login" element={<SiteAdminLogin />} />
+                      {/* پنل اختصاصی مدیریت فروشگاه آنلاین (اسلایدرها، سفارشات اینترنتی، تنظیمات سایت) */}
+                      <Route path="/adminsite" element={<SiteAdminPortal />} />
+                      <Route path="/adminsite/:tab" element={<SiteAdminPortal />} />
+                      <Route path="/adminsite/login" element={<SiteAdminLogin />} />
 
-                    {/* پرتال صندوق، انبارداری و حسابداری حضوری */}
-                    <Route path="/admin" element={<AdminPortal />} />
-                    <Route path="/admin/:tab" element={<AdminPortal />} />
-                    <Route path="/admin/login" element={<AdminLogin />} />
+                      {/* پرتال صندوق، انبارداری و حسابداری حضوری */}
+                      <Route path="/admin" element={<AdminPortal />} />
+                      <Route path="/admin/:tab" element={<AdminPortal />} />
+                      <Route path="/admin/login" element={<AdminLogin />} />
 
-                    {/* مسیر پیش‌فرض */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
-                </BrowserRouter>
-              </ToastProvider>
-            </CartProvider>
-          </CustomerAuthProvider>
-        </AuthProvider>
+                      {/* مسیر پیش‌فرض */}
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </BrowserRouter>
+                </ToastProvider>
+              </CartProvider>
+            </CustomerAuthProvider>
+          </AuthProvider>
+        </CurrencyProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

@@ -33,10 +33,13 @@ CREATE TABLE IF NOT EXISTS price_bulk_adjustments (
     product_ids TEXT[] NOT NULL,
     before_state JSONB NOT NULL,
     after_state JSONB NOT NULL,
+    reason TEXT NULL,
     created_by VARCHAR(100) NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     undone_at TIMESTAMP WITH TIME ZONE NULL,
     undone_by VARCHAR(100) NULL
 );
+
+ALTER TABLE price_bulk_adjustments ADD COLUMN IF NOT EXISTS reason TEXT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_price_bulk_adj_created ON price_bulk_adjustments(created_at DESC);

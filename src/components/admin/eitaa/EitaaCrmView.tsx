@@ -22,7 +22,9 @@ import {
   Hash,
   ChevronLeft,
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  Copy,
+  Key
 } from 'lucide-react';
 import { api } from '../../../lib/api';
 import { formatToman, toPersianDigits } from '../../../lib/utils';
@@ -118,10 +120,12 @@ export const EitaaCrmView: React.FC = () => {
     token: string;
     botUsername: string;
     appUrl: string;
+    webhookSecret?: string;
   }>({
     token: '',
     botUsername: '',
     appUrl: '',
+    webhookSecret: '',
   });
 
   // مودال افزودن / ویرایش مخاطب
@@ -192,14 +196,31 @@ export const EitaaCrmView: React.FC = () => {
     try {
       const res = await api.getEitaaBotSettings();
       if (res) {
+        const s = res.settings || res;
         setBotSettings({
-          token: res.token || '',
-          botUsername: res.botUsername || '',
-          appUrl: res.appUrl || '',
+          token: s.token || '',
+          botUsername: s.botUsername || '',
+          appUrl: s.appUrl || '',
+          webhookSecret: s.webhookSecret || '',
         });
       }
     } catch (err) {
       console.error('Error loading bot settings:', err);
+    }
+  };
+
+  const handleGenerateWebhookSecret = async () => {
+    if (!confirm('آیا از تولید رمز عبور جدید برای وب‌هوک ایتا اطمینان دارید؟ در صورت تغییر، باید این رمز را در هدر درخواست‌های ارسالی تنظیم فرمایید.')) {
+      return;
+    }
+    try {
+      const res = await api.generateEitaaWebhookSecret();
+      if (res.secret) {
+        setBotSettings((prev) => ({ ...prev, webhookSecret: res.secret }));
+        showToast('رمز وب‌هوک جدید با موفقیت تولید و ذخیره شد.', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'خطا در تولید رمز جدید', 'error');
     }
   };
 
@@ -1079,6 +1100,79 @@ export const EitaaCrmView: React.FC = () => {
                 placeholder="https://khatynoo.ir"
                 className="w-full bg-slate-50 dark:bg-[#1A1A1E] border border-slate-200 dark:border-[#2E2E33] rounded-xl px-3 py-2 text-xs font-mono"
               />
+            </div>
+
+            {/* پیکربندی وب‌هوک و رمز اختصاصی */}
+            <div className="p-3 bg-slate-50 dark:bg-[#1A1A1E] border border-slate-200 dark:border-[#2E2E33] rounded-2xl space-y-3">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                <Key className="w-4 h-4 text-orange-500" />
+                <span>پیکربندی وب‌هوک و امنیت دریافت پیام (Webhook Security)</span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  آدرس اختصاصی وب‌هوک سامانه خطی‌نو
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={typeof window !== 'undefined' ? `${window.location.origin}/api/eitaa/webhook` : '/api/eitaa/webhook'}
+                    className="w-full bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#2E2E33] rounded-xl px-3 py-1.5 text-xs font-mono text-slate-700 dark:text-slate-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        navigator.clipboard.writeText(`${window.location.origin}/api/eitaa/webhook`);
+                        showToast('آدرس وب‌هوک در کلیپ‌بورد کپی شد.', 'success');
+                      }
+                    }}
+                    className="p-2 border border-slate-200 dark:border-[#2E2E33] hover:bg-slate-100 dark:hover:bg-[#222225] rounded-xl text-slate-600 dark:text-slate-300 cursor-pointer"
+                    title="کپی آدرس وب‌هوک"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  رمز محرمانه وب‌هوک (X-Eitaa-Secret)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={botSettings.webhookSecret || ''}
+                    onChange={(e) => setBotSettings({ ...botSettings, webhookSecret: e.target.value })}
+                    placeholder="رمز عبور محرمانه هدر وب‌هوک..."
+                    className="w-full bg-white dark:bg-[#111113] border border-slate-200 dark:border-[#2E2E33] rounded-xl px-3 py-1.5 text-xs font-mono text-slate-700 dark:text-slate-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (botSettings.webhookSecret) {
+                        navigator.clipboard.writeText(botSettings.webhookSecret);
+                        showToast('رمز وب‌هوک کپی شد.', 'success');
+                      }
+                    }}
+                    className="p-2 border border-slate-200 dark:border-[#2E2E33] hover:bg-slate-100 dark:hover:bg-[#222225] rounded-xl text-slate-600 dark:text-slate-300 cursor-pointer"
+                    title="کپی رمز محرمانه"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateWebhookSecret}
+                    className="px-3 py-1.5 bg-slate-200 dark:bg-[#2E2E33] hover:bg-orange-600 hover:text-white dark:hover:bg-orange-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-medium cursor-pointer shrink-0 transition-colors"
+                  >
+                    تولید رمز جدید
+                  </button>
+                </div>
+                <span className="text-[10px] text-slate-400 mt-1 block leading-relaxed">
+                  ارسال این رمز در هدر <code className="font-mono text-orange-500">X-Eitaa-Secret</code> برای کلیه درخواست‌های وب‌هوک ورودی الزامی است.
+                </span>
+              </div>
             </div>
 
             <div className="pt-3">

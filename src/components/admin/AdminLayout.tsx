@@ -25,6 +25,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import { getRoleTitle, getRoleBadgeClass } from '../../lib/utils';
 import { UserRole } from '../../types';
 import { ThemeToggle } from '../common/ThemeToggle';
@@ -90,6 +91,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const allowedItems = menuItems.filter((item) => hasRole(item.roles));
   const currentTabDef = menuItems.find((m) => m.id === currentTab);
   const isCurrentTabAllowed = currentTabDef ? hasRole(currentTabDef.roles) : true;
+  const { currency, setCurrency } = useCurrency();
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0A0A0B] flex flex-col md:flex-row text-right text-slate-800 dark:text-[#E0E0E0] selection:bg-[#C9A227] selection:text-black font-sans transition-colors" dir="rtl">
@@ -197,6 +199,34 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 dark:bg-[#161619] text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 px-3 py-1 rounded-full text-xs font-bold shadow-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
               <span>کارتخوان پاسارگاد: آنلاین (TCP/IP)</span>
+            </div>
+
+            {/* کلید تغییر واحد ارز سراسری (تومان / ریال) */}
+            <div className="flex items-center bg-slate-100 dark:bg-[#1A1A1E] p-0.5 rounded-xl border border-slate-200 dark:border-[#2E2E33] text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setCurrency('IRT')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  currency === 'IRT'
+                    ? 'bg-white dark:bg-[#2A2A2E] text-orange-600 dark:text-orange-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="نمایش مبالغ به تومان"
+              >
+                تومان
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrency('IRR')}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                  currency === 'IRR'
+                    ? 'bg-white dark:bg-[#2A2A2E] text-orange-600 dark:text-orange-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+                title="نمایش مبالغ به ریال"
+              >
+                ریال
+              </button>
             </div>
 
             {/* Live Theme Toggle */}

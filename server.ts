@@ -1631,6 +1631,31 @@ app.delete('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin'
   }
 });
 
+// اصلاح واحد پول فاکتور خرید (تبدیل ریال به تومان یا بالعکس با تطبیق مانده تامین‌کننده و انبار)
+app.post('/api/invoices/purchase/:id/correct-currency', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { operation, updateProductCosts } = req.body;
+    if (!['divide_10', 'multiply_10'].includes(operation)) {
+      return res.status(400).json({ error: 'عملیات نامعتبر است (تنها divide_10 یا multiply_10 مجاز است).' });
+    }
+    const result = await db.correctPurchaseInvoiceCurrency(id, {
+      operation,
+      updateProductCosts: Boolean(updateProductCosts),
+      context: {
+        userId: req.user?.id,
+        userName: req.user?.fullName || req.user?.username,
+        ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',
+        userAgent: req.headers['user-agent'] || 'Web POS',
+      },
+    });
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('Error correcting purchase invoice currency:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 5.1. RETURN INVOICES (مرجوعی کالا - خرابی یا انصراف)
 // -------------------------------------------------------------
@@ -1794,6 +1819,82 @@ app.post('/api/customers', authenticateToken, async (req, res) => {
       notes,
     });
     res.json({ customer, message: 'مشتری جدید با موفقیت ثبت شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// شناسایی مشتریان بدون هویت معتبر و بدون تراکنش (Garbage Customers)
+app.get('/api/customers/garbage', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req, res) => {
+  try {
+    const garbageRes = await query(`
+      SELECT c.id, c.name, c.mobile, c.created_at, c.balance,
+        (SELECT COUNT(*) FROM sales_invoices si WHERE si.customer_id = c.id) as sales_count,
+        (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) as orders_count,
+        (SELECT COUNT(*) FROM binding_orders bo WHERE bo.customer_id = c.id) as binding_orders_count
+      FROM customers c
+      WHERE (
+        c.mobile IS NULL 
+        OR TRIM(c.mobile) = '' 
+        OR c.mobile NOT LIKE '09%' 
+        OR c.name LIKE 'مشتری ایتا%'
+      )
+      AND NOT EXISTS (SELECT 1 FROM sales_invoices si WHERE si.customer_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM binding_orders bo WHERE bo.customer_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM cheques ch WHERE ch.customer_id = c.id)
+      AND NOT EXISTS (SELECT 1 FROM customer_transactions ct WHERE ct.customer_id = c.id)
+      ORDER BY c.created_at DESC
+      LIMIT 200
+    `);
+    res.json({ garbageCustomers: garbageRes.rows, count: garbageRes.rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// پاکسازی مشتریان زباله بدون تراکنش
+app.post('/api/customers/cleanup-garbage', authenticateToken, requireRole(['admin', 'chief_accountant']), async (req: AuthRequest, res) => {
+  try {
+    const customerIds: string[] = req.body.customerIds;
+    let deletedCount = 0;
+
+    if (Array.isArray(customerIds) && customerIds.length > 0) {
+      for (const cid of customerIds) {
+        const delRes = await query(`
+          DELETE FROM customers c
+          WHERE c.id = $1
+            AND NOT EXISTS (SELECT 1 FROM sales_invoices si WHERE si.customer_id = c.id)
+            AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+            AND NOT EXISTS (SELECT 1 FROM binding_orders bo WHERE bo.customer_id = c.id)
+            AND NOT EXISTS (SELECT 1 FROM cheques ch WHERE ch.customer_id = c.id)
+            AND NOT EXISTS (SELECT 1 FROM customer_transactions ct WHERE ct.customer_id = c.id)
+        `, [cid]);
+        deletedCount += (delRes.rowCount || 0);
+      }
+    } else {
+      const delRes = await query(`
+        DELETE FROM customers c
+        WHERE (
+          c.mobile IS NULL 
+          OR TRIM(c.mobile) = '' 
+          OR c.mobile NOT LIKE '09%' 
+          OR c.name LIKE 'مشتری ایتا%'
+        )
+        AND NOT EXISTS (SELECT 1 FROM sales_invoices si WHERE si.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM binding_orders bo WHERE bo.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM cheques ch WHERE ch.customer_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM customer_transactions ct WHERE ct.customer_id = c.id)
+      `);
+      deletedCount = delRes.rowCount || 0;
+    }
+
+    res.json({
+      success: true,
+      deletedCount,
+      message: `${deletedCount} مشتری بدون تراکنش با موفقیت پاکسازی شد.`,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2335,19 +2436,21 @@ app.delete('/api/binding-orders/eitaa-chats/:mobile', authenticateToken, async (
 // وبهوک بات ایتا جهت دریافت پیام‌ها، ثبت خودکار chat_id و رهگیری سفارشات
 app.post(['/api/eitaa/webhook', '/api/binding-orders/eitaa-webhook'], async (req, res) => {
   try {
-    // اعتبارسنجی امنیتی وب‌هوک در صورت تنظیم eitaa_webhook_secret
-    try {
-      const bsRes = await query(`SELECT eitaa_webhook_secret FROM binding_settings WHERE id = 'default' LIMIT 1`);
-      const configuredSecret = bsRes.rows[0]?.eitaa_webhook_secret;
-      if (configuredSecret && configuredSecret.trim()) {
-        const receivedSecret = (req.headers['x-eitaa-secret'] || req.headers['x-webhook-secret'] || req.query.secret || req.body?.secret) as string;
-        if (!receivedSecret || receivedSecret !== configuredSecret.trim()) {
-          console.warn('[Eitaa Webhook] Unauthorized webhook attempt: secret mismatch');
-          return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid webhook secret' });
-        }
-      }
-    } catch (secErr) {
-      console.warn('[Eitaa Webhook] Secret check bypassed due to DB check failure:', secErr);
+    // اعتبارسنجی امنیتی وب‌هوک الزامی فقط از طریق هدر X-Eitaa-Secret با مقایسه زمان‌ثابت
+    const bsRes = await query(`SELECT eitaa_webhook_secret FROM binding_settings WHERE id = 'default' LIMIT 1`);
+    const configuredSecret = (bsRes.rows[0]?.eitaa_webhook_secret || '').trim();
+    const receivedSecret = ((req.headers['x-eitaa-secret'] || '') as string).trim();
+
+    if (!configuredSecret || !receivedSecret) {
+      console.warn('[Eitaa Webhook] Unauthorized webhook attempt: missing secret header or unconfigured secret');
+      return res.status(401).json({ ok: false, error: 'Unauthorized: Missing or invalid X-Eitaa-Secret header' });
+    }
+
+    const bufConfigured = Buffer.from(configuredSecret);
+    const bufReceived = Buffer.from(receivedSecret);
+    if (bufConfigured.length !== bufReceived.length || !crypto.timingSafeEqual(bufConfigured, bufReceived)) {
+      console.warn('[Eitaa Webhook] Unauthorized webhook attempt: secret mismatch');
+      return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid webhook secret' });
     }
 
     const update = req.body || {};
@@ -2373,7 +2476,7 @@ app.post(['/api/eitaa/webhook', '/api/binding-orders/eitaa-webhook'], async (req
       await eitaaService.handleIncomingUpdate(update);
     }
 
-    // ۲. پیوند موبایل با سفارشات صحافی در صورت استخراج شماره
+    // ۲. پیوند موبایل با سفارشات صحافی در صورت استخراج شماره واقعی
     if (extractedMobile && chatId) {
       await registerEitaaCustomerChat({
         mobile: extractedMobile,
@@ -2389,6 +2492,20 @@ app.post(['/api/eitaa/webhook', '/api/binding-orders/eitaa-webhook'], async (req
   } catch (err: any) {
     console.warn('[Eitaa Webhook Warning]:', err?.message || err);
     res.json({ ok: false, error: err?.message });
+  }
+});
+
+// تولید و تنظیم رمز عبور جدید برای وب‌هوک ایتا
+app.post('/api/eitaa/generate-webhook-secret', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const newSecret = crypto.randomBytes(24).toString('hex');
+    await query(
+      `UPDATE binding_settings SET eitaa_webhook_secret = $1, updated_at = NOW() WHERE id = 'default'`,
+      [newSecret]
+    );
+    res.json({ success: true, secret: newSecret });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2447,26 +2564,29 @@ app.post('/api/binding-orders', authenticateToken, async (req: AuthRequest, res)
       }
     );
 
-    // ارسال خودکار پیام ورود در صورت فعال بودن در تنظیمات
+    // ارسال خودکار پیام ورود در پس‌زمینه بدون مسدودسازی چرخه درخواست HTTP
     const settings = await db.getBindingSettings();
-    let eitaaResult: any = null;
 
     if (settings.autoSendIntake) {
-      // ارسال در پیش‌زمینه بدون بلاک کردن طولانی پاسخ
-      try {
-        eitaaResult = await sendBindingOrderEitaaNotification(order, 'intake');
-        if (eitaaResult) {
-          order.eitaaIntakeSent = eitaaResult.success;
-          order.eitaaIntakeStatus = eitaaResult.status;
-        }
-      } catch (eitaaErr: any) {
-        console.warn('Auto send intake Eitaa error:', eitaaErr);
-      }
+      sendBindingOrderEitaaNotification(order, 'intake')
+        .then(async (res) => {
+          if (res) {
+            try {
+              await query(
+                `UPDATE binding_orders SET eitaa_intake_sent = $1, eitaa_intake_status = $2, updated_at = NOW() WHERE id = $3`,
+                [res.success, res.status, order.id]
+              );
+            } catch (_) {}
+          }
+        })
+        .catch((eitaaErr: any) => {
+          console.warn('[Eitaa Auto Intake Background Error]:', eitaaErr?.message || eitaaErr);
+        });
     }
 
     res.json({
       order,
-      eitaaResult,
+      eitaaResult: null,
       message: `سفارش صحافی با کد رسید ${order.receiptCode} با موفقیت ثبت شد.`,
     });
   } catch (err: any) {
@@ -2506,25 +2626,29 @@ app.patch('/api/binding-orders/:id', authenticateToken, async (req: AuthRequest,
     );
 
     // در صورتی که وضعیت کار به 'done' تغییر کرده و پیام آماده‌سازی قبلاً ارسال نشده باشد
-    let eitaaResult: any = null;
     const isNowDone = updatedOrder.workStatus === 'done' && prevOrder.workStatus !== 'done';
     const settings = await db.getBindingSettings();
 
     if (isNowDone && settings.autoSendReady && !updatedOrder.eitaaReadySent) {
-      try {
-        eitaaResult = await sendBindingOrderEitaaNotification(updatedOrder, 'ready');
-        if (eitaaResult) {
-          updatedOrder.eitaaReadySent = eitaaResult.success;
-          updatedOrder.eitaaReadyStatus = eitaaResult.status;
-        }
-      } catch (eitaaErr: any) {
-        console.warn('Auto send ready Eitaa error:', eitaaErr);
-      }
+      sendBindingOrderEitaaNotification(updatedOrder, 'ready')
+        .then(async (res) => {
+          if (res) {
+            try {
+              await query(
+                `UPDATE binding_orders SET eitaa_ready_sent = $1, eitaa_ready_status = $2, updated_at = NOW() WHERE id = $3`,
+                [res.success, res.status, updatedOrder.id]
+              );
+            } catch (_) {}
+          }
+        })
+        .catch((eitaaErr: any) => {
+          console.warn('[Eitaa Auto Ready Background Error]:', eitaaErr?.message || eitaaErr);
+        });
     }
 
     res.json({
       order: updatedOrder,
-      eitaaResult,
+      eitaaResult: null,
       message: 'سفارش فنرزنی با موفقیت به‌روزرسانی شد.',
     });
   } catch (err: any) {
@@ -2637,6 +2761,22 @@ app.get('/api/public/binding-track', async (req, res) => {
   }
 });
 
+// محدودکننده نرخ درخواست برای اندپوینت اتصال ایتا (حداکثر ۱۰ درخواست در دقیقه برای هر آی‌پی)
+const eitaaConnectRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function checkEitaaConnectRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = eitaaConnectRateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    eitaaConnectRateLimitMap.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 10) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
 /**
  * اعتبارسنجی رشته داده خام initData ارسالی از مینی‌اپ ایتا/تلگرام بر اساس توکن بات و الگوریتم HMAC-SHA256
  */
@@ -2661,7 +2801,11 @@ function verifyEitaaInitData(initDataRaw: string, botToken: string): { valid: bo
     const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
     const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
-    if (computedHash !== receivedHash) return { valid: false };
+    const bufComputed = Buffer.from(computedHash);
+    const bufReceived = Buffer.from(receivedHash);
+    if (bufComputed.length !== bufReceived.length || !crypto.timingSafeEqual(bufComputed, bufReceived)) {
+      return { valid: false };
+    }
 
     // جلوگیری از استفاده مجدد داده قدیمی (replay) — رد کردن initData قدیمی‌تر از ۱۰ دقیقه
     const authDate = Number(dataObj['auth_date'] || 0);
@@ -2677,6 +2821,11 @@ function verifyEitaaInitData(initDataRaw: string, botToken: string): { valid: bo
 
 app.post('/api/public/eitaa-connect', async (req, res) => {
   try {
+    const clientIp = getClientIp(req);
+    if (!checkEitaaConnectRateLimit(clientIp)) {
+      return res.status(429).json({ error: 'تعداد درخواست‌ها بیش از حد مجاز است. لطفاً یک دقیقه دیگر تلاش کنید.' });
+    }
+
     const { chatId, mobile, receiptCode, firstName, username, eitaaUserId, initDataRaw } = req.body;
 
     let cleanChatId = chatId ? String(chatId).trim() : '';
@@ -2684,7 +2833,7 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
     let verifiedUsername = username;
     let isVerified = false;
 
-    // تلاش برای اعتبارسنجی رسمی — در صورت موفقیت، chat_id از داده تاییدشده گرفته می‌شود (نه از ورودی کلاینت)
+    // تلاش برای اعتبارسنجی رسمی بر اساس امضای دیجیتال مینی‌اپ
     if (initDataRaw) {
       const botToken = await resolveEitaaBotToken();
       const verification = verifyEitaaInitData(initDataRaw, botToken);
@@ -2701,20 +2850,19 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
       }
     }
 
-    if (!cleanChatId) {
-      return res.status(400).json({ error: 'شناسه چت ایتا (chat_id) الزامی است.' });
+    // اگر داده تایید نشده باشد، هیچ داده‌ای افشا نشده و سفارشی متصل نمی‌شود
+    if (!isVerified) {
+      return res.json({
+        success: false,
+        verified: false,
+        orders: [],
+        message: 'برای مشاهده سفارش و اتصال حساب، لطفاً از داخل برنامک رسمی ایتا وارد شوید.',
+      });
     }
 
-    // جلوگیری از بازنویسی حساب‌های تایید شده با درخواست‌های تایید نشده
-    try {
-      const existingCheck = await query(`SELECT is_verified, mobile FROM eitaa_identities WHERE chat_id = $1 LIMIT 1`, [cleanChatId]);
-      if (existingCheck.rows.length > 0) {
-        const ex = existingCheck.rows[0];
-        if (ex.is_verified && !isVerified) {
-          return res.status(403).json({ error: 'این حساب ایتا قبلاً به صورت تاییدشده متصل شده است و تغییر آن نیازمند ورود مجدد از مینی‌اپ است.' });
-        }
-      }
-    } catch (_) {}
+    if (!cleanChatId) {
+      return res.status(400).json({ error: 'شناسه چت ایتا (chat_id) معتبر دریافت نشد.' });
+    }
 
     const cleanMobile = mobile ? String(mobile).trim() : undefined;
     const cleanReceipt = receiptCode ? String(receiptCode).trim() : undefined;
@@ -2726,24 +2874,38 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
       eitaaUserId: eitaaUserId ? String(eitaaUserId).trim() : undefined,
       firstName: verifiedFirstName ? String(verifiedFirstName).trim() : undefined,
       username: verifiedUsername ? String(verifiedUsername).trim() : undefined,
-      isVerified,
+      isVerified: true,
     });
 
-    // در جدول eitaa_identities ستون is_verified ثبت می‌شود
     try {
-      await query(`UPDATE eitaa_identities SET is_verified = $1 WHERE chat_id = $2`, [isVerified, cleanChatId]);
+      await query(`UPDATE eitaa_identities SET is_verified = TRUE WHERE chat_id = $1`, [cleanChatId]);
     } catch (e) {}
 
-    // جستجوی سفارشات مرتبط با این کاربر جهت نمایش مستقیم در وب‌اپلیکیشن
-    const relatedOrders = await db.getPublicBindingTracking(cleanReceipt || cleanMobile || cleanChatId, cleanChatId);
+    // جستجوی سفارشات مرتبط با این کاربر تاییدشده
+    const rawOrders = await db.getPublicBindingTracking(cleanReceipt || cleanMobile || cleanChatId, cleanChatId);
+    const sanitizedOrders = rawOrders.map((o: any) => ({
+      id: o.id,
+      receiptCode: o.receiptCode,
+      title: o.title || `سفارش فنرزنی ${o.receiptCode}`,
+      bookCount: o.bookCount,
+      workStatus: o.workStatus,
+      paymentStatus: o.paymentStatus,
+      orderDate: o.orderDate,
+      estimatedReadyDate: o.estimatedReadyDate,
+      readyAt: o.readyAt,
+      deliveredAt: o.deliveredAt,
+      eitaaIntakeSent: o.eitaaIntakeSent,
+      eitaaReadySent: o.eitaaReadySent,
+      customerName: o.customerName ? o.customerName.slice(0, 1) + '***' : '',
+    }));
 
     res.json({
       success,
       chatId: cleanChatId,
       mobile: cleanMobile,
-      verified: isVerified,
-      orders: relatedOrders,
-      message: 'حساب ایتای شما با موفقیت در سامانه خدمات خطی‌نو متصل شد. اطلاعیه‌های آماده‌سازی سفارش به صورت خودکار ارسال خواهد شد.',
+      verified: true,
+      orders: sanitizedOrders,
+      message: 'حساب ایتای شما با موفقیت تایید و متصل شد.',
     });
   } catch (err: any) {
     console.error('Error in /api/public/eitaa-connect:', err);
@@ -2751,26 +2913,76 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
   }
 });
 
-// دریافت سفارشات مرتبط با شناسه چت ایتا، شماره همراه یا کد فیش
+// دریافت سفارشات مرتبط با شناسه چت ایتا با الزام به احراز هویت تاییدشده و حداقل اطلاعات حساس
 app.get('/api/public/eitaa-orders', async (req, res) => {
   try {
     const chatId = req.query.chat_id ? String(req.query.chat_id).trim() : '';
     const mobile = req.query.mobile ? String(req.query.mobile).trim() : '';
     const track = req.query.track ? String(req.query.track).trim() : '';
 
-    if (!chatId && !mobile && !track) {
-      return res.status(400).json({ error: 'حداقل یکی از پارامترهای chat_id، mobile یا track الزامی است.' });
+    if (!chatId) {
+      return res.status(401).json({ error: 'شناسه چت ایتا (chat_id) الزامی است.' });
     }
 
-    let searchTarget = track || mobile || chatId;
-    let orders = await db.getPublicBindingTracking(searchTarget, chatId);
+    // ۱. بررسی اینکه هویت ایتا قبلاً به صورت تاییدشده ثبت شده باشد
+    const idRes = await query(
+      `SELECT chat_id, mobile, receipt_codes, is_verified 
+       FROM eitaa_identities 
+       WHERE chat_id = $1 LIMIT 1`,
+      [chatId]
+    );
 
-    // اگر با پارامتر اول پیدا نشد و موبایل هم بود
-    if (orders.length === 0 && mobile && mobile !== searchTarget) {
-      orders = await db.getPublicBindingTracking(mobile, chatId);
+    if (idRes.rows.length === 0 || !idRes.rows[0].is_verified) {
+      return res.status(403).json({
+        error: 'دسترسی غیرمجاز: جهت مشاهده و پیگیری سفارشات، لطفاً از داخل برنامک رسمی ایتا وارد شوید.',
+      });
     }
 
-    res.json({ orders });
+    const identity = idRes.rows[0];
+
+    // ۲. اگر track یا mobile ارسال شده باشد، بررسی تطابق آن با هویت تاییدشده
+    if (track) {
+      const receiptMatch = (identity.receipt_codes || []).includes(track);
+      if (!receiptMatch) {
+        const orderCheck = await query(
+          `SELECT id FROM binding_orders WHERE receipt_code = $1 AND customer_eitaa_chat_id = $2 LIMIT 1`,
+          [track, chatId]
+        );
+        if (orderCheck.rows.length === 0) {
+          return res.status(403).json({ error: 'کد فیش درخواستی متعلق به این حساب ایتا نمی‌باشد.' });
+        }
+      }
+    }
+
+    if (mobile) {
+      const normQueryMob = normalizeIranianMobile(mobile);
+      const normIdentMob = identity.mobile ? normalizeIranianMobile(identity.mobile) : '';
+      if (normQueryMob && normIdentMob && normQueryMob !== normIdentMob) {
+        return res.status(403).json({ error: 'شماره همراه درخواستی با حساب ایتای تاییدشده مطابقت ندارد.' });
+      }
+    }
+
+    const searchTarget = track || identity.mobile || chatId;
+    const rawOrders = await db.getPublicBindingTracking(searchTarget, chatId);
+
+    // ۳. کاهش اطلاعات حساس در پاسخ عمومی (حذف آدرس، مخفی‌سازی نام و حذف مبالغ خرید و فیلدهای داخلی)
+    const sanitizedOrders = rawOrders.map((o: any) => ({
+      id: o.id,
+      receiptCode: o.receiptCode,
+      title: o.title || `سفارش فنرزنی ${o.receiptCode}`,
+      bookCount: o.bookCount,
+      workStatus: o.workStatus,
+      paymentStatus: o.paymentStatus,
+      orderDate: o.orderDate,
+      estimatedReadyDate: o.estimatedReadyDate,
+      readyAt: o.readyAt,
+      deliveredAt: o.deliveredAt,
+      eitaaIntakeSent: o.eitaaIntakeSent,
+      eitaaReadySent: o.eitaaReadySent,
+      customerName: o.customerName ? o.customerName.slice(0, 1) + '***' : '',
+    }));
+
+    res.json({ orders: sanitizedOrders });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -4489,7 +4701,20 @@ async function start() {
       console.warn('⚠️ [Database Warning] پایگاه داده با موتور داخلی فعال شد.');
     }
 
-    // 5. Start Multi-Channel Publication Worker
+    // 5. اطمینان از وجود رمز عبور امن برای وب‌هوک ایتا
+    try {
+      const secRes = await query(`SELECT eitaa_webhook_secret FROM binding_settings WHERE id = 'default' LIMIT 1`);
+      let secret = secRes.rows[0]?.eitaa_webhook_secret?.trim();
+      if (!secret) {
+        secret = crypto.randomBytes(24).toString('hex');
+        await query(`UPDATE binding_settings SET eitaa_webhook_secret = $1 WHERE id = 'default'`, [secret]);
+        console.warn('⚠️ [Eitaa Webhook Security Warning] رمز وب‌هوک ایتا خالی بود! یک رمز تصادفی امن تولید و ذخیره شد:', secret);
+      }
+    } catch (e: any) {
+      console.warn('Could not verify/seed eitaa webhook secret:', e?.message || e);
+    }
+
+    // 6. Start Multi-Channel Publication Worker
     try {
       startPublicationWorker();
     } catch (workerErr: any) {

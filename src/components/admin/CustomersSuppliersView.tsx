@@ -21,12 +21,14 @@ import {
   FileText,
   BadgeCheck,
   UserPlus,
-  RefreshCw
+  RefreshCw,
+  UserX,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits } from '../../lib/utils';
 import { Customer, Supplier } from '../../types';
 import { useToast } from '../common/Toast';
+import { GarbageCustomersModal } from './GarbageCustomersModal';
 
 export const CustomersSuppliersView: React.FC = () => {
   const { showToast } = useToast();
@@ -37,6 +39,7 @@ export const CustomersSuppliersView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'debtors' | 'settled'>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [showGarbageModal, setShowGarbageModal] = useState(false);
 
   // Modal States: Customer (Create / Edit)
   const [showCustModal, setShowCustModal] = useState(false);
@@ -483,14 +486,26 @@ export const CustomersSuppliersView: React.FC = () => {
 
           {/* Add New Button */}
           {activeTab === 'customers' ? (
-            <button
-              id="btn-create-customer-modal"
-              onClick={handleOpenCreateCustomer}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>مشتری جدید</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-cleanup-garbage-customers"
+                type="button"
+                onClick={() => setShowGarbageModal(true)}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                title="پاکسازی مشتریان بدون شماره تماس معتبر یا رکوردهای آزمایشی ایتا"
+              >
+                <UserX className="w-4 h-4 text-rose-600" />
+                <span>پاکسازی رکوردهای نامعتبر</span>
+              </button>
+              <button
+                id="btn-create-customer-modal"
+                onClick={handleOpenCreateCustomer}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>مشتری جدید</span>
+              </button>
+            </div>
           ) : (
             <button
               id="btn-create-supplier-modal"
@@ -1509,6 +1524,15 @@ export const CustomersSuppliersView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Garbage Customers Cleanup Modal */}
+      <GarbageCustomersModal
+        isOpen={showGarbageModal}
+        onClose={() => setShowGarbageModal(false)}
+        onSuccess={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 };

@@ -467,6 +467,13 @@ export async function initializeSchema(): Promise<void> {
       "ALTER TABLE cheques ADD COLUMN IF NOT EXISTS invoice_number VARCHAR(100)",
       "ALTER TABLE products ADD COLUMN IF NOT EXISTS last_market_price BIGINT",
       "ALTER TABLE products ADD COLUMN IF NOT EXISTS last_market_checked_at TIMESTAMP WITH TIME ZONE",
+      "ALTER TABLE purchase_invoices ADD COLUMN IF NOT EXISTS source_currency VARCHAR(10) DEFAULT 'toman'",
+      "ALTER TABLE eitaa_identities ADD COLUMN IF NOT EXISTS consecutive_failures INT DEFAULT 0",
+      "ALTER TABLE eitaa_identities ADD COLUMN IF NOT EXISTS invalidated_at TIMESTAMP WITH TIME ZONE NULL",
+      "ALTER TABLE eitaa_identities ADD COLUMN IF NOT EXISTS eitaa_delivery_blocked BOOLEAN DEFAULT FALSE",
+      "ALTER TABLE eitaa_messages ADD COLUMN IF NOT EXISTS provider_update_id VARCHAR(100) NULL",
+      "ALTER TABLE eitaa_messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
+      "ALTER TABLE binding_settings ADD COLUMN IF NOT EXISTS eitaa_webhook_secret VARCHAR(100) NULL",
     ];
     for (const colSql of ensureColumns) {
       try {
@@ -475,6 +482,24 @@ export async function initializeSchema(): Promise<void> {
         // ستون از قبل وجود دارد
       }
     }
+
+    try {
+      await rawQuery(`
+        CREATE TABLE IF NOT EXISTS price_bulk_adjustments (
+          id VARCHAR(64) PRIMARY KEY,
+          operation VARCHAR(20) NOT NULL,
+          applied_fields TEXT[] NOT NULL,
+          product_ids TEXT[] NOT NULL,
+          before_state JSONB NOT NULL,
+          after_state JSONB NOT NULL,
+          reason TEXT NULL,
+          created_by VARCHAR(100) NULL,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          undone_at TIMESTAMP WITH TIME ZONE NULL,
+          undone_by VARCHAR(100) NULL
+        );
+      `);
+    } catch (_) {}
 
     // بررسی و خودترمیمی اختصاصی جدول eitaa_customer_chats
     try {

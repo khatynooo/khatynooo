@@ -18,9 +18,10 @@ export interface DirectMessageResult {
 /**
  * پاکسازی و نرمال‌سازی شماره تلفن همراه ایران (تبدیل به فرمت استاندارد 09xxxxxxxxx)
  */
-export function normalizeMobileNumber(input?: string): string {
+export function normalizeIranianMobile(input?: string | null): string {
   if (!input) return '';
-  let cleaned = input.trim();
+  let cleaned = String(input).trim();
+  if (cleaned.startsWith('eitaa_') || cleaned.startsWith('temp_')) return '';
   // تبدیل ارقام فارسی/عربی به انگلیسی
   cleaned = cleaned.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
   cleaned = cleaned.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
@@ -42,17 +43,33 @@ export function normalizeMobileNumber(input?: string): string {
   return cleaned;
 }
 
+export const normalizeMobileNumber = normalizeIranianMobile;
+
 /**
- * یافتن chat_id مشتری از جدول eitaa_customer_chats
+ * یافتن chat_id مشتری از جدول eitaa_identities و eitaa_customer_chats
  */
 export async function getEitaaChatIdForMobile(mobile: string): Promise<string | null> {
-  const normMobile = normalizeMobileNumber(mobile);
+  const normMobile = normalizeIranianMobile(mobile);
   if (!normMobile) return null;
 
   try {
+    // ابتدا از eitaa_identities بررسی شود (با اولویت هویتی که مسدود یا بلاک نشده باشد)
+    const idRes = await query(
+      `SELECT chat_id FROM eitaa_identities 
+       WHERE (mobile = $1 OR mobile = $2) 
+         AND is_blocked = FALSE 
+         AND eitaa_delivery_blocked = FALSE 
+       ORDER BY last_seen_at DESC LIMIT 1`,
+      [normMobile, normMobile.replace(/^0/, '')]
+    );
+    if (idRes.rows.length > 0 && idRes.rows[0].chat_id) {
+      return String(idRes.rows[0].chat_id).trim();
+    }
+
+    // بررسی پشتیبان از جدول نگاشت eitaa_customer_chats
     const res = await query(
-      `SELECT chat_id FROM eitaa_customer_chats WHERE mobile = $1 ORDER BY updated_at DESC LIMIT 1`,
-      [normMobile]
+      `SELECT chat_id FROM eitaa_customer_chats WHERE (mobile = $1 OR mobile = $2) ORDER BY updated_at DESC LIMIT 1`,
+      [normMobile, normMobile.replace(/^0/, '')]
     );
     if (res.rows.length > 0 && res.rows[0].chat_id) {
       return String(res.rows[0].chat_id).trim();

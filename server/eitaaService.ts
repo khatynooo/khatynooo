@@ -1,4 +1,5 @@
 import { query, withTransaction } from './dbClient';
+import { normalizeIranianMobile } from './publication/eitaaDirectMessenger';
 import { EitaaIdentity, EitaaMessage, EitaaConversation, EitaaConnectivityBadge } from '../src/types';
 
 /**
@@ -60,14 +61,8 @@ export class EitaaService {
       throw new Error('شناسه گفتگوی ایتا (chat_id) الزامی است.');
     }
 
-    // نرمال‌سازی شماره موبایل
-    let cleanMobile: string | null = null;
-    if (data.mobile) {
-      const m = data.mobile.replace(/[^\d+]/g, '').trim();
-      if (m && !m.startsWith('eitaa_') && !m.startsWith('temp_')) {
-        cleanMobile = m.startsWith('98') ? '0' + m.slice(2) : (m.startsWith('+98') ? '0' + m.slice(3) : m);
-      }
-    }
+    // نرمال‌سازی استاندارد شماره همراه ایران
+    const cleanMobile: string | null = data.mobile ? (normalizeIranianMobile(data.mobile) || null) : null;
 
     return await withTransaction(async (client) => {
       // ۱. جستجوی مشتری موجود بر اساس شماره موبایل جهت پیوند بدون ساخت مشتری تکراری
@@ -103,7 +98,7 @@ export class EitaaService {
 
       if (existingRes.rows.length > 0) {
         const existing = existingRes.rows[0];
-        // حفظ مشتری متصل فعلی در صورت عدم وجود لینک جدید (سناریوی ۲ - عدم ایجاد مشتری تکراری)
+        // حفظ مشتری متصل فعلی در صورت عدم وجود لینک جدید (عدم ایجاد مشتری تکراری)
         linkedCustomerId = linkedCustomerId || existing.customer_id;
 
         let currentReceipts: string[] = Array.isArray(existing.receipt_codes) ? existing.receipt_codes : [];
@@ -139,17 +134,17 @@ export class EitaaService {
         );
         savedRow = updateRes.rows[0];
       } else {
-        // کاربر جدید ایتا (سناریوی ۱): ایجاد یا اتصال مشتری
-        if (!linkedCustomerId) {
-          const newCustId = `cst_eitaa_${rawChatId}`;
-          const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.username || `کاربر ایتا ${rawChatId}`;
+        // کاربر جدید ایتا: در صورت وجود شماره همراه معتبر واقعی، ایجاد مشتری اختصاصی در سیستم
+        if (!linkedCustomerId && cleanMobile) {
+          const newCustId = `cst_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const fullName = [data.firstName, data.lastName].filter(Boolean).join(' ') || data.username || `مشتری ایتا ${cleanMobile}`;
           await client.query(
             `INSERT INTO customers (id, name, mobile, address, balance, created_at, updated_at)
              VALUES ($1, $2, $3, $4, 0, NOW(), NOW())
              ON CONFLICT (id) DO UPDATE SET
                name = COALESCE(customers.name, EXCLUDED.name),
                updated_at = NOW()`,
-            [newCustId, fullName, cleanMobile || `eitaa_${rawChatId}`, `ثبت شده از پیام‌رسان ایتا`]
+            [newCustId, fullName, cleanMobile, `ثبت شده از پیام‌رسان ایتا`]
           );
           linkedCustomerId = newCustId;
         }
@@ -184,7 +179,8 @@ export class EitaaService {
         savedRow = insertRes.rows[0];
       }
 
-      // ۳. پیوند با سفارش فنرزنی اگر قبض وجود داشت
+      // ۳. پیوند هوشمند با سفارشات فنرزنی
+      // الف) در صورت وجود کد فیش، اتصال مستقیم سفارش به شناسه چت
       if (receiptCode) {
         await client.query(
           `UPDATE binding_orders 
@@ -192,18 +188,51 @@ export class EitaaService {
            WHERE receipt_code = $2`,
           [rawChatId, receiptCode]
         );
+
+        // در صورتی که موبایل ثبت نشده بود، دریافت موبایل از سفارش و انتساب به هویت ایتا
+        if (!cleanMobile) {
+          try {
+            const boRes = await client.query(
+              `SELECT customer_mobile FROM binding_orders WHERE receipt_code = $1 LIMIT 1`,
+              [receiptCode]
+            );
+            if (boRes.rows.length > 0 && boRes.rows[0].customer_mobile) {
+              const detectedMob = boRes.rows[0].customer_mobile.trim();
+              if (detectedMob) {
+                cleanMobile = detectedMob;
+                await client.query(
+                  `UPDATE eitaa_identities SET mobile = $1, updated_at = NOW() WHERE chat_id = $2 AND (mobile IS NULL OR mobile = '')`,
+                  [cleanMobile, rawChatId]
+                );
+              }
+            }
+          } catch {}
+        }
       }
 
-      // ۴. سازگاری رو به عقب با جدول قدیمی eitaa_customer_chats
+      // ب) در صورت وجود شماره موبایل، اتصال تمام سفارشات قبلی و فعلی مشتری به شناسه چت ایتا
+      if (cleanMobile) {
+        const noZeroMob = cleanMobile.replace(/^0/, '');
+        await client.query(
+          `UPDATE binding_orders 
+           SET customer_eitaa_chat_id = $1, updated_at = NOW() 
+           WHERE (customer_mobile = $2 OR customer_mobile = $3 OR customer_mobile = $4 OR customer_mobile = $5)
+             AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '' OR customer_eitaa_chat_id <> $1)`,
+          [rawChatId, cleanMobile, noZeroMob, '0' + noZeroMob, '+98' + noZeroMob]
+        );
+      }
+
+      // ۴. سازگاری رو به عقب با جدول قدیمی eitaa_customer_chats با کلید یکتای chat_id
       try {
         await client.query(
           `INSERT INTO eitaa_customer_chats (mobile, chat_id, eitaa_user_id, first_name, username, receipt_codes, last_seen, updated_at)
            VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-           ON CONFLICT (mobile) DO UPDATE SET
-             chat_id = EXCLUDED.chat_id,
+           ON CONFLICT (chat_id) DO UPDATE SET
+             mobile = COALESCE(NULLIF(EXCLUDED.mobile, ''), eitaa_customer_chats.mobile),
              eitaa_user_id = COALESCE(EXCLUDED.eitaa_user_id, eitaa_customer_chats.eitaa_user_id),
              first_name = COALESCE(EXCLUDED.first_name, eitaa_customer_chats.first_name),
              username = COALESCE(EXCLUDED.username, eitaa_customer_chats.username),
+             receipt_codes = ARRAY(SELECT DISTINCT unnest(COALESCE(eitaa_customer_chats.receipt_codes, '{}') || EXCLUDED.receipt_codes)),
              last_seen = NOW(),
              updated_at = NOW()`,
           [
@@ -315,33 +344,47 @@ export class EitaaService {
       if (response.ok && (responseData?.status === true || responseData?.ok === true)) {
         isSuccess = true;
         providerMsgId = String(responseData?.data?.message_id || responseData?.result?.message_id || '');
+        // ریست کردن شمارنده خرابی‌ها در ارسال موفق
+        try {
+          await query(
+            `UPDATE eitaa_identities 
+             SET consecutive_failures = 0, 
+                 eitaa_delivery_blocked = FALSE, 
+                 invalidated_at = NULL, 
+                 last_seen_at = NOW(), 
+                 updated_at = NOW() 
+             WHERE chat_id = $1`,
+            [rawChatId]
+          );
+        } catch (_) {}
       } else {
         isSuccess = false;
         errorCode = responseData?.error_code ? String(responseData.error_code) : `HTTP_${httpStatus}`;
         errorMessage = responseData?.description || responseData?.message || `پاسخ ناموفق از سرور ایتا (کد ${httpStatus})`;
 
-        // بررسی کاربر مسدود کرده یا چت نامعتبر — و پاکسازی کامل chat_id نامعتبر از کل سیستم
-        if (
-          errorMessage.toLowerCase().includes('blocked') ||
-          errorMessage.toLowerCase().includes('chat not found') ||
-          errorMessage.toLowerCase().includes('not found') ||
-          httpStatus === 400
-        ) {
-          try {
-            await query(`UPDATE eitaa_identities SET is_blocked = TRUE WHERE chat_id = $1`, [rawChatId]);
-          } catch (e) {}
-          try {
-            // جلوگیری از تکرار همین خطا در تلاشهای بعدی: پاککردن chat_id نامعتبر از سفارشات فنر خالی
+        // مدیریت تاب‌آور خطاها بدون حذف نگاشت‌ها (ثبت خطاهای متوالی و علامت‌گذاری هویت)
+        try {
+          const idRes = await query(
+            `UPDATE eitaa_identities 
+             SET consecutive_failures = consecutive_failures + 1, 
+                 updated_at = NOW() 
+             WHERE chat_id = $1 
+             RETURNING consecutive_failures, is_blocked, eitaa_delivery_blocked`,
+            [rawChatId]
+          );
+          const currentFailures = idRes.rows[0]?.consecutive_failures || 1;
+          const isExplicitlyBlocked = errorMessage.toLowerCase().includes('blocked') || errorMessage.toLowerCase().includes('deactivated');
+          if (isExplicitlyBlocked || currentFailures >= 3) {
             await query(
-              `UPDATE binding_orders SET customer_eitaa_chat_id = NULL, updated_at = NOW() WHERE customer_eitaa_chat_id = $1`,
+              `UPDATE eitaa_identities 
+               SET eitaa_delivery_blocked = TRUE, 
+                   invalidated_at = NOW(), 
+                   updated_at = NOW() 
+               WHERE chat_id = $1`,
               [rawChatId]
             );
-          } catch (e) {}
-          try {
-            // پاککردن از جدول قدیمی نگاشت موبایل نیز (در صورت وجود رکورد با همین chat_id)
-            await query(`DELETE FROM eitaa_customer_chats WHERE chat_id = $1`, [rawChatId]);
-          } catch (e) {}
-        }
+          }
+        } catch (_) {}
       }
     } catch (netErr: any) {
       httpStatus = 0;
@@ -351,7 +394,7 @@ export class EitaaService {
 
     // ۳. بروزرسانی پیام در پایگاه داده
     const finalStatus = isSuccess ? 'sent' : 'failed';
-    const sentAtValue = isSuccess ? new Date() : null; // محاسبه در جاوااسکریپت، نه در SQL
+    const sentAtValue = isSuccess ? new Date() : null;
 
     await query(
       `UPDATE eitaa_messages SET
@@ -385,7 +428,7 @@ export class EitaaService {
   }
 
   /**
-   * تلاش مجدد برای ارسال پیام ناموفق (Smart Retry)
+   * تلاش مجدد برای ارسال پیام ناموفق (Smart Retry با مدیریت خطای غیرمخرب)
    */
   async retryMessage(messageId: string): Promise<{ success: boolean; message: EitaaMessage; error?: string }> {
     const existing = await this.getMessageById(messageId);
@@ -395,6 +438,14 @@ export class EitaaService {
 
     if (existing.status === 'sent') {
       return { success: true, message: existing };
+    }
+
+    if (existing.attempts >= existing.maxAttempts) {
+      return {
+        success: false,
+        message: existing,
+        error: `حداکثر سقف تلاش مجدد (${existing.maxAttempts} بار) برای این پیام انجام شده است.`,
+      };
     }
 
     // افزایش شمارنده تلاش‌ها
@@ -415,6 +466,9 @@ export class EitaaService {
 
     try {
       const endpoint = `https://eitaayar.ir/api/${token}/sendMessage`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -423,7 +477,9 @@ export class EitaaService {
           text: existing.messageText,
           title: existing.messageTitle || undefined,
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const responseData = await response.json().catch(() => null);
       if (response.ok && (responseData?.status === true || responseData?.ok === true)) {
@@ -439,30 +495,47 @@ export class EitaaService {
            WHERE id = $3`,
           [String(responseData?.data?.message_id || responseData?.result?.message_id || ''), response.status, messageId]
         );
+
+        try {
+          await query(
+            `UPDATE eitaa_identities 
+             SET consecutive_failures = 0, 
+                 eitaa_delivery_blocked = FALSE, 
+                 invalidated_at = NULL, 
+                 last_seen_at = NOW(), 
+                 updated_at = NOW() 
+             WHERE chat_id = $1`,
+            [existing.chatId]
+          );
+        } catch (_) {}
+
         return { success: true, message: (await this.getMessageById(messageId))! };
       } else {
         const code = responseData?.error_code ? String(responseData.error_code) : `HTTP_${response.status}`;
         const desc = responseData?.description || responseData?.message || 'خطا در ارسال به ایتا';
 
-        if (
-          desc.toLowerCase().includes('blocked') ||
-          desc.toLowerCase().includes('chat not found') ||
-          desc.toLowerCase().includes('not found') ||
-          response.status === 400
-        ) {
-          try {
-            await query(`UPDATE eitaa_identities SET is_blocked = TRUE WHERE chat_id = $1`, [existing.chatId]);
-          } catch (e) {}
-          try {
+        try {
+          const idRes = await query(
+            `UPDATE eitaa_identities 
+             SET consecutive_failures = consecutive_failures + 1, 
+                 updated_at = NOW() 
+             WHERE chat_id = $1 
+             RETURNING consecutive_failures`,
+            [existing.chatId]
+          );
+          const currentFailures = idRes.rows[0]?.consecutive_failures || 1;
+          const isExplicitlyBlocked = desc.toLowerCase().includes('blocked') || desc.toLowerCase().includes('deactivated');
+          if (isExplicitlyBlocked || currentFailures >= 3) {
             await query(
-              `UPDATE binding_orders SET customer_eitaa_chat_id = NULL, updated_at = NOW() WHERE customer_eitaa_chat_id = $1`,
+              `UPDATE eitaa_identities 
+               SET eitaa_delivery_blocked = TRUE, 
+                   invalidated_at = NOW(), 
+                   updated_at = NOW() 
+               WHERE chat_id = $1`,
               [existing.chatId]
             );
-          } catch (e) {}
-          try {
-            await query(`DELETE FROM eitaa_customer_chats WHERE chat_id = $1`, [existing.chatId]);
-          } catch (e) {}
-        }
+          }
+        } catch (_) {}
 
         await query(
           `UPDATE eitaa_messages SET
@@ -553,7 +626,9 @@ export class EitaaService {
       SELECT ei.*,
              c.name as customer_name,
              c.mobile as customer_mobile,
-             c.total_purchase_amount
+             c.total_purchase_amount,
+             (SELECT COUNT(*) FROM binding_orders bo WHERE bo.customer_eitaa_chat_id = ei.chat_id OR (ei.mobile IS NOT NULL AND ei.mobile <> '' AND bo.customer_mobile = ei.mobile)) AS total_binding_orders,
+             (SELECT bo.receipt_code FROM binding_orders bo WHERE bo.customer_eitaa_chat_id = ei.chat_id OR (ei.mobile IS NOT NULL AND ei.mobile <> '' AND bo.customer_mobile = ei.mobile) ORDER BY bo.created_at DESC LIMIT 1) AS latest_receipt
       FROM eitaa_identities ei
       LEFT JOIN customers c ON c.id = ei.customer_id
       WHERE 1=1
@@ -710,7 +785,8 @@ export class EitaaService {
         ei.username,
         ei.mobile,
         ei.customer_id,
-        COALESCE(ei.is_blocked, FALSE) as is_blocked
+        COALESCE(ei.is_blocked, FALSE) as is_blocked,
+        (SELECT COUNT(*) FROM eitaa_messages unread WHERE unread.chat_id = m.chat_id AND unread.direction = 'incoming' AND unread.is_read = FALSE) AS unread_count
       FROM eitaa_messages m
       LEFT JOIN eitaa_identities ei ON ei.chat_id = m.chat_id
       ORDER BY m.created_at DESC
@@ -736,12 +812,22 @@ export class EitaaService {
           lastMessageTime: r.last_message_time ? new Date(r.last_message_time).toISOString() : new Date().toISOString(),
           lastMessageStatus: r.last_message_status,
           lastMessageDirection: r.last_message_direction,
-          unreadCount: 0,
+          unreadCount: Number(r.unread_count || 0),
         });
       }
     }
 
     return deduplicated;
+  }
+
+  /**
+   * علامت‌گذاری پیام‌های یک گفتگو به عنوان خوانده شده
+   */
+  async markConversationAsRead(chatId: string): Promise<void> {
+    await query(
+      `UPDATE eitaa_messages SET is_read = TRUE, updated_at = NOW() WHERE chat_id = $1 AND direction = 'incoming' AND is_read = FALSE`,
+      [chatId.trim()]
+    );
   }
 
   /**
@@ -755,7 +841,7 @@ export class EitaaService {
     if (!identity.chatId || identity.chatId.trim() === '') {
       return 'incomplete_chat_id';
     }
-    if (identity.isBlocked || identity.status === 'blocked') {
+    if (identity.isBlocked || identity.status === 'blocked' || identity.eitaaDeliveryBlocked) {
       return 'failed_blocked';
     }
     if (identity.source === 'admin_manual' && !identity.eitaaUserId) {
@@ -782,6 +868,9 @@ export class EitaaService {
       status: r.status || 'active',
       isBlocked: Boolean(r.is_blocked),
       isVerified: Boolean(r.is_verified),
+      consecutiveFailures: Number(r.consecutive_failures || 0),
+      invalidatedAt: r.invalidated_at ? new Date(r.invalidated_at).toISOString() : undefined,
+      eitaaDeliveryBlocked: Boolean(r.eitaa_delivery_blocked),
       firstSeenAt: r.first_seen_at ? new Date(r.first_seen_at).toISOString() : new Date().toISOString(),
       lastSeenAt: r.last_seen_at ? new Date(r.last_seen_at).toISOString() : new Date().toISOString(),
       receiptCodes: Array.isArray(r.receipt_codes) ? r.receipt_codes : [],
@@ -804,6 +893,15 @@ export class EitaaService {
       return { success: false, error: 'شناسه چت در پیام ایتا یافت نشد.' };
     }
 
+    // جلوگیری از ثبت پیام تکراری وب‌هوک بر اساس update_id
+    const updateId = update.update_id ? String(update.update_id) : undefined;
+    if (updateId) {
+      const dupCheck = await query(`SELECT id FROM eitaa_messages WHERE provider_update_id = $1 LIMIT 1`, [updateId]);
+      if (dupCheck.rows.length > 0) {
+        return { success: true, messageId: dupCheck.rows[0].id, chatId: rawChatId };
+      }
+    }
+
     const text = String(message.text || '').trim();
     const contact = message.contact;
 
@@ -817,11 +915,15 @@ export class EitaaService {
 
     // استخراج شماره قبض یا شناسه سفارش احتمالی
     let receiptCode: string | undefined;
-    const receiptMatch = text.match(/(?:KHAT-|\/start\s+)?([A-Za-z0-9\-]{4,15})/i);
-    if (receiptMatch && receiptMatch[1]) {
-      const candidate = receiptMatch[1].toUpperCase();
-      if (candidate.startsWith('KHAT-') || candidate.startsWith('ORD-') || candidate.startsWith('RC-')) {
-        receiptCode = candidate;
+    if (text) {
+      const startMatch = text.match(/^\/start\s+([A-Za-z0-9\-_]{3,30})/i);
+      if (startMatch && startMatch[1]) {
+        receiptCode = startMatch[1].toUpperCase();
+      } else {
+        const rcMatch = text.match(/(KHAT-[A-Za-z0-9\-]+|ORD-[A-Za-z0-9\-]+|RC-[A-Za-z0-9\-]+|F-\d+)/i);
+        if (rcMatch && rcMatch[0]) {
+          receiptCode = rcMatch[0].toUpperCase();
+        }
       }
     }
 
@@ -845,8 +947,8 @@ export class EitaaService {
         `INSERT INTO eitaa_messages (
           id, identity_id, customer_id, eitaa_user_id, chat_id, direction,
           message_title, message_text, status, provider, attempts, max_attempts,
-          created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, 'incoming', $6, $7, 'delivered', 'eitaayar', 1, 1, NOW(), NOW())`,
+          provider_update_id, is_read, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, 'incoming', $6, $7, 'delivered', 'eitaayar', 1, 1, $8, FALSE, NOW(), NOW())`,
         [
           messageId,
           identity?.id || null,
@@ -855,6 +957,7 @@ export class EitaaService {
           rawChatId,
           'پیام دریافتی کاربر',
           text,
+          updateId || null,
         ]
       );
     }
@@ -878,6 +981,8 @@ export class EitaaService {
       status: r.status || 'queued',
       provider: r.provider || 'eitaayar',
       providerMessageId: r.provider_message_id || undefined,
+      providerUpdateId: r.provider_update_id || undefined,
+      isRead: Boolean(r.is_read),
       attempts: Number(r.attempts || 0),
       maxAttempts: Number(r.max_attempts || 3),
       errorCode: r.error_code || undefined,

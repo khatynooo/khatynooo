@@ -23,7 +23,7 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 import { db } from './server/db';
-import { initializeDatabase, isDbConnected, isPostgresReal, query } from './server/dbClient';
+import { initializeDatabase, isDbConnected, isPostgresReal, query, withTransaction } from './server/dbClient';
 import { sendToPasargadPos } from './server/posProtocol';
 import { searchTorobMarket, searchMultiSourceMarket, getTorobStationeryCategoryList, auditAllInventoryAgainstMarket, inspectTorobDirectUrl, searchDigikalaCandidates, compareAcrossSources, SlidingWindowRateLimiter } from './server/torobService';
 import { askGeminiAssistant, askGeminiAssistantStream, analyzeProductMarketAndPricing, groundedWebMarketSearch, getAiConfigStatus } from './server/geminiService';
@@ -620,10 +620,12 @@ app.post('/api/inventory/adjust', authenticateToken, requireRole(['admin', 'site
 
 app.post('/api/inventory/import-excel', authenticateToken, requireRole(['admin', 'site_manager', 'chief_accountant', 'accountant']), async (req: AuthRequest, res) => {
   try {
-    const { items, warehouseId = 'wh_central', conflictMode = 'increase_stock' } = req.body;
+    const { items, warehouseId = 'wh_central', conflictMode = 'increase_stock', sourceCurrency = 'toman' } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'لیست اقلام ارسالی از اکسل خالی یا نامعتبر است.' });
     }
+
+    const curMultiplier = sourceCurrency === 'rial' ? 0.1 : 1;
 
     let createdCount = 0;
     let updatedCount = 0;
@@ -651,13 +653,13 @@ app.post('/api/inventory/import-excel', authenticateToken, requireRole(['admin',
       const boxBarcode = toEnDigits(row.boxBarcode);
       const code = toEnDigits(row.code);
       const stockQty = Number(toEnDigits(row.stock)) || 0;
-      const buyPrice = Number(toEnDigits(row.buyPrice)) || 0;
-      const salePrice = Number(toEnDigits(row.salePrice || row.priceShop1)) || 0;
-      const priceShop1 = Number(toEnDigits(row.priceShop1 || row.salePrice)) || 0;
-      const priceShop2 = Number(toEnDigits(row.priceShop2)) || priceShop1;
-      const priceShop3 = Number(toEnDigits(row.priceShop3)) || priceShop1;
-      const wholesalePrice = Number(toEnDigits(row.wholesalePrice)) || priceShop1;
-      const minAllowedPrice = Number(toEnDigits(row.minAllowedPrice)) || buyPrice;
+      const buyPrice = Math.round((Number(toEnDigits(row.buyPrice)) || 0) * curMultiplier);
+      const salePrice = Math.round((Number(toEnDigits(row.salePrice || row.priceShop1)) || 0) * curMultiplier);
+      const priceShop1 = Math.round((Number(toEnDigits(row.priceShop1 || row.salePrice)) || 0) * curMultiplier);
+      const priceShop2 = Math.round((Number(toEnDigits(row.priceShop2)) || priceShop1) * curMultiplier);
+      const priceShop3 = Math.round((Number(toEnDigits(row.priceShop3)) || priceShop1) * curMultiplier);
+      const wholesalePrice = Math.round((Number(toEnDigits(row.wholesalePrice)) || priceShop1) * curMultiplier);
+      const minAllowedPrice = Math.round((Number(toEnDigits(row.minAllowedPrice)) || buyPrice) * curMultiplier);
       const minStockAlert = Number(toEnDigits(row.minStockAlert)) || 5;
       const unit = String(row.unit || 'عدد').trim();
       const description = String(row.description || '').trim();
@@ -792,6 +794,162 @@ app.post('/api/inventory/import-excel', authenticateToken, requireRole(['admin',
   } catch (err: any) {
     console.error('Error importing Excel inventory:', err);
     res.status(500).json({ error: err.message || 'خطا در پردازش ورودی اکسل انبار' });
+  }
+});
+
+// اصلاح دسته‌جمعی قیمت‌ها (مثلاً تبدیل ریال به تومان با ضریب ۰.۱، یا برعکس با ضریب ۱۰)
+app.post('/api/products/bulk-price-adjustment', authenticateToken, requireRole(['admin', 'chief_accountant', 'site_manager']), async (req: AuthRequest, res) => {
+  try {
+    const { operation, factor, productIds, fields, reason } = req.body;
+    const calcFactor = operation === 'divide_10' ? 0.1 : (operation === 'multiply_10' ? 10 : Number(factor));
+    if (!calcFactor || isNaN(calcFactor) || calcFactor <= 0) {
+      return res.status(400).json({ error: 'ضریب اعمال معتبر نیست.' });
+    }
+
+    const appliedFields: string[] = Array.isArray(fields) && fields.length > 0 
+      ? fields 
+      : ['buy_price', 'price_shop1', 'price_shop2', 'price_shop3', 'wholesale_price', 'min_allowed_price', 'sale_price'];
+
+    const result = await withTransaction(async (client) => {
+      let targetQuery = `SELECT id, name, code, barcode, buy_price, price_shop1, price_shop2, price_shop3, wholesale_price, min_allowed_price, sale_price FROM products`;
+      const queryParams: any[] = [];
+      if (Array.isArray(productIds) && productIds.length > 0) {
+        targetQuery += ` WHERE id = ANY($1)`;
+        queryParams.push(productIds);
+      }
+
+      const rowsRes = await client.query(targetQuery, queryParams);
+      const beforeState: Record<string, any> = {};
+      const afterState: Record<string, any> = {};
+      let updatedCount = 0;
+
+      for (const row of rowsRes.rows) {
+        beforeState[row.id] = {
+          buy_price: Number(row.buy_price || 0),
+          price_shop1: Number(row.price_shop1 || 0),
+          price_shop2: Number(row.price_shop2 || 0),
+          price_shop3: Number(row.price_shop3 || 0),
+          wholesale_price: Number(row.wholesale_price || 0),
+          min_allowed_price: Number(row.min_allowed_price || 0),
+          sale_price: Number(row.sale_price || 0),
+        };
+
+        const newVals: Record<string, number> = {};
+        for (const f of appliedFields) {
+          const oldVal = Number(row[f] || 0);
+          newVals[f] = Math.round(oldVal * calcFactor);
+        }
+
+        afterState[row.id] = newVals;
+
+        const setClauses: string[] = [];
+        const updateVals: any[] = [row.id];
+        let pIdx = 2;
+        for (const [col, v] of Object.entries(newVals)) {
+          setClauses.push(`${col} = $${pIdx}`);
+          updateVals.push(v);
+          pIdx++;
+        }
+        setClauses.push('updated_at = NOW()');
+
+        await client.query(`UPDATE products SET ${setClauses.join(', ')} WHERE id = $1`, updateVals);
+        updatedCount++;
+      }
+
+      const adjId = `adj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await client.query(
+        `INSERT INTO price_bulk_adjustments (
+          id, operation, applied_fields, product_ids, before_state, after_state, reason, created_by, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [
+          adjId,
+          operation || (calcFactor === 0.1 ? 'divide_10' : 'multiply_10'),
+          appliedFields,
+          rowsRes.rows.map((r: any) => r.id),
+          JSON.stringify(beforeState),
+          JSON.stringify(afterState),
+          reason || 'اصلاح دسته‌جمعی واحد پول قیمت‌ها',
+          req.user?.username || req.user?.id || 'admin',
+        ]
+      );
+
+      return { adjId, updatedCount };
+    });
+
+    res.json({
+      success: true,
+      adjustmentId: result.adjId,
+      updatedCount: result.updatedCount,
+      message: `قیمت ${result.updatedCount} کالا با موفقیت به‌روزرسانی شد.`,
+    });
+  } catch (err: any) {
+    console.error('Error in bulk-price-adjustment:', err);
+    res.status(500).json({ error: err.message || 'خطا در اعمال تغییرات دسته‌جمعی قیمت' });
+  }
+});
+
+// بازگردانی (Undo) اصلاح دسته‌جمعی قیمت‌ها
+app.post('/api/products/bulk-price-adjustment/:id/undo', authenticateToken, requireRole(['admin', 'chief_accountant', 'site_manager']), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const restoredCount = await withTransaction(async (client) => {
+      const adjRes = await client.query(`SELECT * FROM price_bulk_adjustments WHERE id = $1 FOR UPDATE`, [id]);
+      if (adjRes.rows.length === 0) {
+        throw new Error('رکورد تغییر قیمت یافت نشد.');
+      }
+
+      const adj = adjRes.rows[0];
+      if (adj.undone_at) {
+        throw new Error('این تغییر قبلاً بازگردانی (Undo) شده است.');
+      }
+
+      const beforeState = typeof adj.before_state === 'string' ? JSON.parse(adj.before_state) : adj.before_state;
+      let count = 0;
+
+      for (const [prodId, fieldsObj] of Object.entries(beforeState)) {
+        const setClauses: string[] = [];
+        const updateVals: any[] = [prodId];
+        let pIdx = 2;
+        for (const [col, v] of Object.entries(fieldsObj as any)) {
+          setClauses.push(`${col} = $${pIdx}`);
+          updateVals.push(v);
+          pIdx++;
+        }
+        setClauses.push('updated_at = NOW()');
+        await client.query(`UPDATE products SET ${setClauses.join(', ')} WHERE id = $1`, updateVals);
+        count++;
+      }
+
+      await client.query(
+        `UPDATE price_bulk_adjustments SET undone_at = NOW(), undone_by = $1 WHERE id = $2`,
+        [req.user?.username || req.user?.id || 'admin', id]
+      );
+
+      return count;
+    });
+
+    res.json({
+      success: true,
+      restoredCount,
+      message: `تغییرات قیمت برای ${restoredCount} کالا با موفقیت به حالت قبل بازگردانی شد.`,
+    });
+  } catch (err: any) {
+    console.error('Error undoing bulk price adjustment:', err);
+    res.status(400).json({ error: err.message || 'خطا در بازگردانی تغییرات قیمت' });
+  }
+});
+
+// سوابق تغییرات دسته‌جمعی قیمت
+app.get('/api/products/bulk-price-adjustments', authenticateToken, async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT id, operation, applied_fields, reason, created_by, created_at, undone_at, undone_by,
+              jsonb_array_length(CASE WHEN jsonb_typeof(to_jsonb(product_ids)) = 'array' THEN to_jsonb(product_ids) ELSE '[]'::jsonb END) as affected_count
+       FROM price_bulk_adjustments ORDER BY created_at DESC LIMIT 30`
+    );
+    res.json({ adjustments: r.rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1211,6 +1369,7 @@ app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole([
       invoiceNumber: rawInvoiceNumber,
       documentNumber: rawDocumentNumber,
       invoiceDate: rawInvoiceDate,
+      sourceCurrency: rawSourceCurrency,
       warehouseId = 'wh_central',
       paymentMethod = 'credit',
       discount = 0,
@@ -1254,6 +1413,8 @@ app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole([
     const newProducts: any[] = [];
     const updatedProducts: any[] = [];
 
+    const curMultiplier = (rawSourceCurrency === 'rial' || rawSourceCurrency === 'irr') ? 0.1 : 1;
+
     for (let i = 0; i < items.length; i++) {
       const row = items[i];
       const rawName = String(row.name || row.description || row.title || '').trim();
@@ -1262,8 +1423,10 @@ app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole([
       const code = toEnDigits(row.code);
       const barcode = toEnDigits(row.barcode || row.code);
       const quantity = Math.max(1, Number(toEnDigits(row.quantity || row.qty || row.amount)) || 1);
-      const buyPrice = Math.max(0, Number(toEnDigits(row.buyPrice || row.price || row.unitPrice)) || 0);
-      const salePrice = Number(toEnDigits(row.salePrice || row.priceShop1)) || 0;
+      const rawBuyPrice = Math.max(0, Number(toEnDigits(row.buyPrice || row.price || row.unitPrice)) || 0);
+      const rawSalePrice = Number(toEnDigits(row.salePrice || row.priceShop1)) || 0;
+      const buyPrice = Math.round(rawBuyPrice * curMultiplier);
+      const salePrice = rawSalePrice > 0 ? Math.round(rawSalePrice * curMultiplier) : 0;
       const unit = String(row.unit || 'عدد').trim();
 
       // Look up existing product
@@ -1348,6 +1511,7 @@ app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole([
       invoiceDate: rawInvoiceDate?.trim() || new Date().toLocaleDateString('fa-IR'),
       documentNumber: rawDocumentNumber?.trim() || undefined,
       discount: Number(discount || 0),
+      sourceCurrency: rawSourceCurrency || 'toman',
       notes: notes?.trim() || `ورود فاکتور از طریق فایل اکسل (شماره سند: ${rawDocumentNumber || 'فاقد سند'})`,
     });
 
@@ -2171,6 +2335,21 @@ app.delete('/api/binding-orders/eitaa-chats/:mobile', authenticateToken, async (
 // وبهوک بات ایتا جهت دریافت پیام‌ها، ثبت خودکار chat_id و رهگیری سفارشات
 app.post(['/api/eitaa/webhook', '/api/binding-orders/eitaa-webhook'], async (req, res) => {
   try {
+    // اعتبارسنجی امنیتی وب‌هوک در صورت تنظیم eitaa_webhook_secret
+    try {
+      const bsRes = await query(`SELECT eitaa_webhook_secret FROM binding_settings WHERE id = 'default' LIMIT 1`);
+      const configuredSecret = bsRes.rows[0]?.eitaa_webhook_secret;
+      if (configuredSecret && configuredSecret.trim()) {
+        const receivedSecret = (req.headers['x-eitaa-secret'] || req.headers['x-webhook-secret'] || req.query.secret || req.body?.secret) as string;
+        if (!receivedSecret || receivedSecret !== configuredSecret.trim()) {
+          console.warn('[Eitaa Webhook] Unauthorized webhook attempt: secret mismatch');
+          return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid webhook secret' });
+        }
+      }
+    } catch (secErr) {
+      console.warn('[Eitaa Webhook] Secret check bypassed due to DB check failure:', secErr);
+    }
+
     const update = req.body || {};
     const message = update.message || update;
     const fromUser = message.from || {};
@@ -2427,10 +2606,31 @@ app.get('/api/public/binding-info', async (req, res) => {
 app.get('/api/public/binding-track', async (req, res) => {
   try {
     const queryStr = req.query.query ? String(req.query.query).trim() : '';
-    if (!queryStr) {
+    const chatId = req.query.chatId ? String(req.query.chatId).trim() : undefined;
+    const firstName = req.query.firstName ? String(req.query.firstName).trim() : undefined;
+    const username = req.query.username ? String(req.query.username).trim() : undefined;
+
+    if (!queryStr && !chatId) {
       return res.status(400).json({ error: 'لطفاً کد پیگیری رسید یا شماره موبایل خود را وارد نمایید.' });
     }
-    const orders = await db.getPublicBindingTracking(queryStr);
+
+    // در صورتی که کاربر داخل مینی‌اپ با شناسه چت جستجو کرده، اتصال فوری به ثبت برسد
+    if (chatId && queryStr) {
+      const isMobile = queryStr.startsWith('09') || queryStr.startsWith('9') || queryStr.startsWith('+98') || queryStr.startsWith('۰۹');
+      const isReceipt = queryStr.toUpperCase().startsWith('F-') || queryStr.includes('-');
+      try {
+        await registerEitaaCustomerChat({
+          chatId,
+          mobile: isMobile ? queryStr : undefined,
+          receiptCode: isReceipt ? queryStr : undefined,
+          firstName,
+          username,
+          source: 'mini_app_tracking',
+        });
+      } catch {}
+    }
+
+    const orders = await db.getPublicBindingTracking(queryStr, chatId);
     res.json({ orders });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2505,6 +2705,17 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
       return res.status(400).json({ error: 'شناسه چت ایتا (chat_id) الزامی است.' });
     }
 
+    // جلوگیری از بازنویسی حساب‌های تایید شده با درخواست‌های تایید نشده
+    try {
+      const existingCheck = await query(`SELECT is_verified, mobile FROM eitaa_identities WHERE chat_id = $1 LIMIT 1`, [cleanChatId]);
+      if (existingCheck.rows.length > 0) {
+        const ex = existingCheck.rows[0];
+        if (ex.is_verified && !isVerified) {
+          return res.status(403).json({ error: 'این حساب ایتا قبلاً به صورت تاییدشده متصل شده است و تغییر آن نیازمند ورود مجدد از مینی‌اپ است.' });
+        }
+      }
+    } catch (_) {}
+
     const cleanMobile = mobile ? String(mobile).trim() : undefined;
     const cleanReceipt = receiptCode ? String(receiptCode).trim() : undefined;
 
@@ -2524,7 +2735,7 @@ app.post('/api/public/eitaa-connect', async (req, res) => {
     } catch (e) {}
 
     // جستجوی سفارشات مرتبط با این کاربر جهت نمایش مستقیم در وب‌اپلیکیشن
-    const relatedOrders = await db.getPublicBindingTracking(cleanReceipt || cleanMobile || cleanChatId);
+    const relatedOrders = await db.getPublicBindingTracking(cleanReceipt || cleanMobile || cleanChatId, cleanChatId);
 
     res.json({
       success,
@@ -2552,11 +2763,11 @@ app.get('/api/public/eitaa-orders', async (req, res) => {
     }
 
     let searchTarget = track || mobile || chatId;
-    let orders = await db.getPublicBindingTracking(searchTarget);
+    let orders = await db.getPublicBindingTracking(searchTarget, chatId);
 
     // اگر با پارامتر اول پیدا نشد و موبایل هم بود
     if (orders.length === 0 && mobile && mobile !== searchTarget) {
-      orders = await db.getPublicBindingTracking(mobile);
+      orders = await db.getPublicBindingTracking(mobile, chatId);
     }
 
     res.json({ orders });
@@ -2687,10 +2898,24 @@ app.post('/api/eitaa/messages/:id/retry', authenticateToken, async (req, res) =>
 });
 
 // دریافت تنظیمات بات ایتا
-app.get('/api/eitaa/bot-settings', authenticateToken, async (req, res) => {
+app.get('/api/eitaa/bot-settings', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
   try {
     const settings = await eitaaService.getBotToken();
-    res.json({ settings });
+    const secRes = await query(`SELECT eitaa_webhook_secret FROM binding_settings WHERE id = 'default' LIMIT 1`);
+    const webhookSecret = secRes.rows[0]?.eitaa_webhook_secret || '';
+
+    const maskedToken = settings.token
+      ? (settings.token.length > 8 ? `${settings.token.slice(0, 4)}••••••••${settings.token.slice(-4)}` : '••••••••')
+      : '';
+
+    res.json({
+      settings: {
+        ...settings,
+        token: maskedToken,
+        hasToken: Boolean(settings.token),
+        webhookSecret,
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -2699,9 +2924,28 @@ app.get('/api/eitaa/bot-settings', authenticateToken, async (req, res) => {
 // ذخیره تنظیمات بات ایتا
 app.put('/api/eitaa/bot-settings', authenticateToken, requireRole(['admin', 'site_manager']), async (req, res) => {
   try {
-    const { token, botUsername, appUrl } = req.body;
-    await eitaaService.updateBotSettings({ token, botUsername, appUrl });
+    const { token, botUsername, appUrl, webhookSecret } = req.body;
+    const isMasked = token && (token.includes('••••') || token.includes('...'));
+    const tokenToSave = isMasked ? undefined : token;
+
+    await eitaaService.updateBotSettings({ token: tokenToSave, botUsername, appUrl });
+
+    if (webhookSecret !== undefined) {
+      await query(`UPDATE binding_settings SET eitaa_webhook_secret = $1 WHERE id = 'default'`, [webhookSecret ? webhookSecret.trim() : null]);
+    }
+
     res.json({ success: true, message: 'تنظیمات بات ایتا با موفقیت ذخیره شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// علامت‌گذاری پیام‌های یک گفتگو به عنوان خوانده‌شده در صندوق پیام
+app.post('/api/eitaa/inbox/:chatId/read', authenticateToken, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    await eitaaService.markConversationAsRead(chatId);
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -1241,11 +1241,36 @@ export const api = {
     items: any[];
     warehouseId: string;
     conflictMode: 'increase_stock' | 'update_all' | 'skip_existing';
+    sourceCurrency?: 'toman' | 'rial';
   }) =>
     fetch(`${API_BASE}/inventory/import-excel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  bulkPriceAdjustment: (data: {
+    operation: 'divide_10' | 'multiply_10' | 'custom';
+    factor?: number;
+    productIds?: string[];
+    fields?: string[];
+    reason?: string;
+  }) =>
+    fetch(`${API_BASE}/products/bulk-price-adjustment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    }).then(handleResponse),
+
+  undoBulkPriceAdjustment: (id: string) =>
+    fetch(`${API_BASE}/products/bulk-price-adjustment/${id}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    }).then(handleResponse),
+
+  getBulkPriceAdjustments: () =>
+    fetch(`${API_BASE}/products/bulk-price-adjustments`, {
+      headers: getAuthHeader(),
     }).then(handleResponse),
 
   getInventoryAdjustments: (limit = 50) =>

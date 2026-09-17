@@ -19,6 +19,7 @@ import {
   Hash,
   Barcode,
   Package,
+  Coins,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../../lib/api';
@@ -35,6 +36,12 @@ interface ParsedRowItem {
   unit?: string;
   stock: number;
   minStockAlert?: number;
+  fileBuyPrice: number;
+  filePriceShop1: number;
+  filePriceShop2?: number;
+  filePriceShop3?: number;
+  fileWholesalePrice?: number;
+  fileMinAllowedPrice?: number;
   buyPrice: number;
   priceShop1: number;
   priceShop2?: number;
@@ -80,6 +87,8 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
 
   const [fileName, setFileName] = useState<string>('');
   const [parsedRows, setParsedRows] = useState<ParsedRowItem[]>([]);
+  const [sourceCurrency, setSourceCurrency] = useState<'toman' | 'rial'>('toman');
+  const [isAutoDetectedRial, setIsAutoDetectedRial] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -210,22 +219,65 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
           return;
         }
 
+        let detectedRialInHeaders = false;
+        const stopWords = new Set(['کالا', 'نام', 'کد', 'فی', 'واحد', 'قیمت', 'مبلغ', 'شرح', 'بارکد']);
+
         const parsed: ParsedRowItem[] = rawJson.map((row, index) => {
-          const getVal = (...keys: string[]) => {
+          const cleanRowKeys = Object.keys(row).map((k) => ({
+            original: k,
+            clean: k.trim().toLowerCase().replace(/[\s_()\-–/]+/g, ''),
+          }));
+
+          // Pass 1: exact match
+          const getValExact = (...keys: string[]) => {
             for (const k of keys) {
-              if (row[k] !== undefined && row[k] !== '') return row[k];
-              const normalizedKey = k.trim().toLowerCase().replace(/[\s_()\-–/]+/g, '');
-              const foundKey = Object.keys(row).find(
-                (rk) => rk.trim().toLowerCase().replace(/[\s_()\-–/]+/g, '') === normalizedKey
-              );
-              if (foundKey && row[foundKey] !== undefined && row[foundKey] !== '') {
-                return row[foundKey];
+              const cleanPk = k.trim().toLowerCase().replace(/[\s_()\-–/]+/g, '');
+              for (const { original, clean } of cleanRowKeys) {
+                if (clean === cleanPk) {
+                  const val = row[original];
+                  if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    return String(val).trim();
+                  }
+                }
               }
             }
             return '';
           };
 
-          const name = String(getVal('نام کالا', 'نام', 'عنوان کالا', 'عنوان', 'name', 'title', 'product_name')).trim();
+          // Pass 2: substring match (skipping stop words and short keys)
+          const getValFuzzy = (...keys: string[]) => {
+            for (const k of keys) {
+              const cleanPk = k.trim().toLowerCase().replace(/[\s_()\-–/]+/g, '');
+              if (stopWords.has(cleanPk) || cleanPk.length < 3) continue;
+              for (const { original, clean } of cleanRowKeys) {
+                if (clean.includes(cleanPk)) {
+                  const val = row[original];
+                  if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    return String(val).trim();
+                  }
+                }
+              }
+            }
+            return '';
+          };
+
+          const getVal = (...keys: string[]) => {
+            const exact = getValExact(...keys);
+            if (exact) return exact;
+            return getValFuzzy(...keys);
+          };
+
+          if (index === 0) {
+            for (const key of Object.keys(row)) {
+              const lk = key.toLowerCase();
+              if (key.includes('ریال') || lk.includes('rial') || lk.includes('irr')) {
+                detectedRialInHeaders = true;
+                break;
+              }
+            }
+          }
+
+          const name = String(getVal('نام کالا', 'شرح کالا یا خدمات', 'شرح کالا', 'عنوان کالا', 'عنوان محصول', 'نام محصول', 'description', 'title', 'product_name', 'name')).trim();
           const code = String(getVal('کد کالا', 'کد', 'شناسه کالا', 'شناسه', 'code', 'sku', 'product_code')).trim();
           const barcode = String(getVal('بارکد تک', 'بارکد', 'بارکد کالا', 'barcode', 'ean', 'upc')).trim();
           const boxBarcode = String(getVal('بارکد کارتن', 'بارکد کارتن/جعبه', 'بارکد جعبه', 'boxBarcode', 'cartonBarcode')).trim();
@@ -233,12 +285,12 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
           const unit = String(getVal('واحد سنجش', 'واحد', 'واحد کالا', 'unit')).trim() || 'عدد';
           const stock = Number(toEnDigits(getVal('تعداد ورودی انبار', 'تعداد ورودی', 'تعداد', 'موجودی', 'موجودی انبار', 'ورودی انبار', 'stock', 'quantity', 'qty'))) || 0;
           const minStockAlert = Number(toEnDigits(getVal('حداقل موجودی هشدار', 'حداقل موجودی', 'حداقل هشدار', 'نقطه سفارش', 'minStockAlert'))) || 5;
-          const buyPrice = Number(toEnDigits(getVal('بهای خرید (سرمایه)', 'بهای خرید', 'قیمت خرید', 'خرید', 'buyPrice', 'cost'))) || 0;
-          const priceShop1 = Number(toEnDigits(getVal('قیمت فروش ۱ (حضوری)', 'فروشگاه ۱ (نقدی/حضوری)', 'فروشگاه ۱', 'قیمت فروش ۱', 'قیمت فروش', 'قیمت نقدی', 'priceShop1', 'salePrice'))) || 0;
-          const priceShop2 = Number(toEnDigits(getVal('قیمت فروش ۲ (آنلاین)', 'فروشگاه ۲ (آنلاین/ترب)', 'فروشگاه ۲', 'قیمت فروش ۲', 'قیمت آنلاین', 'قیمت ترب', 'priceShop2'))) || priceShop1;
-          const priceShop3 = Number(toEnDigits(getVal('قیمت فروش ۳ (همکار)', 'فروشگاه ۳ (همکار)', 'فروشگاه ۳', 'قیمت فروش ۳', 'قیمت همکار', 'priceShop3'))) || priceShop1;
-          const wholesalePrice = Number(toEnDigits(getVal('قیمت عمده', 'فروش عمده و مدارس', 'قیمت عمده و مدارس', 'فروش عمده', 'عمده', 'wholesalePrice'))) || priceShop1;
-          const minAllowedPrice = Number(toEnDigits(getVal('کف قیمت مجاز', 'کف قیمت', 'حداقل قیمت', 'minAllowedPrice'))) || buyPrice;
+          const fileBuyPrice = Number(toEnDigits(getVal('بهای خرید (سرمایه)', 'بهای خرید', 'قیمت خرید', 'فی خرید', 'قیمت کالا', 'buyPrice', 'cost'))) || 0;
+          const filePriceShop1 = Number(toEnDigits(getVal('قیمت فروش ۱ (حضوری)', 'فروشگاه ۱ (نقدی/حضوری)', 'فروشگاه ۱', 'قیمت فروش ۱', 'قیمت فروش', 'قیمت نقدی', 'priceShop1', 'salePrice'))) || 0;
+          const filePriceShop2 = Number(toEnDigits(getVal('قیمت فروش ۲ (آنلاین)', 'فروشگاه ۲ (آنلاین/ترب)', 'فروشگاه ۲', 'قیمت فروش ۲', 'قیمت آنلاین', 'قیمت ترب', 'priceShop2'))) || filePriceShop1;
+          const filePriceShop3 = Number(toEnDigits(getVal('قیمت فروش ۳ (همکار)', 'فروشگاه ۳ (همکار)', 'فروشگاه ۳', 'قیمت فروش ۳', 'قیمت همکار', 'priceShop3'))) || filePriceShop1;
+          const fileWholesalePrice = Number(toEnDigits(getVal('قیمت عمده', 'فروش عمده و مدارس', 'قیمت عمده و مدارس', 'فروش عمده', 'عمده', 'wholesalePrice'))) || filePriceShop1;
+          const fileMinAllowedPrice = Number(toEnDigits(getVal('کف قیمت مجاز', 'کف قیمت', 'حداقل قیمت', 'minAllowedPrice'))) || fileBuyPrice;
           const description = String(getVal('توضیحات', 'شرح کالا', 'توضیحات کالا', 'description', 'desc', 'notes')).trim();
 
           const isValid = Boolean(name);
@@ -253,21 +305,51 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
             unit,
             stock,
             minStockAlert,
-            buyPrice,
-            priceShop1,
-            priceShop2,
-            priceShop3,
-            wholesalePrice,
-            minAllowedPrice,
+            fileBuyPrice,
+            filePriceShop1,
+            filePriceShop2,
+            filePriceShop3,
+            fileWholesalePrice,
+            fileMinAllowedPrice,
+            buyPrice: fileBuyPrice,
+            priceShop1: filePriceShop1,
+            priceShop2: filePriceShop2,
+            priceShop3: filePriceShop3,
+            wholesalePrice: fileWholesalePrice,
+            minAllowedPrice: fileMinAllowedPrice,
             description,
             isValid,
             validationError,
           };
         });
 
+        // Auto-detect Rial currency from headers or high prices (> 2,000,000)
+        const nonZeroPrices = parsed.map((r) => r.fileBuyPrice).filter((p) => p > 0);
+        const avgPrice = nonZeroPrices.length > 0 ? nonZeroPrices.reduce((a, b) => a + b, 0) / nonZeroPrices.length : 0;
+        const autoDetectRial = detectedRialInHeaders || avgPrice >= 2000000;
+
+        if (autoDetectRial) {
+          setSourceCurrency('rial');
+          setIsAutoDetectedRial(true);
+          parsed.forEach((r) => {
+            r.buyPrice = Math.round(r.fileBuyPrice / 10);
+            r.priceShop1 = Math.round(r.filePriceShop1 / 10);
+            r.priceShop2 = r.filePriceShop2 ? Math.round(r.filePriceShop2 / 10) : undefined;
+            r.priceShop3 = r.filePriceShop3 ? Math.round(r.filePriceShop3 / 10) : undefined;
+            r.wholesalePrice = r.fileWholesalePrice ? Math.round(r.fileWholesalePrice / 10) : undefined;
+            r.minAllowedPrice = r.fileMinAllowedPrice ? Math.round(r.fileMinAllowedPrice / 10) : undefined;
+          });
+          showToast(
+            `${toPersianDigits(parsed.length)} ردیف کالا بازخوانی شد. واحد مبالغ به‌طور خودکار «ریال» تشخیص داده شد و به تومان تبدیل گردید.`,
+            'info'
+          );
+        } else {
+          setSourceCurrency('toman');
+          setIsAutoDetectedRial(false);
+          showToast(`${toPersianDigits(parsed.length)} ردیف کالا از فایل اکسل بازخوانی شد (واحد پایه: تومان).`, 'info');
+        }
+
         setParsedRows(parsed);
-        const validCount = parsed.filter((r) => r.isValid).length;
-        showToast(`${toPersianDigits(parsed.length)} ردیف کالا از فایل اکسل بازخوانی شد (${toPersianDigits(validCount)} معتبر).`, 'info');
       } catch (err: any) {
         console.error('Failed to parse spreadsheet:', err);
         showToast('خطا در خواندن فایل اکسل. لطفاً فرمت فایل را بررسی کنید.', 'error');
@@ -280,6 +362,73 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
       setIsProcessingFile(false);
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  // Switch source currency between Toman and Rial
+  const handleCurrencyChange = (cur: 'toman' | 'rial') => {
+    setSourceCurrency(cur);
+    const factor = cur === 'rial' ? 0.1 : 1;
+    setParsedRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        buyPrice: Math.round(r.fileBuyPrice * factor),
+        priceShop1: Math.round(r.filePriceShop1 * factor),
+        priceShop2: r.filePriceShop2 ? Math.round(r.filePriceShop2 * factor) : undefined,
+        priceShop3: r.filePriceShop3 ? Math.round(r.filePriceShop3 * factor) : undefined,
+        wholesalePrice: r.fileWholesalePrice ? Math.round(r.fileWholesalePrice * factor) : undefined,
+        minAllowedPrice: r.fileMinAllowedPrice ? Math.round(r.fileMinAllowedPrice * factor) : undefined,
+      }))
+    );
+    showToast(
+      cur === 'rial'
+        ? 'واحد ارقام فایل به «ریال» تنظیم شد (مبالغ بر ۱۰ تقسیم و به تومان ذخیره می‌شوند).'
+        : 'واحد ارقام فایل به «تومان» تنظیم شد (مبالغ عیناً ثبت می‌شوند).',
+      'info'
+    );
+  };
+
+  // Quick manual adjustment: divide all by 10
+  const handleManualDivideBy10 = () => {
+    setParsedRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        fileBuyPrice: Math.round(r.fileBuyPrice / 10),
+        filePriceShop1: Math.round(r.filePriceShop1 / 10),
+        filePriceShop2: r.filePriceShop2 ? Math.round(r.filePriceShop2 / 10) : undefined,
+        filePriceShop3: r.filePriceShop3 ? Math.round(r.filePriceShop3 / 10) : undefined,
+        fileWholesalePrice: r.fileWholesalePrice ? Math.round(r.fileWholesalePrice / 10) : undefined,
+        fileMinAllowedPrice: r.fileMinAllowedPrice ? Math.round(r.fileMinAllowedPrice / 10) : undefined,
+        buyPrice: Math.round(r.buyPrice / 10),
+        priceShop1: Math.round(r.priceShop1 / 10),
+        priceShop2: r.priceShop2 ? Math.round(r.priceShop2 / 10) : undefined,
+        priceShop3: r.priceShop3 ? Math.round(r.priceShop3 / 10) : undefined,
+        wholesalePrice: r.wholesalePrice ? Math.round(r.wholesalePrice / 10) : undefined,
+        minAllowedPrice: r.minAllowedPrice ? Math.round(r.minAllowedPrice / 10) : undefined,
+      }))
+    );
+    showToast('کلیه قیمت‌ها بر ۱۰ تقسیم شدند (تبدیل دستی ریال ➔ تومان).', 'success');
+  };
+
+  // Quick manual adjustment: multiply all by 10
+  const handleManualMultiplyBy10 = () => {
+    setParsedRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        fileBuyPrice: Math.round(r.fileBuyPrice * 10),
+        filePriceShop1: Math.round(r.filePriceShop1 * 10),
+        filePriceShop2: r.filePriceShop2 ? Math.round(r.filePriceShop2 * 10) : undefined,
+        filePriceShop3: r.filePriceShop3 ? Math.round(r.filePriceShop3 * 10) : undefined,
+        fileWholesalePrice: r.fileWholesalePrice ? Math.round(r.fileWholesalePrice * 10) : undefined,
+        fileMinAllowedPrice: r.fileMinAllowedPrice ? Math.round(r.fileMinAllowedPrice * 10) : undefined,
+        buyPrice: Math.round(r.buyPrice * 10),
+        priceShop1: Math.round(r.priceShop1 * 10),
+        priceShop2: r.priceShop2 ? Math.round(r.priceShop2 * 10) : undefined,
+        priceShop3: r.priceShop3 ? Math.round(r.priceShop3 * 10) : undefined,
+        wholesalePrice: r.wholesalePrice ? Math.round(r.wholesalePrice * 10) : undefined,
+        minAllowedPrice: r.minAllowedPrice ? Math.round(r.minAllowedPrice * 10) : undefined,
+      }))
+    );
+    showToast('کلیه قیمت‌ها در ۱۰ ضرب شدند.', 'info');
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,9 +456,18 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
     setIsSubmitting(true);
     try {
       const res = await api.importExcelInventory({
-        items: validItems,
+        items: validItems.map((r) => ({
+          ...r,
+          buyPrice: r.buyPrice,
+          priceShop1: r.priceShop1,
+          priceShop2: r.priceShop2,
+          priceShop3: r.priceShop3,
+          wholesalePrice: r.wholesalePrice,
+          minAllowedPrice: r.minAllowedPrice,
+        })),
         warehouseId: selectedWarehouseId,
         conflictMode,
+        sourceCurrency: 'toman',
       });
 
       setImportResult({
@@ -488,6 +646,76 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
             {/* Search Filter and Preview Table */}
             {parsedRows.length > 0 && (
               <div className="space-y-3">
+                {/* Currency Selection & Scale Conversion Banner */}
+                <div className="p-3.5 bg-[#18181D] border border-[#2D2D33] rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-[#C9A227] shrink-0" />
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-xs text-[#F3F4F6]">
+                          واحد پولی ارقام فایل اکسل:
+                        </span>
+                        {isAutoDetectedRial && (
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                            ⚡ تشخیص خودکار: ریال
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[#8E9299] mt-0.5">
+                        واحد پایه انبار کاتینو «تومان» است. در صورت انتخاب ریال، ارقام بر ۱۰ تقسیم شده و به تومان در انبار ذخیره می‌شوند.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                    {/* Currency Toggle */}
+                    <div className="inline-flex rounded-xl p-1 bg-[#111113] border border-[#2D2D33]">
+                      <button
+                        type="button"
+                        onClick={() => handleCurrencyChange('toman')}
+                        className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                          sourceCurrency === 'toman'
+                            ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                            : 'text-[#8E9299] hover:text-[#F3F4F6]'
+                        }`}
+                      >
+                        تومان (عیناً)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCurrencyChange('rial')}
+                        className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                          sourceCurrency === 'rial'
+                            ? 'bg-[#C9A227] text-slate-950 shadow-xs'
+                            : 'text-[#8E9299] hover:text-[#F3F4F6]'
+                        }`}
+                      >
+                        ریال (تقسیم بر ۱۰)
+                      </button>
+                    </div>
+
+                    {/* Quick Math action buttons */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handleManualDivideBy10}
+                        title="تقسیم دستی همه‌ی قیمت‌ها بر ۱۰"
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-xl bg-[#202026] text-[#E0E0E0] border border-[#2D2D33] hover:bg-[#2A2A32] transition-colors"
+                      >
+                        ÷۱۰ (ریال ➔ تومان)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleManualMultiplyBy10}
+                        title="ضرب دستی همه‌ی قیمت‌ها در ۱۰"
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-xl bg-[#202026] text-[#E0E0E0] border border-[#2D2D33] hover:bg-[#2A2A32] transition-colors"
+                      >
+                        ×۱۰ (ضرب در ۱۰)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between gap-2">
                   <h4 className="text-xs font-black text-[#F3F4F6] flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -513,8 +741,9 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
                         <th className="p-2.5 font-bold">نام کالا</th>
                         <th className="p-2.5 font-bold">کد / بارکد</th>
                         <th className="p-2.5 font-bold text-center">تعداد ورودی</th>
-                        <th className="p-2.5 font-bold">قیمت خرید</th>
-                        <th className="p-2.5 font-bold">قیمت فروش ۱</th>
+                        <th className="p-2.5 font-bold">فی در فایل ({sourceCurrency === 'rial' ? 'ریال' : 'تومان'})</th>
+                        <th className="p-2.5 font-bold text-[#C9A227]">قیمت خرید (تومان)</th>
+                        <th className="p-2.5 font-bold text-emerald-400">قیمت فروش ۱ (تومان)</th>
                         <th className="p-2.5 font-bold text-center">وضعیت</th>
                       </tr>
                     </thead>
@@ -536,10 +765,13 @@ export const InventoryExcelImportModal: React.FC<InventoryExcelImportModalProps>
                           <td className="p-2.5 text-center font-bold font-mono text-[#C9A227]">
                             {toPersianDigits(row.stock)} {row.unit}
                           </td>
-                          <td className="p-2.5 font-mono text-[11px]">
+                          <td className="p-2.5 font-mono text-[11px] text-[#8E9299]">
+                            {row.fileBuyPrice > 0 ? `${formatToman(row.fileBuyPrice)}` : '—'}
+                          </td>
+                          <td className="p-2.5 font-mono text-[11px] font-bold text-[#C9A227]">
                             {row.buyPrice > 0 ? `${formatToman(row.buyPrice)} تومان` : '—'}
                           </td>
-                          <td className="p-2.5 font-mono text-[11px]">
+                          <td className="p-2.5 font-mono text-[11px] font-bold text-emerald-400">
                             {row.priceShop1 > 0 ? `${formatToman(row.priceShop1)} تومان` : '—'}
                           </td>
                           <td className="p-2.5 text-center">

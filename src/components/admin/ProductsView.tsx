@@ -43,6 +43,7 @@ import { Product, Category, UnitDefinition, Warehouse, Supplier } from '../../ty
 import { useToast } from '../common/Toast';
 import { InventoryExcelImportModal } from './InventoryExcelImportModal';
 import { PurchaseInvoiceExcelImportModal } from './PurchaseInvoiceExcelImportModal';
+import { BulkPriceAdjustmentModal } from './BulkPriceAdjustmentModal';
 import { BarcodePrintModal } from './BarcodePrintModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
@@ -69,6 +70,7 @@ export const ProductsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isExcelImportOpen, setIsExcelImportOpen] = useState(false);
   const [isPurchaseExcelOpen, setIsPurchaseExcelOpen] = useState(false);
+  const [isBulkAdjustmentOpen, setIsBulkAdjustmentOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
@@ -597,6 +599,16 @@ export const ProductsView: React.FC = () => {
               <span className="hidden sm:inline">ورودی اکسل موجودی</span>
             </button>
 
+            {/* Bulk Price Adjustment Button */}
+            <button
+              onClick={() => setIsBulkAdjustmentOpen(true)}
+              className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 border border-amber-500/30 cursor-pointer shadow-xs"
+              title="اصلاح دسته‌جمعی قیمت‌ها و تبدیل ریال به تومان برای رفع خطای ورود اکسل"
+            >
+              <ArrowUpDown className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span className="hidden sm:inline">اصلاح ریال/تومان</span>
+            </button>
+
             {/* Create Product Button (Primary Indigo) */}
             <button
               onClick={handleOpenCreate}
@@ -701,6 +713,14 @@ export const ProductsView: React.FC = () => {
             >
               <Printer className="w-3.5 h-3.5" />
               <span>طراحی و چاپ بارکدهای انتخابی</span>
+            </button>
+            <button
+              onClick={() => setIsBulkAdjustmentOpen(true)}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="اصلاح دسته‌جمعی واحد ریال/تومان برای اقلام انتخابی"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span>اصلاح قیمت اقلام انتخابی</span>
             </button>
             <button
               onClick={() => setSelectedProductIds([])}
@@ -1685,6 +1705,18 @@ export const ProductsView: React.FC = () => {
           if (query) {
             setSearchQuery(query);
           }
+        }}
+      />
+
+      {/* Bulk Price Adjustment Modal */}
+      <BulkPriceAdjustmentModal
+        isOpen={isBulkAdjustmentOpen}
+        onClose={() => setIsBulkAdjustmentOpen(false)}
+        selectedProductIds={selectedProductIds}
+        products={products}
+        onSuccess={() => {
+          loadData();
+          setSelectedProductIds([]);
         }}
       />
     </div>

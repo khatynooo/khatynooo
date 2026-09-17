@@ -23,6 +23,7 @@ import {
   Edit3,
   ExternalLink,
   ChevronLeft,
+  Coins,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../../lib/api';
@@ -36,6 +37,8 @@ export interface PurchaseInvoiceExcelItem {
   barcode?: string;
   quantity: number;
   unit: string;
+  fileBuyPrice: number;
+  fileSalePrice?: number;
   buyPrice: number;
   salePrice?: number;
   totalPrice?: number;
@@ -84,6 +87,8 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
   const [paymentMethod, setPaymentMethod] = useState<'credit' | 'cash' | 'cheque'>('credit');
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [notes, setNotes] = useState('');
+  const [sourceCurrency, setSourceCurrency] = useState<'toman' | 'rial'>('toman');
+  const [isAutoDetectedRial, setIsAutoDetectedRial] = useState(false);
 
   // Processing & Data State
   const [fileName, setFileName] = useState('');
@@ -213,24 +218,58 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
         let detectedInvoiceNum = '';
         let detectedDocNum = '';
         let detectedDate = '';
+        let detectedRialInHeaders = false;
+
+        const stopWords = new Set(['کالا', 'نام', 'کد', 'فی', 'واحد', 'سند', 'فاکتور', 'قیمت', 'مبلغ', 'شرح', 'بارکد']);
 
         rawJson.forEach((row: any, idx: number) => {
-          // Find field keys with flexible fuzzy matching
+          // Find field keys with two-pass matching (Pass 1: exact match with priority; Pass 2: fallback substring)
           const getVal = (possibleKeys: string[]): string => {
-            for (const key of Object.keys(row)) {
-              const cleanKey = key.trim().toLowerCase().replace(/[_\s-]/g, '');
-              for (const pk of possibleKeys) {
-                const cleanPk = pk.trim().toLowerCase().replace(/[_\s-]/g, '');
-                if (cleanKey === cleanPk || cleanKey.includes(cleanPk)) {
-                  const val = row[key];
+            const cleanRowKeys = Object.keys(row).map((key) => ({
+              original: key,
+              clean: key.trim().toLowerCase().replace(/[_\s-]/g, ''),
+            }));
+
+            // پاس اول: فقط تطبیق دقیق (بالاترین اولویت، روی همه‌ی نام‌های قابل‌قبول)
+            for (const pk of possibleKeys) {
+              const cleanPk = pk.trim().toLowerCase().replace(/[_\s-]/g, '');
+              for (const { original, clean } of cleanRowKeys) {
+                if (clean === cleanPk) {
+                  const val = row[original];
                   if (val !== undefined && val !== null && String(val).trim() !== '') {
                     return String(val).trim();
                   }
                 }
               }
             }
+
+            // پاس دوم: تطبیق تقریبی - کلمات خیلی عمومی و کوتاه فیلتر می‌شوند تا ستون اشتباه خوانده نشود
+            for (const pk of possibleKeys) {
+              const cleanPk = pk.trim().toLowerCase().replace(/[_\s-]/g, '');
+              if (stopWords.has(cleanPk) || cleanPk.length < 3) continue;
+              for (const { original, clean } of cleanRowKeys) {
+                if (clean.includes(cleanPk)) {
+                  const val = row[original];
+                  if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    return String(val).trim();
+                  }
+                }
+              }
+            }
+
             return '';
           };
+
+          // Auto-detect currency keyword in headers
+          if (idx === 0) {
+            for (const key of Object.keys(row)) {
+              const lk = key.toLowerCase();
+              if (key.includes('ریال') || lk.includes('rial') || lk.includes('irr')) {
+                detectedRialInHeaders = true;
+                break;
+              }
+            }
+          }
 
           // Auto-detect header metadata from first available row
           if (!detectedCompany) {
@@ -246,8 +285,29 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
             detectedDate = getVal(['تاریخ فاکتور', 'تاریخ', 'date', 'invoice_date']);
           }
 
-          // Item-level fields
-          const name = getVal(['شرح کالا یا خدمات', 'شرح کالا', 'نام کالا', 'شرح', 'کالا', 'عنوان کالا', 'description', 'title', 'name']);
+          // Item-level fields (رفع باگ: حذف کلمه‌ی عمومی «کالا» از کلیدهای شرح تا با کد کالا یا قیمت اشتباه نشود)
+          const name = getVal([
+            'شرح کالا یا خدمات',
+            'شرح کالا و خدمات',
+            'شرح کالا/خدمات',
+            'شرح کالا',
+            'نام کالا',
+            'عنوان کالا',
+            'شرح اجناس',
+            'شرح محصول',
+            'نام محصول',
+            'عنوان محصول',
+            'شرح قلم',
+            'نام قلم',
+            'شرح خدمات',
+            'شرح',
+            'عنوان',
+            'description',
+            'item_name',
+            'product_name',
+            'title',
+            'name',
+          ]);
           const code = toEnDigits(getVal(['کد کالا', 'کد', 'کدسیستمی', 'کد محصول', 'code', 'product_code', 'item_code']));
           const barcode = toEnDigits(getVal(['بارکد', 'بارکد تک', 'بارکد کالا', 'barcode']));
           const unit = getVal(['واحد', 'واحد سنجش', 'واحد کالا', 'unit']) || 'عدد';
@@ -256,8 +316,8 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
           const salePriceStr = toEnDigits(getVal(['قیمت مصرف کننده', 'قیمت فروش', 'قیمت مصرف‌کننده', 'قیمت فروش ۱', 'sale_price']));
 
           const quantity = Number(qtyStr) || 0;
-          const buyPrice = Number(buyPriceStr) || 0;
-          const salePrice = Number(salePriceStr) || undefined;
+          const fileBuyPrice = Number(buyPriceStr) || 0;
+          const fileSalePrice = Number(salePriceStr) || undefined;
 
           let isValid = true;
           let validationError = '';
@@ -276,9 +336,11 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
             barcode: barcode || undefined,
             quantity: quantity > 0 ? quantity : 1,
             unit,
-            buyPrice,
-            salePrice,
-            totalPrice: quantity * buyPrice,
+            fileBuyPrice,
+            fileSalePrice,
+            buyPrice: fileBuyPrice,
+            salePrice: fileSalePrice,
+            totalPrice: (quantity > 0 ? quantity : 1) * fileBuyPrice,
             isValid,
             validationError,
           });
@@ -290,8 +352,30 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
         if (detectedDocNum) setDocumentNumber(detectedDocNum);
         if (detectedDate) setInvoiceDate(detectedDate);
 
+        // Auto-detect Rial currency from headers or high average price (> 2,000,000)
+        const nonZeroPrices = items.map((it) => it.fileBuyPrice).filter((p) => p > 0);
+        const avgPrice = nonZeroPrices.length > 0 ? nonZeroPrices.reduce((a, b) => a + b, 0) / nonZeroPrices.length : 0;
+        const autoDetectRial = detectedRialInHeaders || avgPrice >= 2000000;
+
+        if (autoDetectRial) {
+          setSourceCurrency('rial');
+          setIsAutoDetectedRial(true);
+          items.forEach((it) => {
+            it.buyPrice = Math.round(it.fileBuyPrice / 10);
+            it.salePrice = it.fileSalePrice ? Math.round(it.fileSalePrice / 10) : undefined;
+            it.totalPrice = it.quantity * it.buyPrice;
+          });
+          showToast(
+            `${toPersianDigits(items.length)} ردیف بازخوانی شد. واحد مبالغ فایل به‌طور خودکار «ریال» تشخیص داده شد و به تومان تبدیل گردید.`,
+            'info'
+          );
+        } else {
+          setSourceCurrency('toman');
+          setIsAutoDetectedRial(false);
+          showToast(`${toPersianDigits(items.length)} ردیف از فایل اکسل بازخوانی شد (واحد پایه: تومان).`, 'info');
+        }
+
         setParsedItems(items);
-        showToast(`${toPersianDigits(items.length)} ردیف از فایل اکسل بازخوانی شد.`, 'info');
       } catch (err: any) {
         console.error('Error parsing purchase invoice Excel:', err);
         showToast('خطا در پردازش فایل اکسل: ' + (err.message || 'ساختار فایل نامعتبر است.'), 'error');
@@ -301,6 +385,72 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
     };
 
     reader.readAsBinaryString(file);
+  };
+
+  // Switch source currency between Toman and Rial
+  const handleCurrencyChange = (cur: 'toman' | 'rial') => {
+    setSourceCurrency(cur);
+    const factor = cur === 'rial' ? 0.1 : 1;
+    setParsedItems((prev) =>
+      prev.map((it) => {
+        const buyPrice = Math.round(it.fileBuyPrice * factor);
+        const salePrice = it.fileSalePrice ? Math.round(it.fileSalePrice * factor) : undefined;
+        return {
+          ...it,
+          buyPrice,
+          salePrice,
+          totalPrice: it.quantity * buyPrice,
+        };
+      })
+    );
+    showToast(
+      cur === 'rial'
+        ? 'واحد ارقام فایل به «ریال» تغییر یافت (کلیه قیمت‌ها بر ۱۰ تقسیم و به تومان ثبت می‌شوند).'
+        : 'واحد ارقام فایل به «تومان» تنظیم شد (مبالغ عیناً ثبت می‌شوند).',
+      'info'
+    );
+  };
+
+  // Quick manual adjustment: divide all by 10
+  const handleManualDivideBy10 = () => {
+    setParsedItems((prev) =>
+      prev.map((it) => {
+        const fileBuyPrice = Math.round(it.fileBuyPrice / 10);
+        const fileSalePrice = it.fileSalePrice ? Math.round(it.fileSalePrice / 10) : undefined;
+        const buyPrice = Math.round(it.buyPrice / 10);
+        const salePrice = it.salePrice ? Math.round(it.salePrice / 10) : undefined;
+        return {
+          ...it,
+          fileBuyPrice,
+          fileSalePrice,
+          buyPrice,
+          salePrice,
+          totalPrice: it.quantity * buyPrice,
+        };
+      })
+    );
+    showToast('کلیه قیمت‌های فاکتور بر ۱۰ تقسیم شدند (تبدیل دستی ریال ➔ تومان).', 'success');
+  };
+
+  // Quick manual adjustment: multiply all by 10
+  const handleManualMultiplyBy10 = () => {
+    setParsedItems((prev) =>
+      prev.map((it) => {
+        const fileBuyPrice = Math.round(it.fileBuyPrice * 10);
+        const fileSalePrice = it.fileSalePrice ? Math.round(it.fileSalePrice * 10) : undefined;
+        const buyPrice = Math.round(it.buyPrice * 10);
+        const salePrice = it.salePrice ? Math.round(it.salePrice * 10) : undefined;
+        return {
+          ...it,
+          fileBuyPrice,
+          fileSalePrice,
+          buyPrice,
+          salePrice,
+          totalPrice: it.quantity * buyPrice,
+        };
+      })
+    );
+    showToast('کلیه قیمت‌های فاکتور در ۱۰ ضرب شدند.', 'info');
   };
 
   // Submit parsed invoice to API
@@ -325,6 +475,8 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
         paymentMethod,
         paidAmount,
         notes: notes.trim() || undefined,
+        sourceCurrency: 'toman',
+        alreadyConvertedToToman: true,
         items: validItems.map((it) => ({
           name: it.name,
           code: it.code,
@@ -709,13 +861,83 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
                 {/* 3. Parsed Items Preview Table */}
                 {parsedItems.length > 0 && (
                   <div className="bg-white dark:bg-[#18181D] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+                    {/* Currency selection & conversion banner */}
+                    <div className="p-3.5 bg-indigo-50/70 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Coins className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-xs text-indigo-950 dark:text-indigo-200">
+                              واحد پولی ارقام فایل اکسل:
+                            </span>
+                            {isAutoDetectedRial && (
+                              <span className="text-[10px] bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full font-bold border border-amber-300 dark:border-amber-800">
+                                ⚡ تشخیص خودکار بر مبنای هدر/مبالغ: ریال
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/70 mt-0.5">
+                            واحد پایه سیستم کاتینو «تومان» است. در صورت انتخاب ریال، کلیه قیمت‌ها بر ۱۰ تقسیم و به تومان ذخیره می‌شوند.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        {/* Currency Toggle Buttons */}
+                        <div className="inline-flex rounded-xl p-1 bg-white dark:bg-[#1f1f26] border border-indigo-200 dark:border-indigo-800 shadow-xs">
+                          <button
+                            type="button"
+                            onClick={() => handleCurrencyChange('toman')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                              sourceCurrency === 'toman'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            تومان (عیناً)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCurrencyChange('rial')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-colors ${
+                              sourceCurrency === 'rial'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                            }`}
+                          >
+                            ریال (تقسیم بر ۱۰)
+                          </button>
+                        </div>
+
+                        {/* Quick Math action buttons */}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={handleManualDivideBy10}
+                            title="تقسیم دستی همه‌ی قیمت‌ها بر ۱۰"
+                            className="px-2.5 py-1 text-[11px] font-bold rounded-xl bg-white dark:bg-[#202026] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs"
+                          >
+                            ÷۱۰ (ریال ➔ تومان)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleManualMultiplyBy10}
+                            title="ضرب دستی همه‌ی قیمت‌ها در ۱۰"
+                            className="px-2.5 py-1 text-[11px] font-bold rounded-xl bg-white dark:bg-[#202026] text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-xs"
+                          >
+                            ×۱۰ (ضرب در ۱۰)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 dark:bg-[#16161A]">
                       <div className="flex items-center gap-2">
                         <span className="font-black text-xs sm:text-sm text-slate-900 dark:text-white">
                           پیش‌نمایش اقلام فاکتور ({toPersianDigits(validItemsCount)} قلم معتبر)
                         </span>
                         <span className="text-xs bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
-                          جمع مبلغ: {formatToman(totalCalculatedAmount)}
+                          جمع کل فاکتور: {formatToman(totalCalculatedAmount)}
                         </span>
                       </div>
                       <div className="relative w-full sm:w-56">
@@ -739,8 +961,9 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
                             <th className="p-2.5">شرح کالا یا خدمات</th>
                             <th className="p-2.5">مقدار / تعداد</th>
                             <th className="p-2.5">واحد</th>
-                            <th className="p-2.5">قیمت کالا (فی خرید)</th>
-                            <th className="p-2.5">مبلغ کل</th>
+                            <th className="p-2.5">فی در فایل اکسل ({sourceCurrency === 'rial' ? 'ریال' : 'تومان'})</th>
+                            <th className="p-2.5 text-indigo-700 dark:text-indigo-300">فی نهایی (تومان)</th>
+                            <th className="p-2.5 text-emerald-700 dark:text-emerald-300">مبلغ کل (تومان)</th>
                             <th className="p-2.5">وضعیت</th>
                           </tr>
                         </thead>
@@ -774,11 +997,14 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
                               <td className="p-2.5 text-slate-600 dark:text-slate-400">
                                 {item.unit}
                               </td>
-                              <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
+                              <td className="p-2.5 text-slate-500 dark:text-slate-400 font-mono">
+                                {formatToman(item.fileBuyPrice)}
+                              </td>
+                              <td className="p-2.5 font-black text-indigo-700 dark:text-indigo-300">
                                 {formatToman(item.buyPrice)}
                               </td>
                               <td className="p-2.5 font-black text-emerald-700 dark:text-emerald-300">
-                                {formatToman(item.quantity * item.buyPrice)}
+                                {formatToman(item.totalPrice || item.quantity * item.buyPrice)}
                               </td>
                               <td className="p-2.5">
                                 {item.isValid ? (

@@ -275,6 +275,7 @@ export interface PurchaseInvoice {
   documentNumber?: string;
   warehouseId?: string;
   warehouseName?: string;
+  sourceCurrency?: 'toman' | 'rial';
   createdAt: string;
 }
 
@@ -1367,11 +1368,19 @@ export interface BindingSettings {
 }
 
 export interface EitaaCustomerChat {
+  id?: string;
   mobile: string;
   chatId: string;
   eitaaUserId?: string;
   firstName?: string;
+  lastName?: string;
   username?: string;
+  customerName?: string;
+  customerId?: string;
+  receiptCodes?: string[];
+  isVerified?: boolean;
+  source?: string;
+  status?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1398,6 +1407,9 @@ export interface EitaaIdentity {
   status: 'active' | 'inactive' | 'blocked';
   isBlocked: boolean;
   isVerified?: boolean;
+  consecutiveFailures?: number;
+  invalidatedAt?: string;
+  eitaaDeliveryBlocked?: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
   receiptCodes: string[];
@@ -1422,6 +1434,8 @@ export interface EitaaMessage {
   status: 'queued' | 'sending' | 'sent' | 'failed' | 'retrying';
   provider: string;
   providerMessageId?: string;
+  providerUpdateId?: string;
+  isRead?: boolean;
   attempts: number;
   maxAttempts: number;
   errorCode?: string;

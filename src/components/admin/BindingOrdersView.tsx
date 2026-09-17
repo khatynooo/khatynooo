@@ -341,13 +341,19 @@ export const BindingOrdersView: React.FC = () => {
   // ثبت دستی چت آی‌دی مشتری در ایتا
   const handleAddEitaaChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChatForm.mobile.trim() || !newChatForm.chatId.trim()) {
-      showToast('شماره موبایل و شناسه چت الزامی است.', 'warning');
+    if (!newChatForm.chatId.trim()) {
+      showToast('شناسه عددی چت ایتا (chat_id) الزامی است.', 'warning');
       return;
     }
     try {
-      await api.registerEitaaCustomerChat(newChatForm);
-      showToast('شناسه چت ایتا برای مشتری ثبت شد.', 'success');
+      await api.registerEitaaCustomerChat({
+        ...newChatForm,
+        mobile: newChatForm.mobile.trim() || undefined,
+        chatId: newChatForm.chatId.trim(),
+        firstName: newChatForm.firstName.trim() || undefined,
+        username: newChatForm.username.trim() || undefined,
+      });
+      showToast('اطلاعات حساب و نگاشت ایتا با موفقیت ذخیره شد.', 'success');
       setNewChatForm({ mobile: '', chatId: '', firstName: '', username: '' });
       loadEitaaChats();
       loadData();
@@ -357,10 +363,12 @@ export const BindingOrdersView: React.FC = () => {
   };
 
   // حذف چت آی‌دی مشتری
-  const handleDeleteEitaaChat = async (mobile: string) => {
+  const handleDeleteEitaaChat = async (identifier: string) => {
+    if (!identifier) return;
+    if (!window.confirm('آیا از حذف این نگاشت حساب ایتا اطمینان دارید؟')) return;
     try {
-      await api.deleteEitaaCustomerChat(mobile);
-      showToast('شناسه چت مشتری حذف شد.', 'success');
+      await api.deleteEitaaCustomerChat(identifier);
+      showToast('نگاشت حساب مشتری حذف شد.', 'success');
       loadEitaaChats();
       loadData();
     } catch (err: any) {
@@ -1546,113 +1554,253 @@ export const BindingOrdersView: React.FC = () => {
       {/* ۷. مودال مدیریت چت‌های ایتا (نگاشت مشتریان به chat_id) */}
       {showChatsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-[#141417] w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-[#2A2A30] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white dark:bg-[#141417] w-full max-w-4xl rounded-2xl border border-slate-200 dark:border-[#2A2A30] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-[#25252B]">
               <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-[#F3F4F6]">
-                <Users className="w-4 h-4 text-sky-500" />
-                <span>نگاشت مشتریان ایتا (ثبت شناسه چت جهت دریافت پیام مستقیم)</span>
+                <Users className="w-5 h-5 text-sky-500" />
+                <div>
+                  <span>نگاشت مشتریان و هویت‌های ایتا (Eitaa Customer Mapping)</span>
+                  <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 block">
+                    اتصال شناسه عددی چت (chat_id) به شماره همراه و رسیدهای کارگاهی مشتری
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={() => setShowChatsModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowChatsModal(false);
+                    setMainViewMode('eitaa');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs font-bold border border-sky-200 dark:border-sky-800 transition flex items-center gap-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>باز کردن صندوق پیام و CRM</span>
+                </button>
+                <button
+                  onClick={() => setShowChatsModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              <div className="bg-sky-50 dark:bg-sky-950/30 p-3 rounded-xl border border-sky-200 dark:border-sky-900/40 text-xs text-sky-800 dark:text-sky-300 space-y-1">
-                <div className="font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>راهنمای فنی ارسال پیام در پیام‌رسان ایتا:</span>
+              <div className="bg-sky-50 dark:bg-sky-950/30 p-3.5 rounded-xl border border-sky-200 dark:border-sky-900/40 text-xs text-sky-800 dark:text-sky-300 space-y-1.5 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  <span>راهنمای کارکرد نگاشت و اتصال شناسه چت ایتا:</span>
                 </div>
                 <p>
-                  در بات‌های ایتا، برای ارسال پیام اختصاصی به کاربر، مشتری باید ابتدا یک بار به بات پیام دهد (مثلاً ارسال /start یا اشتراک‌گذاری شماره). شما می‌توانید با وارد کردن شماره همراه و شناسه عددی چت یا فوروارد پیام کاربر در بات، نگاشت را دستی یا خودکار ثبت کنید.
+                  در پیام‌رسان ایتا، جهت ارسال پیام اختصاصی به کاربر، لازم است شناسه چت (<code className="font-mono px-1 py-0.5 bg-sky-100 dark:bg-sky-900/60 rounded">chat_id</code>) مشتری مشخص باشد. به محض اینکه مشتری در مینی‌اپ یا بات ایتا وارد شود یا شماره تماس/کد فیش خود را پیگیری کند، شناسه چت و شماره همراه وی به صورت هوشمند و خودکار با یکدیگر پیوند می‌خورند و در این جدول نمایش داده می‌شوند.
                 </p>
               </div>
 
-              {/* فرم افزودن چت جدید */}
-              <form onSubmit={handleAddEitaaChat} className="bg-slate-50 dark:bg-[#1A1A1E] p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-                <div className="font-bold text-xs text-slate-800 dark:text-slate-200">
-                  ثبت دستی ارتباط شماره موبایل با شناسه چت ایتا
+              {/* فرم افزودن یا پیوند دستی چت */}
+              <form onSubmit={handleAddEitaaChat} className="bg-slate-50 dark:bg-[#1A1A1E] p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                    ثبت یا به‌روزرسانی دستی شناسه چت برای مشتری
+                  </span>
+                  <span className="text-[10px] text-slate-400">شناسه عددی را می‌توانید از فوروارد پیام کاربر در بات بدست آورید</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <input
-                    type="tel"
-                    required
-                    placeholder="شماره موبایل (۰۹۱۲۳۴۵۶۷۸۹)"
-                    value={newChatForm.mobile}
-                    onChange={(e) => setNewChatForm({ ...newChatForm, mobile: e.target.value })}
-                    className="px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs font-mono text-left"
-                    dir="ltr"
-                  />
-                  <input
-                    type="text"
-                    required
-                    placeholder="شناسه چت یا شناسه عددی کاربر در ایتا"
-                    value={newChatForm.chatId}
-                    onChange={(e) => setNewChatForm({ ...newChatForm, chatId: e.target.value })}
-                    className="px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs font-mono text-left"
-                    dir="ltr"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <input
-                    type="text"
-                    placeholder="نام مشتری (اختیاری)"
-                    value={newChatForm.firstName}
-                    onChange={(e) => setNewChatForm({ ...newChatForm, firstName: e.target.value })}
-                    className="px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition-colors"
-                  >
-                    افزودن شناسه چت
-                  </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">شناسه چت در ایتا (chat_id) *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="مثال: 98765432"
+                      value={newChatForm.chatId}
+                      onChange={(e) => setNewChatForm({ ...newChatForm, chatId: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs font-mono text-left"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">شماره همراه مشتری</label>
+                    <input
+                      type="tel"
+                      placeholder="۰۹۱۲۳۴۵۶۷۸۹"
+                      value={newChatForm.mobile}
+                      onChange={(e) => setNewChatForm({ ...newChatForm, mobile: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs font-mono text-left"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">نام یا عنوان مشتری</label>
+                    <input
+                      type="text"
+                      placeholder="نام مشتری"
+                      value={newChatForm.firstName}
+                      onChange={(e) => setNewChatForm({ ...newChatForm, firstName: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-500 mb-1">نام کاربری ایتا</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="بدون @"
+                        value={newChatForm.username}
+                        onChange={(e) => setNewChatForm({ ...newChatForm, username: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#141417] border border-slate-200 dark:border-slate-800 text-xs font-mono text-left"
+                        dir="ltr"
+                      />
+                      <button
+                        type="submit"
+                        className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs transition-colors shrink-0"
+                      >
+                        ثبت نگاشت
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </form>
 
-              {/* جدول مخاطبین موجود */}
+              {/* جدول مخاطبین و هویت‌های موجود */}
               <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    لیست هویت‌ها و نگاشت‌های فعال ({toPersianDigits(eitaaChats.length)})
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadEitaaChats}
+                    className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>بروزرسانی لیست</span>
+                  </button>
+                </div>
                 <input
                   type="text"
-                  placeholder="جستجو در مخاطبان ایتا..."
+                  placeholder="جستجو با شماره همراه، شناسه چت، نام، آیدی یا کد فیش..."
                   value={chatSearch}
                   onChange={(e) => setChatSearch(e.target.value)}
                   className="w-full px-3 py-2 mb-2 rounded-xl bg-slate-50 dark:bg-[#1A1A1E] border border-slate-200 dark:border-slate-800 text-xs"
                 />
 
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden max-h-80 overflow-y-auto">
                   <table className="w-full text-right text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px]">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] sticky top-0 z-10">
                       <tr>
+                        <th className="p-2.5">نام و مشخصات ایتا</th>
                         <th className="p-2.5">شماره موبایل</th>
                         <th className="p-2.5">شناسه چت (chat_id)</th>
-                        <th className="p-2.5">نام / نام کاربری</th>
+                        <th className="p-2.5">فیش‌های متصل</th>
+                        <th className="p-2.5">منبع اتصال</th>
                         <th className="p-2.5 text-center">عملیات</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {eitaaChats.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="p-4 text-center text-slate-400">
-                            مخاطبی ثبت نشده است.
+                          <td colSpan={6} className="p-8 text-center text-slate-400">
+                            مخاطب یا نگاشتی یافت نشد. به محض ارسال پیام توسط مشتری در بات یا مینی‌اپ، اطلاعات در اینجا ظاهر خواهد شد.
                           </td>
                         </tr>
                       ) : (
                         eitaaChats.map((chat) => (
-                          <tr key={chat.mobile} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
-                            <td className="p-2.5 font-mono">{chat.mobile}</td>
-                            <td className="p-2.5 font-mono">{chat.chatId}</td>
-                            <td className="p-2.5">{chat.firstName || chat.username || '-'}</td>
+                          <tr key={chat.id || chat.chatId || chat.mobile} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                            <td className="p-2.5">
+                              <div className="font-bold text-slate-900 dark:text-slate-100">
+                                {chat.customerName || [chat.firstName, chat.lastName].filter(Boolean).join(' ') || 'کاربر بدون نام'}
+                              </div>
+                              {chat.username && (
+                                <div className="text-[10px] text-sky-600 dark:text-sky-400 font-mono" dir="ltr">
+                                  @{chat.username}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-2.5 font-mono">
+                              {chat.mobile ? (
+                                <span className="dir-ltr inline-block">{chat.mobile}</span>
+                              ) : (
+                                <span className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded text-[10px]">
+                                  فاقد شماره همراه
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <code className="font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px]">
+                                  {chat.chatId}
+                                </code>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(chat.chatId);
+                                    showToast('شناسه چت در حافظه کپی شد', 'success');
+                                  }}
+                                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                                  title="کپی شناسه چت"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="p-2.5">
+                              {chat.receiptCodes && chat.receiptCodes.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-w-[180px]">
+                                  {chat.receiptCodes.map((code) => (
+                                    <span
+                                      key={code}
+                                      className="font-mono text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/40 px-1.5 py-0.5 rounded"
+                                    >
+                                      {code}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 text-[10px]">-</span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                {chat.source === 'mini_app' || chat.source === 'mini_app_tracking' ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    <span>مینی‌اپ</span>
+                                  </>
+                                ) : chat.source === 'admin_manual' ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                    <span>ثبت دستی</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                    <span>بات مستقیم</span>
+                                  </>
+                                )}
+                              </span>
+                            </td>
                             <td className="p-2.5 text-center">
-                              <button
-                                onClick={() => handleDeleteEitaaChat(chat.mobile)}
-                                className="text-rose-500 hover:text-rose-700 p-1"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowChatsModal(false);
+                                    setMainViewMode('eitaa');
+                                  }}
+                                  className="text-sky-600 hover:text-sky-800 dark:hover:text-sky-300 p-1.5 rounded hover:bg-sky-50 dark:hover:bg-sky-950/50"
+                                  title="ارسال پیام و گفتگو در CRM"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteEitaaChat(chat.chatId || chat.mobile || chat.id || '')}
+                                  className="text-rose-500 hover:text-rose-700 p-1.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                                  title="حذف نگاشت"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))

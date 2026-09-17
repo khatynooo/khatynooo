@@ -371,6 +371,25 @@ async function safeUpdateSupplierDebt(client: any, supplierId: string, deltaDebt
   }
 }
 
+// تابع کمکی نرمال‌سازی شماره همراه ایرانی با تبدیل ارقام فارسی و پیش‌شماره‌ها
+export function normalizeIranianMobile(input?: string): string {
+  if (!input) return '';
+  let cleaned = String(input).trim();
+  cleaned = cleaned.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  cleaned = cleaned.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+  cleaned = cleaned.replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('0098')) {
+    cleaned = '0' + cleaned.slice(4);
+  } else if (cleaned.startsWith('98') && cleaned.length === 12) {
+    cleaned = '0' + cleaned.slice(2);
+  } else if (cleaned.startsWith('+98')) {
+    cleaned = '0' + cleaned.slice(3);
+  } else if (cleaned.length === 10 && cleaned.startsWith('9')) {
+    cleaned = '0' + cleaned;
+  }
+  return cleaned;
+}
+
 export const db = {
   // ============================================================================
   // ۱. کاربران و احراز هویت (Users & Auth)
@@ -2551,6 +2570,7 @@ export const db = {
     documentNumber?: string;
     discount?: number;
     receiptImageUrl?: string;
+    sourceCurrency?: string;
   }): Promise<PurchaseInvoice> {
     const id = `pur_${Date.now()}`;
     const invoiceNumber = invoice.invoiceNumber?.trim() || `PUR-${Date.now().toString().slice(-6)}`;
@@ -2623,8 +2643,8 @@ export const db = {
           id, invoice_number, invoice_date, supplier_id, supplier_name, items,
           total_amount, discount, paid_amount, remaining_amount, payment_method,
           notes, warehouse_id, receipt_image_url, cash_amount, cheque_amount,
-          cheques, receipt_image_urls, document_number, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW())`,
+          cheques, receipt_image_urls, document_number, source_currency, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW())`,
         [
           id,
           invoiceNumber,
@@ -2645,6 +2665,7 @@ export const db = {
           JSON.stringify(cheques),
           JSON.stringify(receiptUrls),
           invoice.documentNumber || null,
+          invoice.sourceCurrency || 'toman',
         ]
       );
 
@@ -3456,9 +3477,21 @@ export const db = {
   async getBindingOrders(filter: { query?: string; paymentStatus?: string; workStatus?: string; limit?: number } = {}): Promise<BindingOrder[]> {
     let sql = `
       SELECT bo.*,
-             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
-             COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') 
+                       OR ei.chat_id IS NOT NULL 
+                       OR ecc.chat_id IS NOT NULL 
+                  THEN TRUE ELSE FALSE END as has_eitaa_chat,
+             COALESCE(NULLIF(bo.customer_eitaa_chat_id, ''), ei.chat_id, ecc.chat_id) as resolved_chat_id
       FROM binding_orders bo
+      LEFT JOIN eitaa_identities ei ON (
+        (bo.customer_mobile IS NOT NULL AND bo.customer_mobile <> '' AND (
+          ei.mobile = bo.customer_mobile OR 
+          ei.mobile = '0' || bo.customer_mobile OR 
+          ei.mobile = SUBSTRING(bo.customer_mobile FROM 2) OR
+          ei.mobile = '+98' || SUBSTRING(bo.customer_mobile FROM 2)
+        )) OR 
+        (bo.receipt_code IS NOT NULL AND bo.receipt_code = ANY(ei.receipt_codes))
+      )
       LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
       WHERE 1=1
     `;
@@ -3521,9 +3554,21 @@ export const db = {
   async getBindingOrderById(id: string): Promise<BindingOrder | null> {
     const res = await query(
       `SELECT bo.*,
-              CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
-              COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+              CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') 
+                        OR ei.chat_id IS NOT NULL 
+                        OR ecc.chat_id IS NOT NULL 
+                   THEN TRUE ELSE FALSE END as has_eitaa_chat,
+              COALESCE(NULLIF(bo.customer_eitaa_chat_id, ''), ei.chat_id, ecc.chat_id) as resolved_chat_id
        FROM binding_orders bo
+       LEFT JOIN eitaa_identities ei ON (
+         (bo.customer_mobile IS NOT NULL AND bo.customer_mobile <> '' AND (
+           ei.mobile = bo.customer_mobile OR 
+           ei.mobile = '0' || bo.customer_mobile OR 
+           ei.mobile = SUBSTRING(bo.customer_mobile FROM 2) OR
+           ei.mobile = '+98' || SUBSTRING(bo.customer_mobile FROM 2)
+         )) OR 
+         (bo.receipt_code IS NOT NULL AND bo.receipt_code = ANY(ei.receipt_codes))
+       )
        LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
        WHERE bo.id = $1 LIMIT 1`,
       [id]
@@ -3608,15 +3653,27 @@ export const db = {
       const seqRes = await client.query(`SELECT 'F-' || CAST(nextval('binding_order_seq') AS TEXT) AS receipt_code`);
       const receiptCode = seqRes.rows[0].receipt_code;
 
-      // بررسی chat_id کاربر در صورت وجود
+      // بررسی chat_id کاربر در صورت وجود در هویت‌های ایتا یا جدول نگاشت
       let resolvedChatId = data.customerEitaaChatId?.trim() || null;
       if (!resolvedChatId) {
-        const chatCheck = await client.query(
-          `SELECT chat_id FROM eitaa_customer_chats WHERE mobile = $1 OR mobile = $2 ORDER BY updated_at DESC LIMIT 1`,
-          [customerMobile, customerMobile.replace(/^0/, '')]
+        const normMob = normalizeIranianMobile(customerMobile);
+        const noZeroMob = normMob.replace(/^0/, '');
+        const idCheck = await client.query(
+          `SELECT chat_id FROM eitaa_identities 
+           WHERE mobile = $1 OR mobile = $2 OR mobile = $3 OR mobile = $4 
+           ORDER BY updated_at DESC LIMIT 1`,
+          [normMob, noZeroMob, '0' + noZeroMob, '+98' + noZeroMob]
         );
-        if (chatCheck.rows.length > 0 && chatCheck.rows[0].chat_id) {
-          resolvedChatId = chatCheck.rows[0].chat_id;
+        if (idCheck.rows.length > 0 && idCheck.rows[0].chat_id) {
+          resolvedChatId = idCheck.rows[0].chat_id;
+        } else {
+          const chatCheck = await client.query(
+            `SELECT chat_id FROM eitaa_customer_chats WHERE mobile = $1 OR mobile = $2 ORDER BY updated_at DESC LIMIT 1`,
+            [customerMobile, customerMobile.replace(/^0/, '')]
+          );
+          if (chatCheck.rows.length > 0 && chatCheck.rows[0].chat_id) {
+            resolvedChatId = chatCheck.rows[0].chat_id;
+          }
         }
       }
 
@@ -3671,6 +3728,19 @@ export const db = {
             `دریافت نقدی سفارش فنرزنی ${receiptCode} - مشتری ${customerName}`,
           ]
         );
+      }
+
+      // پیوند کد قبض جدید با هویت مشتری در ایتا در صورت مشخص بودن شناسه چت
+      if (resolvedChatId) {
+        try {
+          await client.query(
+            `UPDATE eitaa_identities 
+             SET receipt_codes = ARRAY(SELECT DISTINCT unnest(COALESCE(receipt_codes, '{}') || ARRAY[$1])),
+                 updated_at = NOW() 
+             WHERE chat_id = $2`,
+            [receiptCode, resolvedChatId]
+          );
+        } catch {}
       }
 
       // ۴. ثبت لاگ حسابرسی
@@ -3854,9 +3924,21 @@ export const db = {
 
       const updatedRes = await client.query(
         `SELECT bo.*,
-                CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
-                COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+                CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') 
+                          OR ei.chat_id IS NOT NULL 
+                          OR ecc.chat_id IS NOT NULL 
+                     THEN TRUE ELSE FALSE END as has_eitaa_chat,
+                COALESCE(NULLIF(bo.customer_eitaa_chat_id, ''), ei.chat_id, ecc.chat_id) as resolved_chat_id
          FROM binding_orders bo
+         LEFT JOIN eitaa_identities ei ON (
+           (bo.customer_mobile IS NOT NULL AND bo.customer_mobile <> '' AND (
+             ei.mobile = bo.customer_mobile OR 
+             ei.mobile = '0' || bo.customer_mobile OR 
+             ei.mobile = SUBSTRING(bo.customer_mobile FROM 2) OR
+             ei.mobile = '+98' || SUBSTRING(bo.customer_mobile FROM 2)
+           )) OR 
+           (bo.receipt_code IS NOT NULL AND bo.receipt_code = ANY(ei.receipt_codes))
+         )
          LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
          WHERE bo.id = $1`,
         [id]
@@ -4044,24 +4126,79 @@ export const db = {
     return this.getBindingSettings();
   },
 
-  async getPublicBindingTracking(trackingQuery: string): Promise<BindingOrder[]> {
+  async getPublicBindingTracking(trackingQuery: string, optionalChatId?: string): Promise<BindingOrder[]> {
     const clean = trackingQuery.trim();
-    if (!clean) return [];
+    const cleanChatId = optionalChatId ? String(optionalChatId).trim() : '';
+    if (!clean && !cleanChatId) return [];
+
+    const normMob = clean ? normalizeIranianMobile(clean) : '';
+    const mobNoZero = normMob.replace(/^0/, '');
 
     let sql = `
       SELECT bo.*,
-             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') OR ecc.chat_id IS NOT NULL THEN TRUE ELSE FALSE END as has_eitaa_chat,
-             COALESCE(bo.customer_eitaa_chat_id, ecc.chat_id) as resolved_chat_id
+             CASE WHEN (bo.customer_eitaa_chat_id IS NOT NULL AND bo.customer_eitaa_chat_id <> '') 
+                       OR ei.chat_id IS NOT NULL 
+                       OR ecc.chat_id IS NOT NULL 
+                  THEN TRUE ELSE FALSE END as has_eitaa_chat,
+             COALESCE(NULLIF(bo.customer_eitaa_chat_id, ''), ei.chat_id, ecc.chat_id) as resolved_chat_id
       FROM binding_orders bo
+      LEFT JOIN eitaa_identities ei ON (
+        (bo.customer_mobile IS NOT NULL AND bo.customer_mobile <> '' AND (
+          ei.mobile = bo.customer_mobile OR 
+          ei.mobile = '0' || bo.customer_mobile OR 
+          ei.mobile = SUBSTRING(bo.customer_mobile FROM 2) OR
+          ei.mobile = '+98' || SUBSTRING(bo.customer_mobile FROM 2)
+        )) OR 
+        (bo.receipt_code IS NOT NULL AND bo.receipt_code = ANY(ei.receipt_codes))
+      )
       LEFT JOIN eitaa_customer_chats ecc ON ecc.mobile = bo.customer_mobile
-      WHERE (bo.receipt_code ILIKE $1 OR bo.customer_mobile ILIKE $2 OR bo.customer_mobile ILIKE $3 OR bo.customer_eitaa_chat_id = $4 OR ecc.chat_id = $5)
+      WHERE (
+        ($1 <> '' AND bo.receipt_code ILIKE $1) OR 
+        ($2 <> '' AND (bo.customer_mobile = $2 OR bo.customer_mobile = $3 OR bo.customer_mobile = $4 OR bo.customer_mobile = $5)) OR
+        ($6 <> '' AND (bo.customer_eitaa_chat_id = $6 OR ei.chat_id = $6 OR ecc.chat_id = $6))
+      )
       ORDER BY bo.created_at DESC
-      LIMIT 10
+      LIMIT 15
     `;
-    const q1 = `%${clean}%`;
-    const q2 = `%${clean.replace(/^0/, '')}%`;
-    const q3 = clean;
-    const res = await query(sql, [q1, q1, q2, q3, q3]);
+
+    const qReceipt = clean ? `%${clean}%` : '';
+    const res = await query(sql, [
+      qReceipt,
+      normMob,
+      mobNoZero,
+      '0' + mobNoZero,
+      '+98' + mobNoZero,
+      cleanChatId || clean,
+    ]);
+
+    // اگر شناسه چت ایتا ارائه شده است، سفارشات یافت‌شده را بلافاصله به این چت پیوند دهیم
+    if (cleanChatId && res.rows.length > 0) {
+      const orderIds = res.rows.map((r: any) => r.id);
+      const receiptCodes = res.rows.map((r: any) => r.receipt_code).filter(Boolean);
+      const primaryMobile = res.rows.find((r: any) => r.customer_mobile)?.customer_mobile;
+
+      try {
+        await query(
+          `UPDATE binding_orders 
+           SET customer_eitaa_chat_id = $1, updated_at = NOW() 
+           WHERE id = ANY($2::text[]) AND (customer_eitaa_chat_id IS NULL OR customer_eitaa_chat_id = '' OR customer_eitaa_chat_id <> $1)`,
+          [cleanChatId, orderIds]
+        );
+
+        await query(
+          `UPDATE eitaa_identities 
+           SET receipt_codes = ARRAY(SELECT DISTINCT unnest(COALESCE(receipt_codes, '{}') || $1::text[])),
+               mobile = COALESCE(NULLIF(mobile, ''), $2),
+               last_seen_at = NOW(),
+               updated_at = NOW()
+           WHERE chat_id = $3`,
+          [receiptCodes, primaryMobile || null, cleanChatId]
+        );
+      } catch (err) {
+        console.warn('Could not auto-link tracked orders to eitaa identity:', err);
+      }
+    }
+
     return res.rows.map((r: any) => ({
       id: r.id,
       receiptCode: r.receipt_code,
@@ -4084,36 +4221,112 @@ export const db = {
       eitaaReadySent: Boolean(r.eitaa_ready_sent),
       eitaaIntakeStatus: r.eitaa_intake_status || 'not_sent',
       eitaaReadyStatus: r.eitaa_ready_status || 'not_sent',
-      hasEitaaChat: Boolean(r.has_eitaa_chat),
+      hasEitaaChat: Boolean(r.has_eitaa_chat) || Boolean(cleanChatId),
+      customerEitaaChatId: cleanChatId || r.resolved_chat_id || r.customer_eitaa_chat_id || undefined,
       createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : new Date().toISOString(),
     }));
   },
 
   async getEitaaCustomerChats(search?: string): Promise<EitaaCustomerChat[]> {
-    let sql = 'SELECT * FROM eitaa_customer_chats WHERE 1=1';
+    let sql = `
+      SELECT 
+        ei.id,
+        ei.chat_id,
+        ei.eitaa_user_id,
+        ei.first_name,
+        ei.last_name,
+        ei.username,
+        COALESCE(ei.mobile, c.mobile, '') as mobile,
+        ei.receipt_codes,
+        ei.source,
+        ei.is_verified,
+        ei.status,
+        ei.customer_id,
+        c.name as customer_name,
+        ei.created_at,
+        COALESCE(ei.last_seen_at, ei.updated_at, ei.created_at) as updated_at
+      FROM eitaa_identities ei
+      LEFT JOIN customers c ON c.id = ei.customer_id
+      WHERE 1=1
+    `;
     const params: any[] = [];
     if (search?.trim()) {
       const q = `%${search.trim()}%`;
-      params.push(q, q, q, q);
-      sql += ` AND (mobile ILIKE $1 OR chat_id ILIKE $2 OR first_name ILIKE $3 OR username ILIKE $4)`;
+      const pExact = search.trim().toUpperCase();
+      params.push(q, pExact);
+      sql += ` AND (
+        ei.mobile ILIKE $1 OR 
+        c.mobile ILIKE $1 OR 
+        ei.chat_id ILIKE $1 OR 
+        ei.first_name ILIKE $1 OR 
+        ei.last_name ILIKE $1 OR 
+        ei.username ILIKE $1 OR 
+        ei.eitaa_user_id ILIKE $1 OR 
+        c.name ILIKE $1 OR 
+        $2 = ANY(ei.receipt_codes)
+      )`;
     }
-    sql += ' ORDER BY updated_at DESC LIMIT 100';
+    sql += ' ORDER BY COALESCE(ei.last_seen_at, ei.updated_at, ei.created_at) DESC LIMIT 150';
     const res = await query(sql, params);
-    return res.rows.map((r: any) => ({
-      mobile: r.mobile,
+
+    const items: EitaaCustomerChat[] = res.rows.map((r: any) => ({
+      id: r.id,
+      mobile: r.mobile || '',
       chatId: r.chat_id,
       eitaaUserId: r.eitaa_user_id || undefined,
       firstName: r.first_name || undefined,
+      lastName: r.last_name || undefined,
       username: r.username || undefined,
+      customerName: r.customer_name || undefined,
+      customerId: r.customer_id || undefined,
+      receiptCodes: Array.isArray(r.receipt_codes) ? r.receipt_codes : [],
+      isVerified: Boolean(r.is_verified),
+      source: r.source || 'mini_app',
+      status: r.status || 'active',
       createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
       updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
     }));
+
+    // در صورتی که دیتابیس هویت‌ها هنوز خالی باشد، داده‌های جدول قبلی را بخواند
+    if (items.length === 0 && !search) {
+      try {
+        const fallback = await query('SELECT * FROM eitaa_customer_chats ORDER BY updated_at DESC LIMIT 50');
+        return fallback.rows.map((r: any) => ({
+          mobile: r.mobile || '',
+          chatId: r.chat_id,
+          eitaaUserId: r.eitaa_user_id || undefined,
+          firstName: r.first_name || undefined,
+          username: r.username || undefined,
+          receiptCodes: Array.isArray(r.receipt_codes) ? r.receipt_codes : [],
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+          updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+        }));
+      } catch {}
+    }
+
+    return items;
   },
 
-  async deleteEitaaCustomerChat(mobile: string): Promise<boolean> {
-    const res = await query('DELETE FROM eitaa_customer_chats WHERE mobile = $1', [mobile]);
-    return (res.rowCount || 0) > 0;
+  async deleteEitaaCustomerChat(identifier: string): Promise<boolean> {
+    const clean = identifier.trim();
+    const norm = normalizeIranianMobile(clean);
+    
+    // ۱. حذف از eitaa_identities بر اساس chat_id یا شماره موبایل یا id
+    const res1 = await query(
+      `DELETE FROM eitaa_identities 
+       WHERE chat_id = $1 OR mobile = $1 OR ($2 <> '' AND mobile = $2) OR id = $1`,
+      [clean, norm]
+    );
+
+    // ۲. حذف از eitaa_customer_chats
+    const res2 = await query(
+      `DELETE FROM eitaa_customer_chats 
+       WHERE chat_id = $1 OR mobile = $1 OR ($2 <> '' AND mobile = $2)`,
+      [clean, norm]
+    );
+
+    return (res1.rowCount || 0) > 0 || (res2.rowCount || 0) > 0;
   },
 
   // ============================================================================

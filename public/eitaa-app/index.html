@@ -642,10 +642,19 @@
       }
     }
 
+    // تابع کمکی تبدیل ارقام فارسی و عربی به انگلیسی
+    function normalizeInputDigits(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
+        .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+        .trim();
+    }
+
     // ثبت دستی شماره موبایل و اتصال به chat_id کاربر
     async function submitLinkMobile() {
       const mobileInput = document.getElementById('linkMobileInput');
-      const mobile = (mobileInput?.value || '').trim();
+      const mobile = normalizeInputDigits(mobileInput?.value || '');
       if (!mobile || mobile.length < 10) {
         alert('لطفاً شماره همراه معتبر (مثلاً 09121234567) وارد نمایید.');
         return;
@@ -666,7 +675,8 @@
           body: JSON.stringify({
             chatId: currentUser.chatId,
             mobile: mobile,
-            firstName: currentUser.firstName || undefined
+            firstName: currentUser.firstName || undefined,
+            username: currentUser.username || undefined
           })
         });
 
@@ -689,10 +699,17 @@
 
     // جستجوی وضعیت سفارش
     async function searchOrders(customQuery) {
-      const q = (customQuery || document.getElementById('trackingInput').value || '').trim();
+      const rawQ = (customQuery || document.getElementById('trackingInput').value || '').trim();
+      const q = normalizeInputDigits(rawQ);
       if (!q) {
         alert('لطفاً شماره تماس یا کد رسید خود را وارد کنید.');
         return;
+      }
+
+      // اگر کاربر داخل ایتاست و شماره موبایل وارد کرده، خودکار در حافظه ثبت و همگام شود
+      if (currentUser.chatId && (q.startsWith('09') || q.startsWith('9') || q.startsWith('+98'))) {
+        currentUser.mobile = q;
+        syncEitaaCustomer({ ...currentUser, mobile: q });
       }
 
       const container = document.getElementById('trackResultsContainer');
@@ -704,7 +721,11 @@
       `;
 
       try {
-        const res = await fetch(`/api/public/binding-track?query=${encodeURIComponent(q)}`);
+        let trackUrl = `/api/public/binding-track?query=${encodeURIComponent(q)}`;
+        if (currentUser.chatId) {
+          trackUrl += `&chatId=${encodeURIComponent(currentUser.chatId)}&firstName=${encodeURIComponent(currentUser.firstName || '')}&username=${encodeURIComponent(currentUser.username || '')}`;
+        }
+        const res = await fetch(trackUrl);
         const data = await res.json();
 
         if (!res.ok || !data.orders || data.orders.length === 0) {
@@ -715,7 +736,7 @@
               </svg>
               <div class="font-bold text-xs sm:text-sm mb-1">سفارشی با این مشخصات یافت نشد</div>
               <p class="text-[11px] text-amber-700 leading-relaxed">
-                لطفاً از صحیح بودن کد فیش (مانند BND-1001) یا شماره همراه اطمینان حاصل فرمایید. در صورت تحویل حضوری کتاب‌ها به فروشگاه، رسید به زودی در سامانه ثبت می‌شود.
+                لطفاً از صحیح بودن کد فیش (مانند F-1001) یا شماره همراه اطمینان حاصل فرمایید. در صورت تحویل حضوری کتاب‌ها به فروشگاه، رسید به زودی در سامانه ثبت می‌شود.
               </p>
             </div>
           `;

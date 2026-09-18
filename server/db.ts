@@ -47,11 +47,9 @@ import {
   EitaaCustomerChat,
 } from '../src/types';
 
-// Helper برای محاسبه قیمت واحد فروش آنلاین بر مبنای subUnit
-export function getStorefrontUnitPrice(priceAtMainUnit: number, conversionFactor?: number | null): number {
-  const factor = Number(conversionFactor || 1);
-  if (!factor || factor <= 1) return priceAtMainUnit;
-  return Math.ceil(priceAtMainUnit / factor);
+// Helper برای دریافت قیمت واحد فروش آنلاین (بر مبنای واحد پایه تک‌عددی)
+export function getStorefrontUnitPrice(priceAtMainUnit: number, _conversionFactor?: number | null): number {
+  return priceAtMainUnit;
 }
 
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
@@ -64,6 +62,9 @@ function formatProduct(row: any): Product {
     ? Boolean(row.only_accounting)
     : !isShowOnWeb;
 
+  const pkgUnit = row.packaging_unit || row.sub_unit || undefined;
+  const pkgFactor = Number(row.packaging_factor || row.conversion_factor || 1);
+
   return {
     id: row.id,
     name: row.name,
@@ -74,8 +75,10 @@ function formatProduct(row: any): Product {
     categoryName: row.category_name || row.categoryName || '',
     subCategoryId: row.sub_category_id || '',
     unit: row.unit || 'عدد',
-    subUnit: row.sub_unit || '',
-    conversionFactor: Number(row.conversion_factor || 1),
+    packagingUnit: pkgUnit,
+    packagingFactor: pkgFactor,
+    subUnit: pkgUnit || '',
+    conversionFactor: pkgFactor,
     buyPrice: Number(row.buy_price || 0),
     salePrice: Number(row.sale_price || 0),
     priceShop1: Number(row.price_shop1 || row.sale_price || 0),
@@ -778,13 +781,16 @@ export const db = {
       const validCatId = await resolveValidCategoryId(client, p.categoryId, p.categoryName || (p as any).category);
       const validSubCatId = await resolveValidSubCategoryId(client, p.subCategoryId, validCatId);
 
+      const pkgUnit = p.packagingUnit || p.subUnit || null;
+      const pkgFactor = Number(p.packagingFactor || p.conversionFactor || 1);
+
       await client.query(
         `INSERT INTO products (
-          id, name, code, barcode, box_barcode, category_id, sub_category_id, unit, sub_unit, conversion_factor,
+          id, name, code, barcode, box_barcode, category_id, sub_category_id, unit, packaging_unit, packaging_factor, sub_unit, conversion_factor,
           buy_price, sale_price, price_shop1, price_shop2, price_shop3, wholesale_price, min_allowed_price,
           stock, min_stock_alert, description, image_url, gallery, extra_images, show_on_website, only_accounting, is_special_offer, is_featured, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $9, $10,
           $11, $12, $13, $14, $15, $16, $17,
           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, NOW(), NOW()
         )`,
@@ -797,8 +803,8 @@ export const db = {
           validCatId,
           validSubCatId,
           p.unit || 'عدد',
-          p.subUnit || null,
-          p.conversionFactor || 1,
+          pkgUnit,
+          pkgFactor,
           p.buyPrice || 0,
           p.salePrice || 0,
           p.priceShop1 || p.salePrice || 0,
@@ -926,7 +932,9 @@ export const db = {
           is_special_offer = COALESCE($22, is_special_offer),
           is_featured = COALESCE($23, is_featured),
           box_barcode = COALESCE($24, box_barcode),
+          packaging_unit = COALESCE($25, packaging_unit),
           sub_unit = COALESCE($25, sub_unit),
+          packaging_factor = COALESCE($26, packaging_factor),
           conversion_factor = COALESCE($26, conversion_factor),
           updated_at = NOW()
          WHERE id = $27`,
@@ -955,8 +963,8 @@ export const db = {
           updates.isSpecialOffer,
           updates.featured !== undefined ? updates.featured : (updates as any).isFeatured,
           updates.boxBarcode,
-          updates.subUnit !== undefined ? (updates.subUnit || null) : null,
-          updates.conversionFactor !== undefined ? Number(updates.conversionFactor) || null : null,
+          updates.packagingUnit !== undefined ? (updates.packagingUnit || null) : (updates.subUnit !== undefined ? (updates.subUnit || null) : null),
+          updates.packagingFactor !== undefined ? Number(updates.packagingFactor) || null : (updates.conversionFactor !== undefined ? Number(updates.conversionFactor) || null : null),
           id,
         ]
       );
@@ -2194,6 +2202,7 @@ export const db = {
     documentNumber?: string;
     discount?: number;
     receiptImageUrl?: string;
+    sourceCurrency?: 'toman' | 'rial' | string;
     updateProductCosts?: boolean;
     userId?: string;
     userName?: string;
@@ -2473,7 +2482,8 @@ export const db = {
           cheque_amount = $15,
           cheques = $16,
           receipt_image_urls = $17,
-          document_number = $18
+          document_number = $18,
+          source_currency = COALESCE($20, source_currency)
         WHERE id = $19`,
         [
           targetSupplierId,
@@ -2495,6 +2505,7 @@ export const db = {
           JSON.stringify(receiptUrls),
           documentNumber,
           id,
+          updateData.sourceCurrency ? (updateData.sourceCurrency === 'IRR' || updateData.sourceCurrency === 'rial' ? 'rial' : 'toman') : null,
         ]
       );
 

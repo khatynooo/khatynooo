@@ -7,11 +7,12 @@ import {
   formatCurrency,
 } from '../lib/currency';
 import { setActiveDisplayCurrency } from '../lib/utils';
+import { api } from '../lib/api';
 
 interface CurrencyContextType {
   currency: CurrencyUnit;
-  setCurrency: (unit: CurrencyUnit) => void;
-  toggleCurrency: () => void;
+  setCurrency: (unit: CurrencyUnit, syncWithServer?: boolean) => void;
+  toggleCurrency: (syncWithServer?: boolean) => void;
   unitLabel: string;
   formatPrice: (amountInToman: number | string | null | undefined, showUnit?: boolean) => string;
   toDisplay: (amountInToman: number) => number;
@@ -23,6 +24,7 @@ const CurrencyContext = createContext<CurrencyContextType | undefined>(undefined
 const STORAGE_KEY = 'khatynoo_display_currency';
 
 export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // ۱. مقدار اولیه از localStorage برای پیشگیری از فلیکر در لود اولیه
   const [currency, setCurrencyState] = useState<CurrencyUnit>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -33,6 +35,30 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return 'IRT'; // پیش‌فرض: تومان
   });
 
+  // ۲. همگام‌سازی اولیه با واحد تنظیم‌شده در پایگاه داده سرور (store_settings)
+  useEffect(() => {
+    let isMounted = true;
+    api.getWebsiteSettings()
+      .then((res: any) => {
+        if (!isMounted) return;
+        const serverCurrency = res?.storeSettings?.displayCurrency;
+        if (serverCurrency === 'IRR' || serverCurrency === 'IRT') {
+          setCurrencyState(serverCurrency);
+          try {
+            localStorage.setItem(STORAGE_KEY, serverCurrency);
+          } catch (_) {}
+          setActiveDisplayCurrency(serverCurrency);
+        }
+      })
+      .catch((err) => {
+        console.warn('عدم امکان همگام‌سازی ارز با سرور:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, currency);
@@ -41,12 +67,23 @@ export const CurrencyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setActiveDisplayCurrency(currency);
   }, [currency]);
 
-  const setCurrency = (unit: CurrencyUnit) => {
+  const setCurrency = (unit: CurrencyUnit, syncWithServer: boolean = true) => {
     setCurrencyState(unit);
+    try {
+      localStorage.setItem(STORAGE_KEY, unit);
+    } catch (_) {}
+    setActiveDisplayCurrency(unit);
+
+    if (syncWithServer) {
+      api.updateStoreSettings({ displayCurrency: unit }).catch((err) => {
+        console.warn('خطا در ذخیره واحد ارزی در تنظیمات سرور:', err);
+      });
+    }
   };
 
-  const toggleCurrency = () => {
-    setCurrencyState((prev) => (prev === 'IRT' ? 'IRR' : 'IRT'));
+  const toggleCurrency = (syncWithServer: boolean = true) => {
+    const nextUnit: CurrencyUnit = currency === 'IRT' ? 'IRR' : 'IRT';
+    setCurrency(nextUnit, syncWithServer);
   };
 
   const unitLabel = getCurrencyLabel(currency);

@@ -38,7 +38,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, toEnglishDigits, isValidBarcodeChecksum, generateValidEan13 } from '../../lib/utils';
+import { formatToman, toPersianDigits, toEnglishDigits, isValidBarcodeChecksum, generateValidEan13, isContinuousUnit, getPackagingEquivalentLabel } from '../../lib/utils';
 import { Product, Category, UnitDefinition, Warehouse, Supplier } from '../../types';
 import { useToast } from '../common/Toast';
 import { InventoryExcelImportModal } from './InventoryExcelImportModal';
@@ -52,6 +52,7 @@ import { ProductGalleryManager } from '../common/ProductGalleryManager';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
 import { ProductPublishModal } from './publication/ProductPublishModal';
 import { ProductTierPricingForm } from './ProductTierPricingForm';
+import { PackagingUnitMigrationModal } from './PackagingUnitMigrationModal';
 
 type ModalTabType = 'general' | 'pricing' | 'gallery' | 'details';
 type PriceTierFilter = 'all' | 'shop1' | 'shop2' | 'shop3' | 'wholesale' | 'minAllowed';
@@ -92,6 +93,8 @@ export const ProductsView: React.FC = () => {
     unit: 'عدد',
     subUnit: '',
     conversionFactor: 1,
+    packagingUnit: '',
+    packagingFactor: 1,
     buyPrice: 0,
     salePrice: 0,
     priceShop1: 0,
@@ -113,6 +116,7 @@ export const ProductsView: React.FC = () => {
   // Print Label Modal
   const [labelProduct, setLabelProduct] = useState<Product | null>(null);
   const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
+  const [isPackagingMigrationOpen, setIsPackagingMigrationOpen] = useState(false);
   const [batchPrintProducts, setBatchPrintProducts] = useState<Product[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
@@ -219,6 +223,8 @@ export const ProductsView: React.FC = () => {
       unit: 'عدد',
       subUnit: '',
       conversionFactor: 1,
+      packagingUnit: '',
+      packagingFactor: 1,
       buyPrice: 0,
       salePrice: 0,
       priceShop1: 0,
@@ -271,6 +277,8 @@ export const ProductsView: React.FC = () => {
       unit: p.unit || 'عدد',
       subUnit: p.subUnit || '',
       conversionFactor: p.conversionFactor || 1,
+      packagingUnit: (p as any).packagingUnit || '',
+      packagingFactor: (p as any).packagingFactor || 1,
       buyPrice: Number(p.buyPrice) || 0,
       salePrice: s1,
       priceShop1: s1,
@@ -352,6 +360,8 @@ export const ProductsView: React.FC = () => {
         stock: Number(formData.stock) || 0,
         minStockAlert: Number(formData.minStockAlert) || 5,
         conversionFactor: Number(formData.conversionFactor) || 1,
+        packagingUnit: formData.packagingUnit?.trim() || null,
+        packagingFactor: Number(formData.packagingFactor) || 1,
         barcode: toEnglishDigits(formData.barcode).trim(),
         boxBarcode: toEnglishDigits(formData.boxBarcode).trim(),
         gallery: allGallery,
@@ -553,6 +563,16 @@ export const ProductsView: React.FC = () => {
 
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Packaging Units Migration Button */}
+            <button
+              onClick={() => setIsPackagingMigrationOpen(true)}
+              className="bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 cursor-pointer shadow-xs"
+              title="بررسی و یکپارچه‌سازی واحدهای کالا بر مبنای «عدد» و تفکیک بسته‌بندی"
+            >
+              <Boxes className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span className="hidden sm:inline">اصلاح بسته‌بندی (مایگریشن)</span>
+            </button>
+
             {/* Batch Print Barcodes Button */}
             <button
               onClick={() => {
@@ -894,15 +914,22 @@ export const ProductsView: React.FC = () => {
 
                       {/* Stock Badge */}
                       <td className="p-3.5 text-center">
-                        <span
-                          className={`px-2.5 py-1 rounded-full font-bold text-xs border ${
-                            p.stock <= p.minStockAlert
-                              ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800'
-                              : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
-                          }`}
-                        >
-                          {toPersianDigits(p.stock)} {p.unit || 'عدد'}
-                        </span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span
+                            className={`px-2.5 py-1 rounded-full font-bold text-xs border ${
+                              p.stock <= p.minStockAlert
+                                ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800'
+                                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+                            }`}
+                          >
+                            {toPersianDigits(p.stock)} {p.unit || 'عدد'}
+                          </span>
+                          {p.packagingUnit && (p.packagingFactor || 0) > 1 && (
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-sans">
+                              {getPackagingEquivalentLabel(p.stock, p.packagingFactor, p.packagingUnit)}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Purchasing Price */}
@@ -1256,49 +1283,6 @@ export const ProductsView: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Box/Carton Barcode (Optional) */}
-                    <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center gap-1.5">
-                        <Boxes className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        بارکد جعبه/کارتن (اختیاری):
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={formData.boxBarcode}
-                          onChange={(e) => setFormData({ ...formData, boxBarcode: toEnglishDigits(e.target.value) })}
-                          placeholder="در صورتی که کارتن کالا بارکد متفاوتی دارد..."
-                          className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2.5 pl-44 font-mono outline-none text-slate-900 dark:text-white font-bold"
-                        />
-                        <div className="absolute left-1.5 top-1.5 flex items-center gap-1.5">
-                          <DirectPhoneScannerButton
-                            onScan={(scannedCode) => {
-                              const clean = toEnglishDigits(scannedCode).trim();
-                              setFormData((prev) => ({ ...prev, boxBarcode: clean }));
-                              showToast(`بارکد جعبه «${clean}» دریافت شد.`, 'success');
-                            }}
-                            label="دوربین گوشی"
-                            variant="gold"
-                            title="اسکن مستقیم بارکد جعبه با گوشی"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setScannerTargetField('formBoxBarcode');
-                              setIsScannerOpen(true);
-                            }}
-                            className="px-2 py-1.5 rounded-xl bg-slate-200 dark:bg-[#222226] hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
-                          >
-                            <ScanLine className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">وبکم</span>
-                          </button>
-                        </div>
-                      </div>
-                      <p className="mt-1 text-[10px] text-slate-500 dark:text-[#8E9299]">
-                        اسکن هر دو بارکد (تک یا کارتن) در صندوق فروش، این کالا را پیدا می‌کند.
-                      </p>
-                    </div>
-
                     {/* Main Category */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
@@ -1387,62 +1371,155 @@ export const ProductsView: React.FC = () => {
 
                     {/* Primary Unit */}
                     <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">واحد سنجش اصلی:</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                          واحد سنجش اصلی (پایه انبار و فاکتور):
+                        </label>
+                        <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
+                          پیش‌فرض: عدد
+                        </span>
+                      </div>
                       <select
                         value={formData.unit}
                         onChange={(e) => {
                           const selectedName = e.target.value;
-                          const matchedDef = unitDefs.find((u) => u.name === selectedName);
                           setFormData((prev) => ({
                             ...prev,
                             unit: selectedName,
-                            subUnit: matchedDef ? matchedDef.subUnit : prev.subUnit,
-                            conversionFactor: matchedDef ? matchedDef.conversionFactor : prev.conversionFactor,
                           }));
                         }}
                         className="w-full bg-slate-50 dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2.5 outline-none text-slate-800 dark:text-slate-100 font-bold cursor-pointer"
                       >
-                        <option value="عدد">عدد</option>
+                        <option value="عدد">عدد (توصیه خطی‌نو برای اقلام شمارشی)</option>
+                        <option value="متر">متر (طول / پارچه / لوله)</option>
+                        <option value="کیلوگرم">کیلوگرم (وزن)</option>
+                        <option value="گرم">گرم (وزن دقیق)</option>
+                        <option value="لیتر">لیتر (مایعات)</option>
+                        <option value="بسته">بسته (اقلام غیرقابل تفکیک)</option>
+                        <option value="رول">رول</option>
                         {Array.from(new Set(unitDefs.map((u) => u.name)))
-                          .filter((name) => name !== 'عدد')
+                          .filter((name) => !['عدد', 'متر', 'کیلوگرم', 'گرم', 'لیتر', 'بسته', 'رول'].includes(name))
                           .map((name) => (
                             <option key={name} value={name}>
                               {name}
                             </option>
                           ))}
                       </select>
+
+                      {/* Warning if unit is non-standard / bulk packaging */}
+                      {formData.unit !== 'عدد' && !isContinuousUnit(formData.unit) && (
+                        <div className="mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div>
+                            <strong>توصیه خطی‌نو:</strong> برای اقلام تکی و شمارشی، واحد اصلی را همیشه روی <strong>«عدد»</strong> بگذارید و جین/بسته/کارتن را در بخش زیر به‌صورت واحد بسته‌بندی وارد کنید تا فاکتورها، انبارداری و فروش سریع بدون سردرگمی کار کنند.
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Sub Unit & Conversion Factor */}
-                    <div>
-                      <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                        واحد فرعی و ضریب تبدیل (اختیاری):
-                      </label>
-                      <div className="flex gap-2">
-                        <select
-                          value={formData.subUnit || ''}
-                          onChange={(e) => setFormData({ ...formData, subUnit: e.target.value })}
-                          className="w-2/3 bg-slate-50 dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2.5 outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
-                        >
-                          <option value="">— بدون واحد فرعی —</option>
-                          {Array.from(
-                            new Set([
-                              ...unitDefs.map((u) => u.subUnit).filter(Boolean),
-                              ...(formData.subUnit ? [formData.subUnit] : []),
-                            ])
-                          ).map((name) => (
-                            <option key={name} value={name}>
-                              {name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          value={formData.conversionFactor}
-                          onChange={(e) => setFormData({ ...formData, conversionFactor: Number(e.target.value) || 1 })}
-                          placeholder="ضریب (مثلاً ۱۲)"
-                          className="w-1/3 bg-slate-50 dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2.5 outline-none font-mono text-slate-800 dark:text-slate-100 font-bold text-center"
-                        />
+                    {/* Packaging Unit, Factor & Box Barcode Container */}
+                    <div className="p-4 rounded-2xl bg-indigo-50/40 dark:bg-[#1A1A22] border border-indigo-100 dark:border-indigo-950/60 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Boxes className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                          بسته‌بندی عمده و بارکد کارتن (اختیاری)
+                        </h4>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                          جهت فروش بسته‌ای/کارتنی و اسکن مستقیم کارتن در صندوق
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                            واحد بسته‌بندی (جین، بسته، کارتن و...):
+                          </label>
+                          <input
+                            type="text"
+                            list="packagingUnitsList"
+                            value={formData.packagingUnit || ''}
+                            onChange={(e) => setFormData({ ...formData, packagingUnit: e.target.value })}
+                            placeholder="مثلاً: جین، کارتن، بسته، جعبه"
+                            className="w-full bg-white dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2 text-xs outline-none text-slate-800 dark:text-slate-100 font-bold"
+                          />
+                          <datalist id="packagingUnitsList">
+                            <option value="جین" />
+                            <option value="بسته" />
+                            <option value="کارتن" />
+                            <option value="جعبه" />
+                            <option value="قوطی" />
+                            <option value="رول" />
+                            <option value="پک" />
+                          </datalist>
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                            تعداد در هر بسته (ضریب تبدیل):
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={formData.packagingFactor || 1}
+                            onChange={(e) => {
+                              const val = Math.max(1, Number(e.target.value) || 1);
+                              setFormData({ ...formData, packagingFactor: val, conversionFactor: val });
+                            }}
+                            placeholder="مثلاً ۱۲ برای جین، ۲۴ برای کارتن"
+                            className="w-full bg-white dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2 text-xs outline-none font-mono text-slate-800 dark:text-slate-100 font-bold text-center"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Dynamic Preview Equivalent Note */}
+                      {formData.packagingUnit && (formData.packagingFactor || 0) > 1 && (
+                        <div className="p-2.5 rounded-xl bg-indigo-100/60 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-900/60 text-xs text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                          <span className="font-bold">قاعده تبدیل:</span>
+                          <span>
+                            هر ۱ {formData.packagingUnit} = {toPersianDigits(formData.packagingFactor)} {formData.unit || 'عدد'}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Box / Carton Barcode with Scanners */}
+                      <div className="pt-2 border-t border-indigo-100/80 dark:border-indigo-950/40">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1 flex items-center justify-between">
+                          <span>بارکد کارتن / جعبه کالا (اختیاری):</span>
+                          <span className="text-[10px] text-slate-400 font-normal">اسکن کارتن = افزودن {toPersianDigits(formData.packagingFactor || 1)} {formData.unit || 'عدد'}</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={formData.boxBarcode}
+                            onChange={(e) => setFormData({ ...formData, boxBarcode: toEnglishDigits(e.target.value) })}
+                            placeholder="در صورتی که کارتن کالا بارکد مجزا دارد وارد کنید..."
+                            className="w-full bg-white dark:bg-[#161619] border border-slate-300 dark:border-[#2D2D33] focus:border-indigo-600 rounded-xl p-2.5 pl-44 font-mono outline-none text-slate-900 dark:text-white font-bold text-xs"
+                          />
+                          <div className="absolute left-1.5 top-1.5 flex items-center gap-1.5">
+                            <DirectPhoneScannerButton
+                              onScan={(scannedCode) => {
+                                const clean = toEnglishDigits(scannedCode).trim();
+                                setFormData((prev) => ({ ...prev, boxBarcode: clean }));
+                                showToast(`بارکد جعبه «${clean}» دریافت شد.`, 'success');
+                              }}
+                              label="دوربین گوشی"
+                              variant="gold"
+                              title="اسکن مستقیم بارکد جعبه با گوشی"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScannerTargetField('formBoxBarcode');
+                                setIsScannerOpen(true);
+                              }}
+                              className="px-2 py-1.5 rounded-xl bg-slate-200 dark:bg-[#222226] hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <ScanLine className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">وبکم</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1464,6 +1541,8 @@ export const ProductsView: React.FC = () => {
                       stock: formData.stock,
                       minStockAlert: formData.minStockAlert,
                       unit: formData.unit,
+                      packagingUnit: formData.packagingUnit,
+                      packagingFactor: formData.packagingFactor,
                     }}
                     onChange={(updated) => {
                       setFormData((prev) => ({
@@ -1717,6 +1796,15 @@ export const ProductsView: React.FC = () => {
         onSuccess={() => {
           loadData();
           setSelectedProductIds([]);
+        }}
+      />
+
+      {/* Packaging Units Migration Modal */}
+      <PackagingUnitMigrationModal
+        isOpen={isPackagingMigrationOpen}
+        onClose={() => setIsPackagingMigrationOpen(false)}
+        onSuccess={() => {
+          loadData();
         }}
       />
     </div>

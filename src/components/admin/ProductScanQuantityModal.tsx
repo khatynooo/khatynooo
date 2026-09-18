@@ -32,7 +32,8 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
   const inputRef = useRef<HTMLInputElement>(null);
   const boxInputRef = useRef<HTMLInputElement>(null);
 
-  const factor = Number(product.conversionFactor || 1);
+  const factor = Number((product as any).packagingFactor || product.conversionFactor || 1);
+  const packagingUnit = (product as any).packagingUnit || 'بسته';
   const hasBoxSupport = factor > 1;
 
   useEffect(() => {
@@ -161,7 +162,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
                     mode === 'box' ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  جعبه ({toPersianDigits(factor)} تایی)
+                  {packagingUnit} ({toPersianDigits(factor)} تایی)
                 </button>
               </div>
             )}
@@ -195,7 +196,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
           <div className="space-y-3 mb-4" onKeyDown={handleKeyDown}>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#111827] block">تعداد جعبه:</label>
+                <label className="text-xs font-bold text-[#111827] block">تعداد {packagingUnit}:</label>
                 <input
                   ref={boxInputRef}
                   type="number"
@@ -209,7 +210,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#111827] block">عدد اضافه:</label>
+                <label className="text-xs font-bold text-[#111827] block">{product.unit || 'عدد'} اضافه:</label>
                 <input
                   type="number"
                   step="any"
@@ -236,7 +237,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
                   )
                 )}
               </strong>{' '}
-              <span className="font-bold text-[#111827]">{product.subUnit || 'عدد'}</span>
+              <span className="font-bold text-[#111827]">{product.unit || 'عدد'}</span>
             </div>
           </div>
         ) : (

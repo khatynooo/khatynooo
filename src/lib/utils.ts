@@ -32,27 +32,66 @@ export function formatNumber(num: number | string | undefined | null): string {
 }
 
 /**
- * دریافت واحد نمایشی مناسب برای فروشگاه اینترنتی (Storefront)
- * برای جلوگیری از خطای ادراکی موجودی برای مشتری نهایی (مثلاً نمایش ۱۲ جین به جای ۱۴۴ عدد)،
- * همیشه در صورت تعریف بودن خرده‌واحد (subUnit) آن را بازمی‌گرداند.
+ * واحدهای وزنی، طولی و پیوسته که شمارشی نیستند و خودشان واحد پایه فروش و قیمت‌گذاری هستند.
+ * این واحدها هیچ‌گاه به «عدد» تبدیل نمی‌شوند.
  */
-export function getStorefrontDisplayUnit(product?: { unit?: string; subUnit?: string } | null): string {
-  if (!product) return 'عدد';
-  if (product.subUnit && product.subUnit.trim() !== '') {
-    return product.subUnit.trim();
-  }
-  return product.unit && product.unit.trim() !== '' ? product.unit.trim() : 'عدد';
+export const CONTINUOUS_UNITS = [
+  'متر',
+  'سانتی‌متر',
+  'سانتیمتر',
+  'میلی‌متر',
+  'میلی متر',
+  'کیلوگرم',
+  'گرم',
+  'لیتر',
+  'میلی‌لیتر',
+  'میلی لیتر',
+  'طاقه',
+  'رول',
+];
+
+export function isContinuousUnit(unit?: string | null): boolean {
+  if (!unit) return false;
+  const clean = unit.trim();
+  return CONTINUOUS_UNITS.some((u) => clean === u || clean.startsWith(u));
 }
 
 /**
- * محاسبه قیمت هر واحد خرده‌فروشی سایت (subUnit) از روی قیمت واحد اصلی (unit)
- * برای حفظ دقت مالی و برابری با واحد نمایشی فروشگاه اینترنتی:
- * مثال: قیمت هر جین = ۱۲۰,۰۰۰ تومان، conversionFactor = ۱۲ → قیمت هر بسته = ۱۰,۰۰۰ تومان
+ * واحدهای متداول بسته‌بندی مرجع (فقط جهت کمک به خرید عمده و اسکن سریع، نه مبنای قیمت)
  */
-export function getStorefrontUnitPrice(priceAtMainUnit: number, conversionFactor?: number | null): number {
-  const factor = Number(conversionFactor || 1);
-  if (!factor || factor <= 1) return priceAtMainUnit;
-  return Math.ceil(priceAtMainUnit / factor);
+export const PACKAGING_REFERENCE_UNITS = [
+  'جین',
+  'بسته',
+  'کارتن',
+  'جعبه',
+  'دست',
+  'جفت',
+  'حلقه',
+  'توپ',
+  'بند',
+  'کلاف',
+  'پالت',
+];
+
+/**
+ * دریافت واحد نمایشی مناسب برای فروشگاه اینترنتی (Storefront)
+ * بر اساس قانون جدید، واحد فروش کالاهای شمارشی همیشه «عدد» است مگر اقلام وزنی/طولی.
+ */
+export function getStorefrontDisplayUnit(product?: { unit?: string; subUnit?: string } | null): string {
+  if (!product) return 'عدد';
+  if (product.unit && product.unit.trim() !== '') {
+    return product.unit.trim();
+  }
+  return 'عدد';
+}
+
+/**
+ * قیمت واحد فروشگاه اینترنتی
+ * طبق معماری جدید خطی‌نو، قیمت‌ها در پایگاه داده همیشه بر مبنای تک‌واحد (عدد / متر / کیلو) ذخیره می‌شوند
+ * و نیازی به تقسیم دوباره بر ضریب بسته‌بندی نیست.
+ */
+export function getStorefrontUnitPrice(priceAtMainUnit: number, _conversionFactor?: number | null): number {
+  return priceAtMainUnit;
 }
 
 export function toPersianDigits(str: string | number | null | undefined): string {
@@ -353,30 +392,47 @@ export function formatPersianDate(dateInput: string | Date | undefined | null): 
 }
 
 /**
- * محاسبه‌ی متن تفکیک تعداد بر اساس واحد اصلی/فرعی کالا
- * مثال: quantity=25, conversionFactor=12, mainUnit='جین', subUnit='عدد' → "۲ جین و ۱ عدد"
- * اگر ضریب تبدیل معتبر نباشد یا هنوز به یک واحد اصلی کامل نرسیده باشد، null برمی‌گرداند.
+ * محاسبه‌ی متن تفکیک تعداد بر اساس واحد بسته‌بندی مرجع و واحد فروش پایه (عدد)
+ * مثال: quantity=25, packagingFactor=12, packagingUnit='جین' → "۲ جین و ۱ عدد"
  */
 export function getUnitBreakdownLabel(
   quantity: number,
   conversionFactor?: number | null,
-  mainUnit?: string | null,
-  subUnit?: string | null
+  packagingUnitOrMainUnit?: string | null,
+  baseUnitOrSubUnit?: string | null
 ): string | null {
   const factor = Number(conversionFactor || 0);
-  if (!factor || factor < 2 || !subUnit || !mainUnit) return null;
+  if (!factor || factor < 2) return null;
+
+  const pkgUnit = packagingUnitOrMainUnit || 'بسته';
+  const baseUnit = baseUnitOrSubUnit || 'عدد';
 
   const qty = Math.max(0, Math.floor(Number(quantity) || 0));
   const mainCount = Math.floor(qty / factor);
   const remainder = qty % factor;
 
-  if (mainCount <= 0) return null; // کمتر از یک واحد اصلی کامل → نیازی به تفکیک نیست
+  if (mainCount <= 0) return null;
 
-  const parts: string[] = [`${toPersianDigits(mainCount)} ${mainUnit}`];
+  const parts: string[] = [`${toPersianDigits(mainCount)} ${pkgUnit}`];
   if (remainder > 0) {
-    parts.push(`${toPersianDigits(remainder)} ${subUnit}`);
+    parts.push(`${toPersianDigits(remainder)} ${baseUnit}`);
   }
   return parts.join(' و ');
+}
+
+/**
+ * برچسب راهنمای معادل بسته‌بندی در سبد فروش و فاکتورها
+ * مثال: quantity=24, packagingFactor=12, packagingUnit='جین' → "(معادل ۲ جین)"
+ */
+export function getPackagingEquivalentLabel(
+  quantity: number,
+  packagingFactor?: number | null,
+  packagingUnit?: string | null
+): string | null {
+  const factor = Number(packagingFactor || 0);
+  if (!factor || factor < 2 || !packagingUnit) return null;
+  const ratio = (quantity / factor).toFixed(1).replace(/\.0$/, '');
+  return `(معادل ${toPersianDigits(ratio)} ${packagingUnit})`;
 }
 
 

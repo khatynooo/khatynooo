@@ -82,9 +82,11 @@ export interface Product {
   subCategoryId?: string;
   subCategoryName?: string;
   unit: string;
-  subUnit?: string;
-  conversionFactor?: number;
-  buyPrice: number; // بهای تمام‌شده
+  packagingUnit?: string; // واحد بسته‌بندی مرجع (مثلاً جین، کارتن، بسته)
+  packagingFactor?: number; // تعداد در هر بسته (ضریب تبدیل به عدد)
+  subUnit?: string; // نام مستعار برای سازگاری با کدهای پیشین
+  conversionFactor?: number; // نام مستعار برای سازگاری با کدهای پیشین
+  buyPrice: number; // بهای تمام‌شده هر عدد/واحد پایه
   salePrice: number; // قیمت فروش اصلی / دستی
   priceShop1: number; // قیمت فروشگاه اول (حضوری / نقدی)
   priceShop2: number; // قیمت فروشگاه دوم (آنلاین / ترب)
@@ -196,6 +198,8 @@ export interface InvoiceItem {
   subCategoryName?: string;
   barcode: string;
   unit: string;
+  packagingUnit?: string;
+  packagingFactor?: number;
   subUnit?: string;
   conversionFactor?: number;
   quantity: number;

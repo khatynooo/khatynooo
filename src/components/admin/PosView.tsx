@@ -456,7 +456,7 @@ export const PosView: React.FC = () => {
     const currentQty = existingItem ? existingItem.quantity : 0;
 
     if (isBoxBarcodeScan) {
-      const factor = Number(match.conversionFactor || 0);
+      const factor = Number((match as any).packagingFactor || match.conversionFactor || 0);
       if (!factor || factor < 2) {
         showToast(
           `برای کالای «${match.name}» ضریب تبدیل تنظیم نشده است. به حالت تکی باز شد.`,
@@ -1475,16 +1475,19 @@ export const PosView: React.FC = () => {
                             {/* Sub-unit / Box breakdown tags */}
                             {item.boxScans && item.boxScans.length > 0 && (
                               <div className="text-[9px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded px-1.5 py-0.5 mt-1 font-medium w-fit border border-amber-200/50 dark:border-amber-800/40">
-                                📦 {item.boxScans.map((b) => `${toPersianDigits(b.boxCount)} جعبه × ${toPersianDigits(b.unitsPerBox)}`).join(' + ')}
+                                📦 {item.boxScans.map((b) => `${toPersianDigits(b.boxCount)} ${(item.product as any).packagingUnit || 'بسته'} × ${toPersianDigits(b.unitsPerBox)}`).join(' + ')}
                               </div>
                             )}
 
                             {(() => {
+                              const factor = Number((item.product as any).packagingFactor || item.product.conversionFactor || 0);
+                              const pkgUnit = (item.product as any).packagingUnit || item.product.subUnit || 'بسته';
+                              const baseUnit = item.product.unit || 'عدد';
                               const breakdown = getUnitBreakdownLabel(
                                 item.quantity,
-                                item.product.conversionFactor,
-                                item.product.unit,
-                                item.product.subUnit
+                                factor,
+                                pkgUnit,
+                                baseUnit
                               );
                               return breakdown ? (
                                 <div className="text-[9px] text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 rounded px-1.5 py-0.5 mt-1 font-medium w-fit border border-indigo-200/50 dark:border-indigo-800/40">

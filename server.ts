@@ -34,6 +34,7 @@ import { startPublicationWorker } from './server/publication/publicationWorker';
 import { sendDirectEitaaMessage, registerEitaaCustomerChat, getEitaaChatIdForMobile, normalizeMobileNumber, resolveEitaaBotToken } from './server/publication/eitaaDirectMessenger';
 const normalizeIranianMobile = normalizeMobileNumber;
 import { eitaaService } from './server/eitaaService';
+import { analyzePackagingUnitMigration, executePackagingUnitMigration } from './server/unitMigration';
 import { UserRole, BindingOrder, EitaaMessageStatus } from './src/types';
 
 export interface AuthRequest extends Request {
@@ -495,6 +496,34 @@ app.delete('/api/products/:id', authenticateToken, requireRole(['admin', 'site_m
     });
 
     res.json({ message: 'کالا با موفقیت حذف شد.' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// 3.05 PACKAGING UNIT MIGRATION (مایگریشن تفکیک واحد بسته از عدد)
+// -------------------------------------------------------------
+app.get('/api/admin/migration/packaging-units', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const report = await analyzePackagingUnitMigration();
+    res.json(report);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/migration/packaging-units', authenticateToken, requireRole(['admin']), async (req: AuthRequest, res) => {
+  try {
+    const confirm = req.body?.confirm === true;
+    if (!confirm) {
+      return res.status(400).json({ error: 'برای اجرای مایگریشن ارسال confirm: true الزامی است.' });
+    }
+    const result = await executePackagingUnitMigration(true, {
+      userId: req.user?.id,
+      username: req.user?.username,
+    });
+    res.json({ message: 'مایگریشن با موفقیت انجام شد.', result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1324,6 +1353,7 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
   const documentNumber = req.body.documentNumber || req.body.document_number;
   const discount = req.body.discount ?? 0;
   const receiptImageUrl = req.body.receiptImageUrl || req.body.receipt_image_url;
+  const sourceCurrency = req.body.sourceCurrency || req.body.source_currency || 'toman';
 
   if (!supplierId || !items || !items.length) {
     return res.status(400).json({ error: 'انتخاب تامین‌کننده و ثبت اقلام فاکتور خرید الزامی است.' });
@@ -1354,6 +1384,7 @@ app.post('/api/invoices/purchase', authenticateToken, requireRole(['admin', 'chi
       documentNumber,
       discount: Number(discount || 0),
       receiptImageUrl,
+      sourceCurrency,
     });
 
     res.json({ invoice, message: 'فاکتور خرید ثبت و موجودی انبار به صورت آنی افزایش یافت.' });
@@ -1571,9 +1602,11 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
     documentNumber,
     discount,
     receiptImageUrl,
+    sourceCurrency,
   } = req.body;
 
   const docNumber = documentNumber || req.body.document_number;
+  const rawSourceCurrency = sourceCurrency || req.body.source_currency;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'حداقل یک قلم کالا باید در فاکتور خرید وجود داشته باشد.' });
@@ -1598,6 +1631,7 @@ app.put('/api/invoices/purchase/:id', authenticateToken, requireRole(['admin', '
       documentNumber: docNumber,
       discount: discount !== undefined ? Number(discount) : undefined,
       receiptImageUrl,
+      sourceCurrency: rawSourceCurrency,
       userId: req.user?.id,
       userName: req.user?.fullName || req.user?.username || 'کاربر سیستم',
       ip: req.ip || (req.headers['x-forwarded-for'] as string) || '127.0.0.1',

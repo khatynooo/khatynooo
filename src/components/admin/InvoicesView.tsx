@@ -49,6 +49,7 @@ import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner
 import { useNavigate } from 'react-router-dom';
 import { PurchaseInvoiceExcelImportModal } from './PurchaseInvoiceExcelImportModal';
 import { CorrectInvoiceCurrencyModal } from './CorrectInvoiceCurrencyModal';
+import { CurrencyInput } from '../common/CurrencyInput';
 
 export const InvoicesView: React.FC = () => {
   const navigate = useNavigate();
@@ -82,9 +83,10 @@ export const InvoicesView: React.FC = () => {
   const [purchaseInvoiceDate, setPurchaseInvoiceDate] = useState(
     new Date().toLocaleDateString('fa-IR')
   );
-  const [purchaseDiscount, setPurchaseDiscount] = useState<number | ''>(0);
+  const [purchaseSourceCurrency, setPurchaseSourceCurrency] = useState<'IRT' | 'IRR'>('IRT');
+  const [purchaseDiscount, setPurchaseDiscount] = useState<number>(0);
   const [purchasePaymentMethod, setPurchasePaymentMethod] = useState<'cash' | 'cheque' | 'mixed' | 'credit'>('cash');
-  const [purchaseCashAmount, setPurchaseCashAmount] = useState<number | ''>(0);
+  const [purchaseCashAmount, setPurchaseCashAmount] = useState<number>(0);
   const [purchaseCheques, setPurchaseCheques] = useState<ChequeInfo[]>([]);
   const [purchaseReceiptImages, setPurchaseReceiptImages] = useState<string[]>([]);
   const [viewingReceiptUrls, setViewingReceiptUrls] = useState<string[]>([]);
@@ -157,6 +159,7 @@ export const InvoicesView: React.FC = () => {
   const [editPurchaseItems, setEditPurchaseItems] = useState<
     Array<{ productId: string; productName: string; quantity: number; buyPrice: number; total: number }>
   >([]);
+  const [editPurchaseSourceCurrency, setEditPurchaseSourceCurrency] = useState<'IRT' | 'IRR'>('IRT');
   const [editPurchaseProductSearch, setEditPurchaseProductSearch] = useState('');
   const [isSubmittingEditPurchase, setIsSubmittingEditPurchase] = useState(false);
   const [isDeletingPurchaseInvoice, setIsDeletingPurchaseInvoice] = useState(false);
@@ -220,6 +223,7 @@ export const InvoicesView: React.FC = () => {
       purchaseSupplierId,
       purchaseInvoiceNumber,
       purchaseInvoiceDate,
+      purchaseSourceCurrency,
       purchaseDiscount,
       purchasePaymentMethod,
       purchaseCashAmount,
@@ -537,6 +541,7 @@ export const InvoicesView: React.FC = () => {
         invoiceNumber: purchaseInvoiceNumber.trim() || undefined,
         invoiceDate: purchaseInvoiceDate.trim() || undefined,
         documentNumber: purchaseDocumentNumber.trim() || undefined,
+        sourceCurrency: purchaseSourceCurrency === 'IRR' ? 'rial' : 'toman',
       });
 
       // ۳. ثبت خودکار چک‌ها در ماژول چک‌ها (نوع: پرداختی به پخش/تامین‌کننده)
@@ -583,6 +588,7 @@ export const InvoicesView: React.FC = () => {
       setPurchaseInvoiceNumber('');
       setPurchaseDocumentNumber('');
       setPurchaseInvoiceDate(new Date().toLocaleDateString('fa-IR'));
+      setPurchaseSourceCurrency('IRT');
       setPurchaseDiscount(0);
       setPurchasePaymentMethod('cash');
       loadData();
@@ -744,6 +750,14 @@ export const InvoicesView: React.FC = () => {
     setEditPurchasePaymentMethod((inv.paymentMethod as any) || 'cash');
     setEditPurchaseCashAmount(inv.cashAmount || 0);
     setEditPurchasePaidAmount(inv.paidAmount ?? inv.totalAmount);
+
+    const invoiceSourceCur =
+      (inv as any).sourceCurrency === 'rial' ||
+      (inv as any).source_currency === 'rial' ||
+      (inv as any).sourceCurrency === 'IRR'
+        ? 'IRR'
+        : 'IRT';
+    setEditPurchaseSourceCurrency(invoiceSourceCur);
     
     // Normalize cheques (support both array and legacy chequeInfo)
     const existingCheques: ChequeInfo[] = Array.isArray(inv.cheques) && inv.cheques.length > 0
@@ -938,6 +952,7 @@ export const InvoicesView: React.FC = () => {
         invoiceDate: editPurchaseInvoiceDate,
         documentNumber: editPurchaseDocumentNumber.trim() || undefined,
         discount: disc,
+        sourceCurrency: editPurchaseSourceCurrency === 'IRR' ? 'rial' : 'toman',
       });
 
       showToast(res.message || 'فاکتور خرید با موفقیت ویرایش شد و تغییرات انبار و اسناد مالی اعمال گردید.', 'success');
@@ -1103,9 +1118,20 @@ export const InvoicesView: React.FC = () => {
                 {purchaseInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3.5 font-mono font-bold text-slate-800">
-                      <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md text-[11px] block w-fit">
-                        {inv.invoiceNumber}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md text-[11px] block w-fit">
+                          {inv.invoiceNumber}
+                        </span>
+                        {((inv as any).sourceCurrency === 'rial' || (inv as any).source_currency === 'rial' || (inv as any).sourceCurrency === 'IRR') && (
+                          <span
+                            className="bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-bold inline-flex items-center gap-0.5"
+                            title="این فاکتور بر اساس برگه ریالی تامین‌کننده وارد شده است"
+                          >
+                            <Coins className="w-2.5 h-2.5 text-amber-700" />
+                            برگه ریالی
+                          </span>
+                        )}
+                      </div>
                       {inv.documentNumber && (
                         <span className="bg-indigo-50 text-indigo-700 border border-indigo-200/70 px-1.5 py-0.5 rounded text-[10px] font-bold block w-fit mt-1">
                           سند: {inv.documentNumber}
@@ -1356,6 +1382,7 @@ export const InvoicesView: React.FC = () => {
                       if (d.purchaseSupplierId !== undefined) setPurchaseSupplierId(d.purchaseSupplierId);
                       if (d.purchaseInvoiceNumber !== undefined) setPurchaseInvoiceNumber(d.purchaseInvoiceNumber);
                       if (d.purchaseInvoiceDate !== undefined) setPurchaseInvoiceDate(d.purchaseInvoiceDate);
+                      if (d.purchaseSourceCurrency !== undefined) setPurchaseSourceCurrency(d.purchaseSourceCurrency);
                       if (d.purchaseDiscount !== undefined) setPurchaseDiscount(d.purchaseDiscount);
                       if (d.purchasePaymentMethod !== undefined) setPurchasePaymentMethod(d.purchasePaymentMethod);
                       if (d.purchaseCashAmount !== undefined) setPurchaseCashAmount(d.purchaseCashAmount);
@@ -1385,6 +1412,48 @@ export const InvoicesView: React.FC = () => {
             )}
 
             <form onSubmit={handleSavePurchaseInvoice} className="space-y-4 text-xs overflow-y-auto pr-1">
+              {/* انتخاب واحد ارقام فاکتور دریافتی (ریال یا تومان) */}
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-50 border border-amber-200/80 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500 text-white shadow-xs">
+                    <Coins className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-black text-slate-800 text-xs">واحد ارقام برگه فاکتور دریافتی از تامین‌کننده:</div>
+                    <div className="text-[11px] text-slate-600">
+                      {purchaseSourceCurrency === 'IRR'
+                        ? 'ارقام مطابق با برگه ریالی با صفر اضافه وارد می‌شوند؛ سیستم خودکار آنها را به تومان تبدیل و در سیستم ذخیره می‌کند.'
+                        : 'ارقام بر اساس تومان وارد می‌شوند (واحد پول پایه سیستم).'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center bg-white p-1 rounded-xl border border-amber-300 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => setPurchaseSourceCurrency('IRT')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      purchaseSourceCurrency === 'IRT'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    تومان (IRT)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPurchaseSourceCurrency('IRR')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      purchaseSourceCurrency === 'IRR'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    ریال (IRR - برگه ریالی)
+                  </button>
+                </div>
+              </div>
+
               {/* Top metadata grid: Supplier, Warehouse, Invoice Number, Invoice Date */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50/70 p-3 rounded-2xl border border-slate-200">
                 <div>
@@ -1623,7 +1692,9 @@ export const InvoicesView: React.FC = () => {
                       <tr>
                         <th className="p-2.5">نام کالا و کنترل قیمت بازار</th>
                         <th className="p-2.5 text-center w-24">تعداد خرید</th>
-                        <th className="p-2.5 text-center w-32">قیمت خرید فی (تومان)</th>
+                        <th className="p-2.5 text-center w-36">
+                          قیمت فی ({purchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'})
+                        </th>
                         <th className="p-2.5 text-left w-28">جمع</th>
                         <th className="p-2.5 text-center w-12">حذف</th>
                       </tr>
@@ -1687,18 +1758,24 @@ export const InvoicesView: React.FC = () => {
                               />
                             </td>
                             <td className="p-2.5 text-center">
-                              <input
-                                type="number"
-                                step={500}
-                                value={item.buyPrice}
-                                onChange={(e) => {
-                                  const bp = Number(e.target.value);
-                                  setPurchaseItems((prev) =>
-                                    prev.map((it, i) => (i === idx ? { ...it, buyPrice: bp, total: it.quantity * bp } : it))
-                                  );
-                                }}
-                                className="w-28 bg-slate-100 border border-slate-200 rounded-lg p-1.5 font-mono text-center outline-none focus:bg-white focus:border-indigo-500 font-bold"
-                              />
+                              <div className="w-32 mx-auto">
+                                <CurrencyInput
+                                  value={item.buyPrice}
+                                  unit={purchaseSourceCurrency}
+                                  showHelperWord={false}
+                                  onChange={(valInToman) => {
+                                    setPurchaseItems((prev) =>
+                                      prev.map((it, i) => (i === idx ? { ...it, buyPrice: valInToman, total: it.quantity * valInToman } : it))
+                                    );
+                                  }}
+                                  className="text-xs p-1 text-center font-bold"
+                                />
+                                {purchaseSourceCurrency === 'IRR' && (
+                                  <div className="text-[10px] text-slate-500 font-mono mt-0.5" title="معادل به تومان">
+                                    {formatToman(item.buyPrice)}
+                                  </div>
+                                )}
+                              </div>
                             </td>
                             <td className="p-2.5 font-bold font-mono text-slate-900 text-left">
                               {formatToman(item.total)}
@@ -1749,18 +1826,14 @@ export const InvoicesView: React.FC = () => {
                       <div>
                         <label className="text-slate-700 font-bold block mb-1 text-xs flex items-center gap-1">
                           <Percent className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>تخفیف فاکتور (تومان):</span>
+                          <span>تخفیف فاکتور ({purchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'}):</span>
                         </label>
-                        <input
-                          type="number"
-                          min={0}
-                          step={1000}
+                        <CurrencyInput
                           value={purchaseDiscount}
-                          onChange={(e) =>
-                            setPurchaseDiscount(e.target.value === '' ? '' : Number(e.target.value))
-                          }
+                          unit={purchaseSourceCurrency}
+                          showHelperWord={true}
+                          onChange={(valInToman) => setPurchaseDiscount(valInToman)}
                           placeholder="۰"
-                          className="w-full bg-white border border-slate-300 focus:border-emerald-500 rounded-xl p-2 font-mono font-bold text-emerald-700 outline-none text-xs"
                         />
                       </div>
 
@@ -1801,18 +1874,14 @@ export const InvoicesView: React.FC = () => {
                       {(purchasePaymentMethod === 'cash' || purchasePaymentMethod === 'mixed') && (
                         <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
                           <label className="font-bold text-slate-700 block text-[11px]">
-                            مبلغ نقدی پرداختی (تومان):
+                            مبلغ نقدی پرداختی ({purchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'}):
                           </label>
-                          <input
-                            type="number"
-                            min={0}
-                            step={10000}
+                          <CurrencyInput
                             value={purchaseCashAmount}
-                            onChange={(e) =>
-                              setPurchaseCashAmount(e.target.value === '' ? '' : Number(e.target.value))
-                            }
+                            unit={purchaseSourceCurrency}
+                            showHelperWord={true}
+                            onChange={(valInToman) => setPurchaseCashAmount(valInToman)}
                             placeholder="۰"
-                            className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-500 rounded-xl p-2 font-mono outline-none font-bold text-xs"
                           />
                         </div>
                       )}
@@ -1911,21 +1980,22 @@ export const InvoicesView: React.FC = () => {
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] text-slate-500 block mb-0.5">مبلغ چک (تومان)</label>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={10000}
-                                    placeholder="۰"
-                                    value={cheque.amount || ''}
-                                    onChange={(e) =>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">
+                                    مبلغ چک ({purchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'})
+                                  </label>
+                                  <CurrencyInput
+                                    value={cheque.amount || 0}
+                                    unit={purchaseSourceCurrency}
+                                    showHelperWord={false}
+                                    onChange={(valInToman) =>
                                       setPurchaseCheques((prev) =>
                                         prev.map((c, i) =>
-                                          i === idx ? { ...c, amount: Number(e.target.value) } : c
+                                          i === idx ? { ...c, amount: valInToman } : c
                                         )
                                       )
                                     }
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-mono font-bold outline-none focus:border-amber-500 text-indigo-900"
+                                    placeholder="۰"
+                                    className="p-1.5 text-xs font-bold text-indigo-900"
                                   />
                                 </div>
                               </div>
@@ -2996,6 +3066,47 @@ export const InvoicesView: React.FC = () => {
 
               {/* Form Content */}
               <form onSubmit={handleSaveEditPurchaseInvoice} className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* انتخاب واحد فاکتور خرید (ریال / تومان) */}
+                <div className="flex items-center justify-between bg-amber-500/10 border border-amber-300/60 rounded-xl p-3">
+                  <div className="flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <span className="font-bold text-slate-800 text-xs block">
+                        واحد ثبت و قیمت‌گذاری این فاکتور:
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {editPurchaseSourceCurrency === 'IRR'
+                          ? 'مبالغ بر اساس ریال (برگه تامین‌کننده) ثبت و در سیستم به تومان معادل‌سازی می‌شوند.'
+                          : 'مبالغ مستقیماً به تومان وارد و محاسبه می‌شوند.'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 text-xs font-bold shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setEditPurchaseSourceCurrency('IRT')}
+                      className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                        editPurchaseSourceCurrency === 'IRT'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      تومان
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditPurchaseSourceCurrency('IRR')}
+                      className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                        editPurchaseSourceCurrency === 'IRR'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      ریال
+                    </button>
+                  </div>
+                </div>
+
                 {/* Meta Inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <div>
@@ -3118,7 +3229,7 @@ export const InvoicesView: React.FC = () => {
                       <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                         <tr>
                           <th className="p-2.5">نام کالا</th>
-                          <th className="p-2.5 w-36">قیمت خرید واحد (تومان)</th>
+                          <th className="p-2.5 w-40">قیمت خرید واحد ({editPurchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'})</th>
                           <th className="p-2.5 w-28 text-center">تعداد</th>
                           <th className="p-2.5 w-32">مجموع سطر</th>
                           <th className="p-2.5 w-12 text-center">حذف</th>
@@ -3129,12 +3240,12 @@ export const InvoicesView: React.FC = () => {
                           <tr key={idx} className="hover:bg-slate-50/60">
                             <td className="p-2.5 font-bold text-slate-900">{item.productName}</td>
                             <td className="p-2.5">
-                              <input
-                                type="number"
-                                min="0"
+                              <CurrencyInput
                                 value={item.buyPrice}
-                                onChange={(e) => handleEditPurchaseItemPrice(idx, Number(e.target.value))}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-xs outline-none"
+                                unit={editPurchaseSourceCurrency}
+                                showHelperWord={false}
+                                onChange={(valInToman) => handleEditPurchaseItemPrice(idx, valInToman)}
+                                placeholder="۰"
                               />
                             </td>
                             <td className="p-2.5">
@@ -3186,15 +3297,14 @@ export const InvoicesView: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      تخفیف دریافت شده از تامین‌کننده (تومان):
+                      تخفیف دریافت شده از تامین‌کننده ({editPurchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'}):
                     </label>
-                    <input
-                      type="number"
-                      min="0"
+                    <CurrencyInput
                       value={editPurchaseDiscount}
-                      onChange={(e) => setEditPurchaseDiscount(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none"
-                      placeholder="0"
+                      unit={editPurchaseSourceCurrency}
+                      showHelperWord={true}
+                      onChange={(valInToman) => setEditPurchaseDiscount(valInToman)}
+                      placeholder="۰"
                     />
                   </div>
 
@@ -3217,21 +3327,20 @@ export const InvoicesView: React.FC = () => {
                   {(editPurchasePaymentMethod === 'cash' || editPurchasePaymentMethod === 'mixed') && (
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        مبلغ پرداخت نقدی (تومان):
+                        مبلغ پرداخت نقدی ({editPurchaseSourceCurrency === 'IRR' ? 'ریال' : 'تومان'}):
                       </label>
-                      <input
-                        type="number"
-                        min="0"
+                      <CurrencyInput
                         value={editPurchasePaymentMethod === 'mixed' ? editPurchaseCashAmount : editPurchasePaidAmount}
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? '' : Number(e.target.value);
+                        unit={editPurchaseSourceCurrency}
+                        showHelperWord={true}
+                        onChange={(valInToman) => {
                           if (editPurchasePaymentMethod === 'mixed') {
-                            setEditPurchaseCashAmount(val);
+                            setEditPurchaseCashAmount(valInToman);
                           } else {
-                            setEditPurchasePaidAmount(val);
+                            setEditPurchasePaidAmount(valInToman);
                           }
                         }}
-                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-mono text-slate-800 outline-none"
+                        placeholder="۰"
                       />
                     </div>
                   )}

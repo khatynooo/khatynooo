@@ -30,6 +30,8 @@ export interface ProductTierPricingData {
   stock: number;
   minStockAlert: number;
   unit: string;
+  packagingUnit?: string;
+  packagingFactor?: number;
 }
 
 interface ProductTierPricingFormProps {
@@ -42,6 +44,24 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
   onChange,
 }) => {
   const [roundingUnit, setRoundingUnit] = useState<number>(1000); // 1,000 تومان پیش‌فرض
+
+  const unitLabel = data.unit && data.unit.trim() !== '' ? data.unit.trim() : 'عدد';
+  const hasPackaging = Boolean(data.packagingUnit && (data.packagingFactor || 0) > 1);
+  const pkgFactor = Number(data.packagingFactor || 1);
+  const pkgUnit = data.packagingUnit || 'بسته';
+
+  const renderPackagingHint = (price: number) => {
+    if (!hasPackaging || !price || price <= 0) return null;
+    return (
+      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 font-sans">
+        <Info className="w-3 h-3 text-slate-400 shrink-0" />
+        <span>
+          هر {pkgUnit} = {toPersianDigits(pkgFactor)} {unitLabel} → قیمت هر {pkgUnit}:{' '}
+          <strong className="text-slate-700 dark:text-slate-200">{formatToman(price * pkgFactor)}</strong>
+        </span>
+      </div>
+    );
+  };
 
   const roundPrice = (num: number, rUnit: number = roundingUnit) => {
     if (rUnit <= 1) return Math.round(num);
@@ -127,7 +147,7 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
           {/* Buy Price */}
           <div className="sm:col-span-1">
             <CurrencyInput
-              label="بهای خرید از تامین‌کننده (تومان):"
+              label={`بهای خرید هر ${unitLabel} از تامین‌کننده (تومان):`}
               value={data.buyPrice}
               onChange={(val) => {
                 onChange({ buyPrice: val });
@@ -135,13 +155,21 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
               required
               helperText="قیمت فاکتور خرید بدون ارزش افزوده"
             />
+            {renderPackagingHint(data.buyPrice)}
           </div>
 
           {/* Initial Stock */}
           <div>
-            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1 text-xs flex items-center gap-1.5">
-              <Boxes className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>موجودی اولیه در انبار ({data.unit || 'عدد'}):</span>
+            <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1 text-xs flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Boxes className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>موجودی اولیه در انبار ({unitLabel}):</span>
+              </span>
+              {hasPackaging && (
+                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono">
+                  (معادل {toPersianDigits((data.stock / pkgFactor).toFixed(1).replace(/\.0$/, ''))} {pkgUnit})
+                </span>
+              )}
             </label>
             <input
               type="number"
@@ -262,11 +290,12 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
             </div>
 
             <CurrencyInput
-              label="قیمت فروشگاه ۱ (تومان):"
+              label={`قیمت فروشگاه ۱ (تومان برای هر ${unitLabel}):`}
               value={data.priceShop1}
               onChange={(val) => onChange({ priceShop1: val, salePrice: val })}
               required
             />
+            {renderPackagingHint(data.priceShop1)}
           </div>
 
           <div className="space-y-2 pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
@@ -332,10 +361,11 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
             </div>
 
             <CurrencyInput
-              label="قیمت فروشگاه ۲ (تومان):"
+              label={`قیمت فروشگاه ۲ / آنلاین (تومان برای هر ${unitLabel}):`}
               value={data.priceShop2}
               onChange={(val) => onChange({ priceShop2: val })}
             />
+            {renderPackagingHint(data.priceShop2)}
           </div>
 
           <div className="space-y-2 pt-2 border-t border-blue-100 dark:border-blue-900/40">
@@ -401,10 +431,11 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
             </div>
 
             <CurrencyInput
-              label="قیمت فروشگاه ۳ (تومان):"
+              label={`قیمت فروشگاه ۳ / همکار (تومان برای هر ${unitLabel}):`}
               value={data.priceShop3}
               onChange={(val) => onChange({ priceShop3: val })}
             />
+            {renderPackagingHint(data.priceShop3)}
           </div>
 
           <div className="space-y-2 pt-2 border-t border-purple-100 dark:border-purple-900/40">
@@ -470,10 +501,11 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
             </div>
 
             <CurrencyInput
-              label="قیمت فروش عمده (تومان):"
+              label={`قیمت فروش عمده (تومان برای هر ${unitLabel}):`}
               value={data.wholesalePrice}
               onChange={(val) => onChange({ wholesalePrice: val })}
             />
+            {renderPackagingHint(data.wholesalePrice)}
           </div>
 
           <div className="space-y-2 pt-2 border-t border-amber-100 dark:border-amber-900/40">
@@ -539,10 +571,11 @@ export const ProductTierPricingForm: React.FC<ProductTierPricingFormProps> = ({
             </div>
 
             <CurrencyInput
-              label="کف قیمت مجاز (تومان):"
+              label={`کف قیمت مجاز (تومان برای هر ${unitLabel}):`}
               value={data.minAllowedPrice}
               onChange={(val) => onChange({ minAllowedPrice: val })}
             />
+            {renderPackagingHint(data.minAllowedPrice)}
           </div>
 
           <div className="space-y-2 pt-2 border-t border-rose-100 dark:border-rose-900/40">

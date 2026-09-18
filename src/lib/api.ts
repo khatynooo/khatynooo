@@ -91,6 +91,18 @@ export const api = {
       headers: getAuthHeader(),
     }).then(handleResponse),
 
+  getPackagingUnitMigrationReport: () =>
+    fetch(`${API_BASE}/admin/migration/packaging-units`, {
+      headers: getAuthHeader(),
+    }).then(handleResponse),
+
+  executePackagingUnitMigration: (confirm: boolean = true) =>
+    fetch(`${API_BASE}/admin/migration/packaging-units`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ confirm }),
+    }).then(handleResponse),
+
   getCategories: () => fetch(`${API_BASE}/categories`).then(handleResponse),
 
   createCategory: (cat: any) =>
@@ -681,6 +693,18 @@ export const api = {
 
   // Website & Orders
   getWebsiteSettings: () => fetch(`${API_BASE}/website/settings`).then(handleResponse),
+
+  getStoreSettings: () =>
+    fetch(`${API_BASE}/website/settings`)
+      .then(handleResponse)
+      .then((res) => res.storeSettings),
+
+  updateStoreSettings: (storeSettings: any) =>
+    fetch(`${API_BASE}/website/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ storeSettings }),
+    }).then(handleResponse),
 
   updateWebsiteSettings: (settings: any) =>
     fetch(`${API_BASE}/website/settings`, {

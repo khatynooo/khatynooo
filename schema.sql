@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS products (
     category_id VARCHAR(64) REFERENCES categories(id) ON DELETE SET NULL ON UPDATE CASCADE,
     sub_category_id VARCHAR(64) REFERENCES sub_categories(id) ON DELETE SET NULL ON UPDATE CASCADE,
     unit VARCHAR(50) NOT NULL DEFAULT 'عدد',
+    packaging_unit VARCHAR(50),
+    packaging_factor NUMERIC(12, 3) DEFAULT 1.0,
     sub_unit VARCHAR(50),
     conversion_factor NUMERIC(12, 3) DEFAULT 1.0,
     buy_price BIGINT NOT NULL DEFAULT 0, -- بهای تمام‌شده خرید

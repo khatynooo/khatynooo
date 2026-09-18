@@ -14,8 +14,9 @@ export const BASE_CURRENCY: CurrencyUnit = 'IRT';
 export const RIALS_PER_TOMAN = 10;
 
 export function normalizeCurrencyUnit(value: unknown, fallback: CurrencyUnit = BASE_CURRENCY): CurrencyUnit {
-  if (value === 'IRR' || value === 'rial' || value === 'riyal' || value === 'ریال') return 'IRR';
-  if (value === 'IRT' || value === 'toman' || value === 'tomans' || value === 'تومان') return 'IRT';
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'irr' || normalized === 'rial' || normalized === 'riyal' || normalized === 'ریال') return 'IRR';
+  if (normalized === 'irt' || normalized === 'toman' || normalized === 'tomans' || normalized === 'تومان') return 'IRT';
   return fallback;
 }
 

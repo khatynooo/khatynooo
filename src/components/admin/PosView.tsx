@@ -45,6 +45,7 @@ import { ReceiptModal } from './ReceiptModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { useCurrency } from '../../context/CurrencyContext';
 import { ProductScanQuantityModal } from './ProductScanQuantityModal';
 import { UnknownBarcodeModal } from './UnknownBarcodeModal';
 import { QuickAddProductModal } from './QuickAddProductModal';
@@ -70,6 +71,7 @@ const DEFAULT_WAREHOUSE: Warehouse = {
 
 export const PosView: React.FC = () => {
   const { showToast } = useToast();
+  const { currency, toDisplay, toBase, unitLabel } = useCurrency();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<ServicePreset[]>([]);
@@ -1645,9 +1647,9 @@ export const PosView: React.FC = () => {
                   <input
                     type="number"
                     min={0}
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="مبلغ پرداختی به تومان..."
+                    value={cashReceived === '' ? '' : toDisplay(Number(cashReceived))}
+                    onChange={(e) => setCashReceived(e.target.value === '' ? '' : toBase(Number(e.target.value)))}
+                    placeholder={`مبلغ پرداختی به ${unitLabel}...`}
                     className="w-full bg-white dark:bg-[#161619] border border-emerald-300 dark:border-emerald-800 rounded-lg px-2.5 py-1.5 text-xs font-mono text-emerald-950 dark:text-emerald-200 outline-none focus:border-emerald-600"
                   />
                 </div>
@@ -1786,12 +1788,12 @@ export const PosView: React.FC = () => {
                   <input
                     type="number"
                     min={0}
-                    value={overallDiscount || ''}
-                    onChange={(e) => setOverallDiscount(Number(e.target.value) || 0)}
+                    value={overallDiscount ? toDisplay(Number(overallDiscount)) : ''}
+                    onChange={(e) => setOverallDiscount(e.target.value === '' ? 0 : toBase(Number(e.target.value)))}
                     placeholder="۰"
                     className="w-28 bg-slate-50 dark:bg-[#161619] border border-slate-200 dark:border-[#2D2D33] focus:border-indigo-500 rounded-lg py-1 px-2 text-left font-mono text-slate-900 dark:text-white text-xs outline-none"
                   />
-                  <span className="text-[10px] text-slate-400">تومان</span>
+                  <span className="text-[10px] text-slate-400">{unitLabel}</span>
                 </div>
               </div>
 

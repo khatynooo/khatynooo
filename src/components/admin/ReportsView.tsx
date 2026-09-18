@@ -21,9 +21,11 @@ import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, formatNumber } from '../../lib/utils';
 import { TreasuryTransaction, TreasurySummary } from '../../types';
 import { useToast } from '../common/Toast';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export const ReportsView: React.FC = () => {
   const { showToast } = useToast();
+  const { toDisplay, toBase, unitLabel } = useCurrency();
 
   const [activeTab, setActiveTab] = useState<'pnl' | 'treasury'>('pnl');
   const [stats, setStats] = useState<any>(null);
@@ -533,12 +535,12 @@ export const ReportsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-[#8E9299] mb-1 font-bold">مبلغ (تومان):</label>
+                <label className="block text-[#8E9299] mb-1 font-bold">مبلغ ({unitLabel}):</label>
                 <input
                   type="number"
                   required
-                  value={voucherAmount}
-                  onChange={(e) => setVoucherAmount(e.target.value)}
+                  value={voucherAmount === '' ? '' : String(toDisplay(Number(voucherAmount)))}
+                  onChange={(e) => setVoucherAmount(e.target.value === '' ? '' : String(toBase(Number(e.target.value))))}
                   placeholder="مثلاً ۱۰۰۰۰۰"
                   className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2 text-[#E0E0E0] font-mono outline-none"
                 />

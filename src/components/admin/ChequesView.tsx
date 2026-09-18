@@ -4,9 +4,11 @@ import { api } from '../../lib/api';
 import { formatToman, toPersianDigits } from '../../lib/utils';
 import { Cheque, Customer } from '../../types';
 import { useToast } from '../common/Toast';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export const ChequesView: React.FC = () => {
   const { showToast } = useToast();
+  const { toDisplay, toBase, unitLabel } = useCurrency();
 
   const [cheques, setCheques] = useState<Cheque[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -501,14 +503,14 @@ export const ChequesView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">مبلغ چک (تومان):</label>
+                  <label className="font-bold text-slate-700 block mb-1">مبلغ چک ({unitLabel}):</label>
                   <input
                     type="number"
                     required
                     min={0}
                     step={10000}
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })}
+                    value={toDisplay(Number(form.amount))}
+                    onChange={(e) => setForm({ ...form, amount: toBase(Number(e.target.value)) })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
                   />
                 </div>

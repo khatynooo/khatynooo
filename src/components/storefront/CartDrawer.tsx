@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useCustomerAuth } from '../../context/CustomerAuthContext';
-import { formatToman, toPersianDigits } from '../../lib/utils';
+import { formatToman, toPersianDigits, getStorefrontDisplayUnit } from '../../lib/utils';
 import { api } from '../../lib/api';
 import { useToast } from '../common/Toast';
 import { MandatoryProfileModal } from '../customer/MandatoryProfileModal';
@@ -220,6 +220,8 @@ export const CartDrawer: React.FC = () => {
           quantity: i.quantity,
           unitPrice: i.selectedPrice,
           totalPrice: i.selectedPrice * i.quantity,
+          unit: getStorefrontDisplayUnit(i.product),
+          subUnit: i.product.subUnit,
         })),
         shippingMethodCode: shippingMethod,
         paymentGatewayCode: paymentGateway,
@@ -344,7 +346,9 @@ export const CartDrawer: React.FC = () => {
                           />
                           <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-bold text-slate-900 dark:text-[#F3F4F6] truncate">{item.product.name}</h4>
-                            <div className="text-xs text-slate-500 dark:text-[#8E9299] mt-0.5">{formatToman(item.selectedPrice)}</div>
+                            <div className="text-xs text-slate-500 dark:text-[#8E9299] mt-0.5">
+                              {formatToman(item.selectedPrice)} / {getStorefrontDisplayUnit(item.product)}
+                            </div>
 
                             <div className="flex items-center justify-between mt-2">
                               <div className="flex items-center gap-1.5 bg-white dark:bg-[#0A0A0B] rounded-lg p-0.5 border border-[var(--line-soft)] dark:border-[#2D2D33]">

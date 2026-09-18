@@ -31,6 +31,30 @@ export function formatNumber(num: number | string | undefined | null): string {
   return parsed.toLocaleString('fa-IR');
 }
 
+/**
+ * دریافت واحد نمایشی مناسب برای فروشگاه اینترنتی (Storefront)
+ * برای جلوگیری از خطای ادراکی موجودی برای مشتری نهایی (مثلاً نمایش ۱۲ جین به جای ۱۴۴ عدد)،
+ * همیشه در صورت تعریف بودن خرده‌واحد (subUnit) آن را بازمی‌گرداند.
+ */
+export function getStorefrontDisplayUnit(product?: { unit?: string; subUnit?: string } | null): string {
+  if (!product) return 'عدد';
+  if (product.subUnit && product.subUnit.trim() !== '') {
+    return product.subUnit.trim();
+  }
+  return product.unit && product.unit.trim() !== '' ? product.unit.trim() : 'عدد';
+}
+
+/**
+ * محاسبه قیمت هر واحد خرده‌فروشی سایت (subUnit) از روی قیمت واحد اصلی (unit)
+ * برای حفظ دقت مالی و برابری با واحد نمایشی فروشگاه اینترنتی:
+ * مثال: قیمت هر جین = ۱۲۰,۰۰۰ تومان، conversionFactor = ۱۲ → قیمت هر بسته = ۱۰,۰۰۰ تومان
+ */
+export function getStorefrontUnitPrice(priceAtMainUnit: number, conversionFactor?: number | null): number {
+  const factor = Number(conversionFactor || 1);
+  if (!factor || factor <= 1) return priceAtMainUnit;
+  return Math.ceil(priceAtMainUnit / factor);
+}
+
 export function toPersianDigits(str: string | number | null | undefined): string {
   if (str === null || str === undefined) return '';
   const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];

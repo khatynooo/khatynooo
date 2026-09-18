@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, Package, Clock, Truck, CheckCircle2, AlertCircle } from 'lucide-react';
 import { api } from '../../lib/api';
-import { formatToman, toPersianDigits, getOrderStatusBadge } from '../../lib/utils';
+import { formatToman, toPersianDigits, getOrderStatusBadge, getStorefrontDisplayUnit } from '../../lib/utils';
 import { OnlineOrder } from '../../types';
 
 interface OrderTrackingModalProps {
@@ -160,7 +160,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
                         <div className="space-y-1">
                           {ord.items.map((it, idx) => (
                             <div key={idx} className="flex justify-between text-slate-800 dark:text-[#E0E0E0]">
-                              <span>• {it.productName} ({toPersianDigits(it.quantity)} عدد)</span>
+                              <span>• {it.productName} ({toPersianDigits(it.quantity)} {getStorefrontDisplayUnit(it as any)})</span>
                               <span className="font-bold">{formatToman(it.totalPrice)}</span>
                             </div>
                           ))}

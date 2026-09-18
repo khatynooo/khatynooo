@@ -18,7 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Product } from '../../types';
-import { formatToman, toPersianDigits } from '../../lib/utils';
+import { formatToman, toPersianDigits, getStorefrontDisplayUnit, getStorefrontUnitPrice } from '../../lib/utils';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../common/Toast';
 
@@ -77,12 +77,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
 
   if (!product) return null;
 
-  const displayPrice = product.priceShop2 || product.salePrice;
+  const rawDisplayPrice = product.priceShop2 || product.salePrice;
+  const displayPrice = getStorefrontUnitPrice(rawDisplayPrice, product.conversionFactor);
+  const displayWholesalePrice = product.wholesalePrice > 0 ? getStorefrontUnitPrice(product.wholesalePrice, product.conversionFactor) : 0;
   const isOutOfStock = product.stock <= 0;
 
   const handleAdd = () => {
     addToCart(product, selectedQty);
-    showToast(`${toPersianDigits(selectedQty)} عدد «${product.name}» به سبد خرید افزوده شد.`, 'success');
+    showToast(`${toPersianDigits(selectedQty)} ${getStorefrontDisplayUnit(product)} «${product.name}» به سبد خرید افزوده شد.`, 'success');
     onClose();
   };
 
@@ -257,9 +259,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   <div className="flex justify-between py-1 border-b border-[var(--line-soft)] dark:border-[#222228]">
                     <span className="text-slate-500 dark:text-[#8E9299]">واحد سنجش:</span>
                     <span className="font-bold text-slate-800 dark:text-[#E0E0E0]">
-                      {product.unit}{' '}
-                      {product.subUnit
-                        ? `(شامل ${toPersianDigits(product.conversionFactor)} ${product.subUnit})`
+                      {getStorefrontDisplayUnit(product)}{' '}
+                      {product.unit && product.subUnit && product.unit !== product.subUnit
+                        ? `(بسته‌بندی اصلی: ${product.unit}${product.conversionFactor ? ` شامل ${toPersianDigits(product.conversionFactor)} ${product.subUnit}` : ''})`
                         : ''}
                     </span>
                   </div>
@@ -270,20 +272,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                     ) : (
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
                         <PackageCheck className="w-3.5 h-3.5" />
-                        {toPersianDigits(product.stock)} {product.unit} موجود در انبار
+                        {toPersianDigits(product.stock)} {getStorefrontDisplayUnit(product)} موجود در انبار
                       </span>
                     )}
                   </div>
                 </div>
 
                 {/* Multi-tier Wholesale Info */}
-                {product.wholesalePrice > 0 && product.wholesalePrice < displayPrice && (
+                {displayWholesalePrice > 0 && displayWholesalePrice < displayPrice && (
                   <div className="bg-[var(--teal)]/10 border border-[var(--teal)]/30 rounded-xl p-3 text-xs text-slate-800 dark:text-[#E0E0E0] flex items-start gap-2">
                     <Layers className="w-4 h-4 text-[var(--teal)] shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold text-[var(--teal)]">تخفیف سفارش‌های عمده و مدارس:</div>
                       <div className="text-slate-600 dark:text-[#8E9299]">
-                        قیمت عمده: {formatToman(product.wholesalePrice)} (برای خرید بالای ۲۰ عدد)
+                        قیمت عمده: {formatToman(displayWholesalePrice)} (برای خرید بالای ۲۰ {getStorefrontDisplayUnit(product)})
                       </div>
                     </div>
                   </div>

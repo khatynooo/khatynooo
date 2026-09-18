@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { ShoppingBag, Eye, Check, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { Product, WebsiteSettings } from '../../types';
-import { formatToman, toPersianDigits } from '../../lib/utils';
+import { formatToman, toPersianDigits, getStorefrontDisplayUnit, getStorefrontUnitPrice } from '../../lib/utils';
 import { useCart } from '../../context/CartContext';
 import { useToast } from '../common/Toast';
 
@@ -27,10 +27,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const isOutOfStock = product.stock <= 0;
   const inCartItem = cart.find((i) => i.product.id === product.id);
 
-  // Online display price: use priceShop2 (Torob/Online) or salePrice
-  const displayPrice = product.priceShop2 || product.salePrice;
-  const originalPrice = product.salePrice > displayPrice ? product.salePrice : 0;
-  const discountPercent = originalPrice > 0 ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100) : 0;
+  // Online display price: use priceShop2 (Torob/Online) or salePrice converted to subUnit
+  const rawDisplayPrice = product.priceShop2 || product.salePrice;
+  const displayPrice = getStorefrontUnitPrice(rawDisplayPrice, product.conversionFactor);
+  const rawOriginalPrice = product.salePrice > rawDisplayPrice ? product.salePrice : 0;
+  const originalPrice = rawOriginalPrice > 0 ? getStorefrontUnitPrice(rawOriginalPrice, product.conversionFactor) : 0;
+  const discountPercent = originalPrice > displayPrice ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100) : 0;
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -89,7 +91,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 </span>
               ) : (
                 <span className="text-[var(--teal)] font-bold flex items-center gap-1">
-                  <Check className="w-3 h-3" /> {toPersianDigits(product.stock)} {product.unit}
+                  <Check className="w-3 h-3" /> {toPersianDigits(product.stock)} {getStorefrontDisplayUnit(product)}
                 </span>
               )}
             </div>
@@ -193,7 +195,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           ) : (
             <span className="text-[var(--teal)] font-bold flex items-center gap-1">
-              <Check className="w-3 h-3" /> {toPersianDigits(product.stock)} {product.unit}
+              <Check className="w-3 h-3" /> {toPersianDigits(product.stock)} {getStorefrontDisplayUnit(product)}
             </span>
           )}
         </div>

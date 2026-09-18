@@ -61,7 +61,8 @@ const toEnDigits = (str: any) => {
   return String(str)
     .replace(/[۰-۹]/g, (d) => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
     .replace(/[٠-٩]/g, (d) => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
-    .replace(/,/g, '')
+    .replace(/[,،_\s]/g, '')
+    .replace(/[٫/]/g, '.')
     .trim();
 };
 
@@ -475,7 +476,7 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
         paymentMethod,
         paidAmount,
         notes: notes.trim() || undefined,
-        sourceCurrency: 'toman',
+        sourceCurrency,
         alreadyConvertedToToman: true,
         items: validItems.map((it) => ({
           name: it.name,
@@ -854,6 +855,36 @@ export const PurchaseInvoiceExcelImportModal: React.FC<PurchaseInvoiceExcelImpor
                         <option value="cash">نقدی (تسویه کامل از صندوق/تنخواه‌گردان)</option>
                         <option value="cheque">چک / ترکیبی</option>
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        واحد پولی ارقام فایل اکسل
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCurrencyChange('toman')}
+                          className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                            sourceCurrency === 'toman'
+                              ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                              : 'bg-white dark:bg-[#202026] border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-indigo-400'
+                          }`}
+                        >
+                          تومان (عیناً)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCurrencyChange('rial')}
+                          className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                            sourceCurrency === 'rial'
+                              ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                              : 'bg-white dark:bg-[#202026] border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-indigo-400'
+                          }`}
+                        >
+                          ریال (تقسیم بر ۱۰)
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Product } from '../types';
+import { getStorefrontUnitPrice } from '../lib/utils';
 
 export interface CartItem {
   product: Product;
@@ -25,7 +26,17 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cart, setCart] = useState<CartItem[]>(() => {
     try {
       const saved = localStorage.getItem('khatinoo_cart');
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed: CartItem[] = JSON.parse(saved);
+      // تصحیح و همگام‌سازی قیمت واحد خرده‌فروشی اقلام ذخیره‌شده بر مبنای subUnit و conversionFactor
+      return parsed.map((item) => {
+        const rawPrice = item.product.priceShop2 || item.product.salePrice;
+        const correctPrice = getStorefrontUnitPrice(rawPrice, item.product.conversionFactor);
+        return {
+          ...item,
+          selectedPrice: correctPrice || item.selectedPrice,
+        };
+      });
     } catch {
       return [];
     }
@@ -46,8 +57,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : item
         );
       }
-      // Use priceShop2 (Online price) or salePrice
-      const price = product.priceShop2 || product.salePrice;
+      // Use priceShop2 (Online price) or salePrice, converted to storefront unit (subUnit)
+      const rawPrice = product.priceShop2 || product.salePrice;
+      const price = getStorefrontUnitPrice(rawPrice, product.conversionFactor);
       return [...prev, { product, quantity, selectedPrice: price }];
     });
   };

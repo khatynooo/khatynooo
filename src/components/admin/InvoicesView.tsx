@@ -1674,10 +1674,11 @@ export const InvoicesView: React.FC = () => {
                             <td className="p-2.5 text-center">
                               <input
                                 type="number"
-                                min={1}
+                                step="any"
+                                min={0.001}
                                 value={item.quantity}
                                 onChange={(e) => {
-                                  const q = Number(e.target.value);
+                                  const q = Math.max(0.001, Number(e.target.value) || 0);
                                   setPurchaseItems((prev) =>
                                     prev.map((it, i) => (i === idx ? { ...it, quantity: q, total: q * it.buyPrice } : it))
                                   );
@@ -2435,10 +2436,11 @@ export const InvoicesView: React.FC = () => {
                           <td className="p-2">
                             <input
                               type="number"
-                              min={1}
+                              step="any"
+                              min={0.001}
                               value={item.quantity}
                               onChange={(e) => {
-                                const q = Math.max(1, Number(e.target.value));
+                                const q = Math.max(0.001, Number(e.target.value) || 0);
                                 setReturnItems((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, quantity: q, totalPrice: q * it.unitPrice } : it))
                                 );
@@ -2753,21 +2755,22 @@ export const InvoicesView: React.FC = () => {
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => handleEditItemQuantity(idx, item.quantity - 1)}
+                                  onClick={() => handleEditItemQuantity(idx, Math.max(0.001, Number((item.quantity - 1).toFixed(3))))}
                                   className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
                                 >
                                   -
                                 </button>
                                 <input
                                   type="number"
-                                  min="1"
+                                  step="any"
+                                  min="0.001"
                                   value={item.quantity}
-                                  onChange={(e) => handleEditItemQuantity(idx, Math.max(1, Number(e.target.value)))}
-                                  className="w-10 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
+                                  onChange={(e) => handleEditItemQuantity(idx, Math.max(0.001, Number(e.target.value)))}
+                                  className="w-14 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleEditItemQuantity(idx, item.quantity + 1)}
+                                  onClick={() => handleEditItemQuantity(idx, Number((item.quantity + 1).toFixed(3)))}
                                   className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
                                 >
                                   +
@@ -3138,21 +3141,22 @@ export const InvoicesView: React.FC = () => {
                               <div className="flex items-center justify-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => handleEditPurchaseItemQuantity(idx, item.quantity - 1)}
+                                  onClick={() => handleEditPurchaseItemQuantity(idx, Math.max(0.001, Number((item.quantity - 1).toFixed(3))))}
                                   className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
                                 >
                                   -
                                 </button>
                                 <input
                                   type="number"
-                                  min="1"
+                                  step="any"
+                                  min="0.001"
                                   value={item.quantity}
-                                  onChange={(e) => handleEditPurchaseItemQuantity(idx, Math.max(1, Number(e.target.value)))}
-                                  className="w-10 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
+                                  onChange={(e) => handleEditPurchaseItemQuantity(idx, Math.max(0.001, Number(e.target.value)))}
+                                  className="w-14 text-center font-mono font-bold bg-slate-50 border border-slate-200 rounded-md py-0.5 text-xs outline-none"
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => handleEditPurchaseItemQuantity(idx, item.quantity + 1)}
+                                  onClick={() => handleEditPurchaseItemQuantity(idx, Number((item.quantity + 1).toFixed(3)))}
                                   className="w-6 h-6 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center text-xs cursor-pointer"
                                 >
                                   +

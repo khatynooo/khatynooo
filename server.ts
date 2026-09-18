@@ -32,6 +32,7 @@ import { generateSqlDump, generateJsonBackup, restoreFromJson, restoreFromSql, g
 import { PublicationService } from './server/publication/publicationService';
 import { startPublicationWorker } from './server/publication/publicationWorker';
 import { sendDirectEitaaMessage, registerEitaaCustomerChat, getEitaaChatIdForMobile, normalizeMobileNumber, resolveEitaaBotToken } from './server/publication/eitaaDirectMessenger';
+const normalizeIranianMobile = normalizeMobileNumber;
 import { eitaaService } from './server/eitaaService';
 import { UserRole, BindingOrder, EitaaMessageStatus } from './src/types';
 
@@ -1413,7 +1414,8 @@ app.post('/api/invoices/purchase/import-excel', authenticateToken, requireRole([
     const newProducts: any[] = [];
     const updatedProducts: any[] = [];
 
-    const curMultiplier = (rawSourceCurrency === 'rial' || rawSourceCurrency === 'irr') ? 0.1 : 1;
+    const rawAlreadyConverted = req.body.alreadyConvertedToToman === true || req.body.alreadyConvertedToToman === 'true';
+    const curMultiplier = ((rawSourceCurrency === 'rial' || rawSourceCurrency === 'irr') && !rawAlreadyConverted) ? 0.1 : 1;
 
     for (let i = 0; i < items.length; i++) {
       const row = items[i];

@@ -602,7 +602,16 @@ export interface DeviceLayoutOverrides {
   catalogLayoutMode?: 'grid' | 'list' | 'compact';
   headerLayoutStyle?: string;
   footerLayoutStyle?: string;
+  headerLayout?: 'standard' | 'compact' | 'centered' | 'fullwidth';
+  footerLayout?: 'default' | 'compact' | 'detailed' | 'multi_column' | 'card' | 'simple';
   buttonBorderRadius?: string;
+  siteFontFamily?: 'vazirmatn' | 'shabnam' | 'sahel';
+  siteFontScale?: 'sm' | 'base' | 'lg';
+  sectionSpacing?: 'compact' | 'normal' | 'relaxed';
+  containerWidth?: 'standard' | 'wide' | 'full';
+  layoutColumns?: 3 | 4 | 5 | 6 | number;
+  heroHeight?: 'compact' | 'normal' | 'tall';
+  productImageSize?: 'compact' | 'normal' | 'large';
 }
 
 export interface ResponsiveLayoutSettings {

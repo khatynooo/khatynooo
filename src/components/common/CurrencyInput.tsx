@@ -14,6 +14,7 @@ interface CurrencyInputProps {
   disabled?: boolean;
   readOnly?: boolean;
   label?: string;
+  required?: boolean;
   error?: string;
   helperText?: string;
   showHelperWord?: boolean; // نمایش معادل حروفی فارسی
@@ -48,6 +49,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   disabled = false,
   readOnly = false,
   label,
+  required = false,
   error,
   helperText,
   showHelperWord = true,
@@ -113,6 +115,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
         <div className="flex items-center justify-between mb-1.5">
           <label htmlFor={id} className="block text-xs font-bold text-slate-700 dark:text-slate-300">
             {label}
+            {required && <span className="text-rose-500 mr-1">*</span>}
           </label>
           {allowUnitToggle && (
             <button

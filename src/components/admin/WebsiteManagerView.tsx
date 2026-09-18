@@ -48,6 +48,7 @@ import {
   Monitor,
   Tablet,
   Smartphone,
+  Maximize2,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { formatToman, toPersianDigits, getStatusBadgeClass, getStatusTitle } from '../../lib/utils';
@@ -424,7 +425,7 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
   const getResponsiveButtonRadius = (device: 'desktop' | 'tablet' | 'mobile'): string => {
     const override = webSettings?.responsiveLayout?.[device]?.buttonBorderRadius;
     if (override) return override;
-    return webSettings?.buttonBorderRadius || 'rounded-xl';
+    return (webSettings as any)?.buttonBorderRadius || 'rounded-xl';
   };
 
   const setResponsiveButtonRadius = (device: 'desktop' | 'tablet' | 'mobile', radius: string) => {
@@ -437,6 +438,154 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
       responsiveLayout: {
         ...currentResp,
         [device]: { ...currentDev, buttonBorderRadius: radius },
+      },
+    });
+  };
+
+  // Helper to get responsive siteFontFamily (fallback: override -> global -> 'vazirmatn')
+  const getResponsiveFontFamily = (device: 'desktop' | 'tablet' | 'mobile'): 'vazirmatn' | 'shabnam' | 'sahel' => {
+    const override = webSettings?.responsiveLayout?.[device]?.siteFontFamily;
+    if (override) return override;
+    return webSettings?.siteFontFamily || 'vazirmatn';
+  };
+
+  const setResponsiveFontFamily = (device: 'desktop' | 'tablet' | 'mobile', family: 'vazirmatn' | 'shabnam' | 'sahel') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { siteFontFamily: family } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, siteFontFamily: family },
+      },
+    });
+  };
+
+  // Helper to get responsive siteFontScale (fallback: override -> global -> 'base')
+  const getResponsiveFontScale = (device: 'desktop' | 'tablet' | 'mobile'): 'sm' | 'base' | 'lg' => {
+    const override = webSettings?.responsiveLayout?.[device]?.siteFontScale;
+    if (override) return override;
+    return webSettings?.siteFontScale || 'base';
+  };
+
+  const setResponsiveFontScale = (device: 'desktop' | 'tablet' | 'mobile', scale: 'sm' | 'base' | 'lg') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { siteFontScale: scale } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, siteFontScale: scale },
+      },
+    });
+  };
+
+  // Helper to get responsive sectionSpacing (fallback: override -> global -> 'normal')
+  const getResponsiveSectionSpacing = (device: 'desktop' | 'tablet' | 'mobile'): 'compact' | 'normal' | 'relaxed' => {
+    const override = webSettings?.responsiveLayout?.[device]?.sectionSpacing;
+    if (override) return override;
+    return webSettings?.sectionSpacing || 'normal';
+  };
+
+  const setResponsiveSectionSpacing = (device: 'desktop' | 'tablet' | 'mobile', spacing: 'compact' | 'normal' | 'relaxed') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { sectionSpacing: spacing } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, sectionSpacing: spacing },
+      },
+    });
+  };
+
+  // Helper to get responsive layoutColumns (fallback: override -> global -> default cols)
+  const getResponsiveLayoutColumns = (device: 'desktop' | 'tablet' | 'mobile'): number => {
+    const override = webSettings?.responsiveLayout?.[device]?.layoutColumns;
+    if (typeof override === 'number') return override;
+    if (webSettings?.layoutColumns) return webSettings.layoutColumns;
+    return device === 'mobile' ? 2 : device === 'tablet' ? 3 : 5;
+  };
+
+  const setResponsiveLayoutColumns = (device: 'desktop' | 'tablet' | 'mobile', cols: number) => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { layoutColumns: cols as any } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, layoutColumns: cols },
+      },
+    });
+  };
+
+  // Helper to get responsive containerWidth (fallback: override -> global -> 'standard')
+  const getResponsiveContainerWidth = (device: 'desktop' | 'tablet' | 'mobile'): 'standard' | 'wide' | 'full' => {
+    const override = webSettings?.responsiveLayout?.[device]?.containerWidth;
+    if (override) return override;
+    return webSettings?.containerWidth || 'standard';
+  };
+
+  const setResponsiveContainerWidth = (device: 'desktop' | 'tablet' | 'mobile', width: 'standard' | 'wide' | 'full') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { containerWidth: width } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, containerWidth: width },
+      },
+    });
+  };
+
+  // Helper to get responsive heroHeight (fallback: override -> global -> 'normal')
+  const getResponsiveHeroHeight = (device: 'desktop' | 'tablet' | 'mobile'): 'compact' | 'normal' | 'tall' => {
+    const override = webSettings?.responsiveLayout?.[device]?.heroHeight;
+    if (override) return override;
+    return webSettings?.heroHeight || 'normal';
+  };
+
+  const setResponsiveHeroHeight = (device: 'desktop' | 'tablet' | 'mobile', height: 'compact' | 'normal' | 'tall') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { heroHeight: height } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, heroHeight: height },
+      },
+    });
+  };
+
+  // Helper to get responsive productImageSize (fallback: override -> global -> 'normal')
+  const getResponsiveProductImageSize = (device: 'desktop' | 'tablet' | 'mobile'): 'compact' | 'normal' | 'large' => {
+    const override = webSettings?.responsiveLayout?.[device]?.productImageSize;
+    if (override) return override;
+    return webSettings?.productImageSize || 'normal';
+  };
+
+  const setResponsiveProductImageSize = (device: 'desktop' | 'tablet' | 'mobile', size: 'compact' | 'normal' | 'large') => {
+    if (!webSettings) return;
+    const currentResp: ResponsiveLayoutSettings = webSettings.responsiveLayout || {};
+    const currentDev = currentResp[device] || {};
+    setWebSettings({
+      ...webSettings,
+      ...(device === 'desktop' ? { productImageSize: size } : {}),
+      responsiveLayout: {
+        ...currentResp,
+        [device]: { ...currentDev, productImageSize: size },
       },
     });
   };
@@ -1343,14 +1492,23 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                     {activeDevice === 'desktop' ? 'نمایشگر رایانه (عرض ۱۲۰۰px)' : activeDevice === 'tablet' ? 'تبلت (عرض ۷۶۸px)' : 'گوشی موبایل (عرض ۳۷۵px)'}
                   </span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span>ارتفاع لوگو: <b className="text-[#C9A227] font-mono">{getResponsiveLogoHeight(activeDevice).value}{getResponsiveLogoHeight(activeDevice).unit}</b></span>
-                  <span>چیدمان: <b className="text-[#C9A227]">{getResponsiveCatalogLayoutMode(activeDevice)}</b></span>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span>لوگو: <b className="text-[#C9A227] font-mono">{getResponsiveLogoHeight(activeDevice).value}{getResponsiveLogoHeight(activeDevice).unit}</b></span>
+                  <span>ستون‌ها: <b className="text-[#C9A227] font-mono">{getResponsiveLayoutColumns(activeDevice)}</b></span>
+                  <span>مقیاس متن: <b className="text-[#C9A227] font-mono">{getResponsiveFontScale(activeDevice)}</b></span>
+                  <span>فواصل: <b className="text-[#C9A227]">{getResponsiveSectionSpacing(activeDevice)}</b></span>
+                  <span>عرض: <b className="text-[#C9A227]">{getResponsiveContainerWidth(activeDevice)}</b></span>
                 </div>
               </div>
 
               {/* Responsive Container simulation */}
               <div
+                style={{
+                  fontFamily: getResponsiveFontFamily(activeDevice) === 'shabnam' ? 'Shabnam, Vazirmatn, sans-serif'
+                    : getResponsiveFontFamily(activeDevice) === 'sahel' ? 'Sahel, Vazirmatn, sans-serif'
+                    : 'Vazirmatn, sans-serif',
+                  fontSize: getResponsiveFontScale(activeDevice) === 'sm' ? '0.85rem' : getResponsiveFontScale(activeDevice) === 'lg' ? '1.05rem' : '0.95rem',
+                }}
                 className={`transition-all duration-300 bg-[#161619] border border-[#2D2D33] rounded-2xl p-3 shadow-inner overflow-hidden flex flex-col gap-3 ${
                   activeDevice === 'desktop'
                     ? 'w-full max-w-2xl'
@@ -1887,23 +2045,56 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                 </div>
               </div>
 
+              {/* Active Device Indicator Banner */}
+              <div className="bg-[#111113] p-3.5 rounded-xl border border-[#2D2D33] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#E0E0E0]">در حال تنظیم چیدمان اختصاصی برای:</span>
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-[#C9A227] text-slate-950 flex items-center gap-1.5">
+                    {activeDevice === 'desktop' ? (
+                      <>
+                        <Monitor className="w-3.5 h-3.5" />
+                        <span>کامپیوتر و دسکتاپ (عرض بالا)</span>
+                      </>
+                    ) : activeDevice === 'tablet' ? (
+                      <>
+                        <Tablet className="w-3.5 h-3.5" />
+                        <span>تبلت (صفحه نمایش متوسط)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="w-3.5 h-3.5" />
+                        <span>گوشی هوشمند و موبایل</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+                <span className="text-[11px] text-[#8E9299]">
+                  تنظیمات این بخش مستقیماً بر اساس نوع دستگاه بازدیدکننده اعمال می‌شوند (با قابلیت تفکیک کامل موبایل، تبلت و دسکتاپ).
+                </span>
+              </div>
+
               {/* Typography & Font Scaling */}
               <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
-                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
-                  <Type className="w-4 h-4" />
-                  <span>تایپوگرافی، فونت و مقیاس اندازه متن ویترین سایت</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <Type className="w-4 h-4" />
+                    <span>تایپوگرافی، قلم و مقیاس اندازه متن ویترین</span>
+                  </div>
+                  <span className="text-[10px] bg-[#111113] text-[#C9A227] px-2 py-0.5 rounded border border-[#2D2D33] font-bold">
+                    دستگاه: {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-[#8E9299]">
-                  فونت و مقیاس فونت را برای خریداران ویترین تنظیم کنید. توجه داشته باشید تغییر مقیاس تنها بر ویترین سایت اثر می‌گذارد و چیدمان پنل مدیریت دست‌نخورده باقی می‌ماند.
+                  فونت و مقیاس فونت را برای خریداران ویترین تنظیم کنید. تغییر مقیاس تنها بر ویترین سایت اثر می‌گذارد و پنل مدیریت دست‌نخورده باقی می‌ماند.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   {/* Font Family */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">قلم (فونت) سراسری فروشگاه:</label>
+                    <label className="font-bold text-[#8E9299] block text-xs">قلم (فونت) فروشگاه ({activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}):</label>
                     <select
-                      value={webSettings.siteFontFamily || 'vazirmatn'}
-                      onChange={(e) => setWebSettings({ ...webSettings, siteFontFamily: e.target.value as any })}
+                      value={getResponsiveFontFamily(activeDevice)}
+                      onChange={(e) => setResponsiveFontFamily(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="vazirmatn">وزیرمتن (Vazirmatn - مدرن، خوانا و رسمی)</option>
@@ -1914,10 +2105,10 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
 
                   {/* Font Scale */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">مقیاس اندازه متن ویترین (Font Scale):</label>
+                    <label className="font-bold text-[#8E9299] block text-xs">مقیاس اندازه متن ویترین ({activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}):</label>
                     <select
-                      value={webSettings.siteFontScale || 'base'}
-                      onChange={(e) => setWebSettings({ ...webSettings, siteFontScale: e.target.value as any })}
+                      value={getResponsiveFontScale(activeDevice)}
+                      onChange={(e) => setResponsiveFontScale(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="sm">فشرده و کوچک‌تر (۹۰٪ - تراکم بیشتر المان‌ها)</option>
@@ -1929,13 +2120,13 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
 
                 {/* Font Live Preview */}
                 <div className="p-4 bg-[#111113] rounded-xl border border-[#222225] space-y-1">
-                  <span className="text-[10px] text-[#8E9299] font-bold block">پیش‌نمایش زنده نمونه متن با فونت و مقیاس انتخابی:</span>
+                  <span className="text-[10px] text-[#8E9299] font-bold block">پیش‌نمایش زنده متن با فونت و مقیاس {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}:</span>
                   <div
                     style={{
-                      fontFamily: webSettings.siteFontFamily === 'shabnam' ? 'Shabnam, Vazirmatn, sans-serif'
-                        : webSettings.siteFontFamily === 'sahel' ? 'Sahel, Vazirmatn, sans-serif'
+                      fontFamily: getResponsiveFontFamily(activeDevice) === 'shabnam' ? 'Shabnam, Vazirmatn, sans-serif'
+                        : getResponsiveFontFamily(activeDevice) === 'sahel' ? 'Sahel, Vazirmatn, sans-serif'
                         : 'Vazirmatn, sans-serif',
-                      fontSize: webSettings.siteFontScale === 'sm' ? '0.9rem' : webSettings.siteFontScale === 'lg' ? '1.1rem' : '1rem',
+                      fontSize: getResponsiveFontScale(activeDevice) === 'sm' ? '0.9rem' : getResponsiveFontScale(activeDevice) === 'lg' ? '1.1rem' : '1rem',
                     }}
                     className="p-3 bg-[#161619] rounded-lg text-[#F3F4F6] font-medium transition-all"
                   >
@@ -1946,27 +2137,50 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
 
               {/* Product Grid & Images */}
               <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
-                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
-                  <LayoutGrid className="w-4 h-4" />
-                  <span>چیدمان کارت‌های محصول و اندازه تصاویر</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <LayoutGrid className="w-4 h-4" />
+                    <span>چیدمان کارت‌های محصول و اندازه تصاویر</span>
+                  </div>
+                  <span className="text-[10px] bg-[#111113] text-[#C9A227] px-2 py-0.5 rounded border border-[#2D2D33] font-bold">
+                    دستگاه: {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-[#8E9299]">
-                  تعداد ستون‌های ویترین در مانیتور دسکتاپ و میزان فضای داخلی اطراف تصاویر محصول را سفارشی‌سازی کنید.
+                  تعداد ستون‌های نمایش محصولات و میزان فضای داخلی کادر تصاویر را برای هر دستگاه اختصاصی تنظیم کنید.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   {/* Product Grid Columns */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">تعداد ستون‌های محصولات در دسکتاپ:</label>
+                    <label className="font-bold text-[#8E9299] block text-xs">
+                      تعداد ستون‌های محصولات در {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}:
+                    </label>
                     <select
-                      value={webSettings.layoutColumns || 5}
-                      onChange={(e) => setWebSettings({ ...webSettings, layoutColumns: Number(e.target.value) as 3 | 4 | 5 | 6 })}
+                      value={getResponsiveLayoutColumns(activeDevice)}
+                      onChange={(e) => setResponsiveLayoutColumns(activeDevice, Number(e.target.value))}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
-                      <option value={3}>۳ ستونه (تصاویر بسیار بزرگ و جزئیات بالا)</option>
-                      <option value={4}>۴ ستونه (متعادل و خوانا برای اکثر مانیتورها)</option>
-                      <option value={5}>۵ ستونه (استاندارد پیش‌فرض فروشگاه خطی‌نو)</option>
-                      <option value={6}>۶ ستونه (تراکم بالا ویژه مانیتورهای عریض Full HD و 2K)</option>
+                      {activeDevice === 'mobile' ? (
+                        <>
+                          <option value={1}>۱ ستونه (کارت تمام‌عرض تک‌ستونه عمودی)</option>
+                          <option value={2}>۲ ستونه (استاندارد پیش‌فرض موبایل)</option>
+                          <option value={3}>۳ ستونه (تراکم فشرده)</option>
+                        </>
+                      ) : activeDevice === 'tablet' ? (
+                        <>
+                          <option value={2}>۲ ستونه (کارت‌های بزرگ دو ستونه)</option>
+                          <option value={3}>۳ ستونه (استاندارد پیش‌فرض تبلت)</option>
+                          <option value={4}>۴ ستونه (تراکم بالا)</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value={3}>۳ ستونه (تصاویر بسیار بزرگ و جزئیات بالا)</option>
+                          <option value={4}>۴ ستونه (متعادل و خوانا برای اکثر مانیتورها)</option>
+                          <option value={5}>۵ ستونه (استاندارد پیش‌فرض فروشگاه خطی‌نو)</option>
+                          <option value={6}>۶ ستونه (تراکم بالا ویژه مانیتورهای عریض Full HD و 2K)</option>
+                        </>
+                      )}
                     </select>
                   </div>
 
@@ -1974,8 +2188,8 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   <div className="space-y-1.5">
                     <label className="font-bold text-[#8E9299] block text-xs">اندازه و فاصله تصویر درون کادر محصول:</label>
                     <select
-                      value={webSettings.productImageSize || 'normal'}
-                      onChange={(e) => setWebSettings({ ...webSettings, productImageSize: e.target.value as any })}
+                      value={getResponsiveProductImageSize(activeDevice)}
+                      onChange={(e) => setResponsiveProductImageSize(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="compact">تصویر بزرگ‌تر و فیت کادر (پدینگ کم p-3)</option>
@@ -1988,26 +2202,31 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
 
               {/* Hero Banner & Section Spacing */}
               <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
-                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
-                  <ImageIcon className="w-4 h-4" />
-                  <span>ارتفاع بنر اصلی هدر و فواصل عمودی بین بخش‌های صفحه اصلی</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <ImageIcon className="w-4 h-4" />
+                    <span>ارتفاع بنر اصلی هدر و فواصل عمودی بین بخش‌های صفحه اصلی</span>
+                  </div>
+                  <span className="text-[10px] bg-[#111113] text-[#C9A227] px-2 py-0.5 rounded border border-[#2D2D33] font-bold">
+                    دستگاه: {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-[#8E9299]">
-                  ارتفاع اسلایدر بالای صفحه و فاصله خالی بین ردیف‌های محصولات و بنرها را تنظیم نمایید.
+                  ارتفاع اسلایدر بالای صفحه و فاصله خالی بین ردیف‌های محصولات و بنرها را برای هر دستگاه تعیین کنید.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   {/* Hero Height */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-[#8E9299] block text-xs">ارتفاع اسلایدر و بنر اصلی (Hero Banner Height):</label>
+                    <label className="font-bold text-[#8E9299] block text-xs">ارتفاع اسلایدر و بنر اصلی ({activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}):</label>
                     <select
-                      value={webSettings.heroHeight || 'normal'}
-                      onChange={(e) => setWebSettings({ ...webSettings, heroHeight: e.target.value as any })}
+                      value={getResponsiveHeroHeight(activeDevice)}
+                      onChange={(e) => setResponsiveHeroHeight(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
-                      <option value="compact">فشرده و جمع‌وجور (ارتفاع ۳۲۰ پیکسل - مشاهده سریع‌تر محصولات)</option>
-                      <option value="normal">استاندارد متعادل (ارتفاع ۴۲۰ پیکسل - پیش‌فرض خطی‌نو)</option>
-                      <option value="tall">عریض و سینمایی (ارتفاع ۵۲۰ پیکسل - جلوه بصری چشمگیر)</option>
+                      <option value="compact">فشرده و جمع‌وجور (مشاهده سریع‌تر محصولات)</option>
+                      <option value="normal">استاندارد متعادل (پیش‌فرض خطی‌نو)</option>
+                      <option value="tall">عریض و سینمایی (جلوه بصری چشمگیر)</option>
                     </select>
                   </div>
 
@@ -2015,13 +2234,62 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   <div className="space-y-1.5">
                     <label className="font-bold text-[#8E9299] block text-xs">فاصله عمودی بین بخش‌های صفحه اصلی (Section Spacing):</label>
                     <select
-                      value={webSettings.sectionSpacing || 'normal'}
-                      onChange={(e) => setWebSettings({ ...webSettings, sectionSpacing: e.target.value as any })}
+                      value={getResponsiveSectionSpacing(activeDevice)}
+                      onChange={(e) => setResponsiveSectionSpacing(activeDevice, e.target.value as any)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
-                      <option value="compact">فشرده و نزدیک به‌هم (فاصله 24px - مشاهده محتوای بیشتر بدون اسکرول زیاد)</option>
-                      <option value="normal">متعادل و استاندارد (فاصله 48px - پیش‌فرض)</option>
-                      <option value="relaxed">دلباز و با فضای تنفس زیاد (فاصله 72px - لوکس و مینیمال)</option>
+                      <option value="compact">فشرده و نزدیک به‌هم (فاصله کمتر - بدون اسکرول زیاد)</option>
+                      <option value="normal">متعادل و استاندارد (پیش‌فرض)</option>
+                      <option value="relaxed">دلباز و با فضای تنفس زیاد (لوکس و مینیمال)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Container Width & Button Radius */}
+              <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <Maximize2 className="w-4 h-4" />
+                    <span>عرض بدنه سایت و انحنای دکمه‌ها (Container Width & Radius)</span>
+                  </div>
+                  <span className="text-[10px] bg-[#111113] text-[#C9A227] px-2 py-0.5 rounded border border-[#2D2D33] font-bold">
+                    دستگاه: {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#8E9299]">
+                  حداکثر عرض ظرف صفحات فروشگاه و میزان انحنای گوشه دکمه‌های سایت را تنظیم کنید.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Container Width */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">عرض ظرف محتوای سایت (Container Width):</label>
+                    <select
+                      value={getResponsiveContainerWidth(activeDevice)}
+                      onChange={(e) => setResponsiveContainerWidth(activeDevice, e.target.value as any)}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="standard">استاندارد متمرکز (حداکثر ۱۲۸۰ پیکسل max-w-7xl)</option>
+                      <option value="wide">عریض گسترده (حداکثر ۱۶۰۰ پیکسل max-w-[1600px])</option>
+                      <option value="full">تمام‌عرض لبه‌به‌لبه (۱۰۰٪ عرض صفحه)</option>
+                    </select>
+                  </div>
+
+                  {/* Button Border Radius */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#8E9299] block text-xs">انحنای گوشه دکمه‌های سایت (Button Radius):</label>
+                    <select
+                      value={getResponsiveButtonRadius(activeDevice)}
+                      onChange={(e) => setResponsiveButtonRadius(activeDevice, e.target.value)}
+                      className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
+                    >
+                      <option value="rounded-none">بدون انحنا و گوشه‌دار تیز (0px)</option>
+                      <option value="rounded-md">انحنای ملایم (6px)</option>
+                      <option value="rounded-lg">انحنای استاندارد (8px)</option>
+                      <option value="rounded-xl">انحنای نرم مدرن (12px - پیش‌فرض)</option>
+                      <option value="rounded-2xl">انحنای ارگانیک پهن (16px)</option>
+                      <option value="rounded-full">تمام گرد کپسولی (Pill Style)</option>
                     </select>
                   </div>
                 </div>
@@ -2029,12 +2297,17 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
 
               {/* Header & Footer Architectural Layouts */}
               <div className="bg-[#161619] p-5 rounded-2xl border border-[#2D2D33] space-y-4">
-                <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
-                  <Sliders className="w-4 h-4" />
-                  <span>معماری و نحوه چیدمان سربرگ (Header) و پاورقی (Footer)</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[#C9A227] font-bold text-xs">
+                    <Sliders className="w-4 h-4" />
+                    <span>معماری و نحوه چیدمان سربرگ (Header) و پاورقی (Footer)</span>
+                  </div>
+                  <span className="text-[10px] bg-[#111113] text-[#C9A227] px-2 py-0.5 rounded border border-[#2D2D33] font-bold">
+                    دستگاه: {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'}
+                  </span>
                 </div>
                 <p className="text-[11px] text-[#8E9299]">
-                  سبک ساختاری قرارگیری اجزای هدر و فوتر فروشگاه را تعیین کنید. این تنظیمات فوراً روی ظاهر سایت اعمال می‌شوند.
+                  سبک ساختاری قرارگیری اجزای هدر و فوتر فروشگاه را برای {activeDevice === 'desktop' ? 'دسکتاپ' : activeDevice === 'tablet' ? 'تبلت' : 'موبایل'} تعیین کنید.
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -2042,8 +2315,8 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   <div className="space-y-1.5">
                     <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان هدر (Header Layout):</label>
                     <select
-                      value={webSettings.headerLayout || 'standard'}
-                      onChange={(e) => setWebSettings({ ...webSettings, headerLayout: e.target.value as any })}
+                      value={getResponsiveHeaderLayout(activeDevice)}
+                      onChange={(e) => setResponsiveHeaderLayout(activeDevice, e.target.value)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="standard">استاندارد تجاری (لوگو راست، سرچ وسط، ابزارها چپ)</option>
@@ -2057,8 +2330,8 @@ export const WebsiteManagerView: React.FC<{ initialTab?: 'orders' | 'banners' | 
                   <div className="space-y-1.5">
                     <label className="font-bold text-[#8E9299] block text-xs">سبک چیدمان فوتر (Footer Layout):</label>
                     <select
-                      value={webSettings.footerLayout || 'multi_column'}
-                      onChange={(e) => setWebSettings({ ...webSettings, footerLayout: e.target.value as any })}
+                      value={getResponsiveFooterLayout(activeDevice)}
+                      onChange={(e) => setResponsiveFooterLayout(activeDevice, e.target.value)}
                       className="w-full bg-[#111113] border border-[#2D2D33] focus:border-[#C9A227] rounded-xl px-3 py-2.5 font-bold text-[#E0E0E0] outline-none text-xs"
                     >
                       <option value="multi_column">چندستونه کامل (۴ ستون جامع شامل مجوزها، نقشه، لینک‌ها و تماس)</option>

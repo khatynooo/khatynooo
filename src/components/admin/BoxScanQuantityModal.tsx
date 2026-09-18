@@ -33,9 +33,9 @@ export const BoxScanQuantityModal: React.FC<BoxScanQuantityModalProps> = ({
 
   const factor = Number(product.conversionFactor || 1);
   const parsedBoxCount = Math.max(0, Math.round(Number(boxCount) || 0));
-  const parsedExtraUnits = Math.max(0, Math.round(Number(extraUnits) || 0));
-  const parsedQuantity = Math.max(1, Math.round(Number(quantity) || 1));
-  const totalUnits = parsedBoxCount * factor + parsedExtraUnits;
+  const parsedExtraUnits = Math.max(0, Number(Number(extraUnits || 0).toFixed(3)));
+  const parsedQuantity = Math.max(0.001, Number(Number(quantity || 1).toFixed(3)));
+  const totalUnits = Number((parsedBoxCount * factor + parsedExtraUnits).toFixed(3));
 
   const handleConfirm = () => {
     if (mode === 'box') {
@@ -101,6 +101,7 @@ export const BoxScanQuantityModal: React.FC<BoxScanQuantityModalProps> = ({
               <label className="text-xs font-bold text-slate-700 block">عدد اضافه:</label>
               <input
                 type="number"
+                step="any"
                 min={0}
                 value={extraUnits}
                 onChange={(e) => setExtraUnits(e.target.value)}
@@ -118,7 +119,8 @@ export const BoxScanQuantityModal: React.FC<BoxScanQuantityModalProps> = ({
             <input
               ref={firstInputRef}
               type="number"
-              min={1}
+              step="any"
+              min={0.001}
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               onKeyDown={(e) => {

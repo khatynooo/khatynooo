@@ -50,8 +50,9 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
 
   const handleStep = (delta: number) => {
     setError(null);
-    const current = Math.max(1, Math.round(Number(toEnglishDigits(quantity)) || 1));
-    const next = Math.max(1, current + delta);
+    const clean = toEnglishDigits(quantity).replace(/[,،_\s]/g, '').replace(/[٫/]/g, '.');
+    const current = Number(clean) || 1;
+    const next = Math.max(0.001, Number((current + delta).toFixed(3)));
     setQuantity(String(next));
   };
 
@@ -59,20 +60,22 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
     if (isSubmitting) return;
 
     if (mode === 'box') {
-      const parsedBoxes = Math.max(0, Math.round(Number(toEnglishDigits(boxCount)) || 0));
-      const parsedExtra = Math.max(0, Math.round(Number(toEnglishDigits(extraUnits)) || 0));
-      const totalUnits = parsedBoxes * factor + parsedExtra;
+      const cleanBox = toEnglishDigits(boxCount).replace(/[,،_\s]/g, '').replace(/[٫/]/g, '.');
+      const cleanExtra = toEnglishDigits(extraUnits).replace(/[,،_\s]/g, '').replace(/[٫/]/g, '.');
+      const parsedBoxes = Math.max(0, Math.round(Number(cleanBox) || 0));
+      const parsedExtra = Math.max(0, Number(Number(cleanExtra || 0).toFixed(3)));
+      const totalUnits = Number((parsedBoxes * factor + parsedExtra).toFixed(3));
 
       if (totalUnits <= 0) {
-        setError('حداقل باید ۱ جعبه یا ۱ عدد وارد کنید.');
+        setError('حداقل باید مقداری تعداد یا جعبه وارد کنید.');
         return;
       }
 
       setIsSubmitting(true);
       onConfirm(totalUnits, { boxCount: parsedBoxes, unitsPerBox: factor });
     } else {
-      const cleanVal = toEnglishDigits(quantity).trim();
-      const parsedQty = Math.round(Number(cleanVal));
+      const cleanVal = toEnglishDigits(quantity).replace(/[,،_\s]/g, '').replace(/[٫/]/g, '.').trim();
+      const parsedQty = Number(cleanVal);
 
       if (!cleanVal || isNaN(parsedQty) || parsedQty <= 0) {
         setError('تعداد باید یک عدد معتبر بزرگتر از صفر باشد.');
@@ -80,8 +83,10 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
         return;
       }
 
+      const safeQty = Number(parsedQty.toFixed(3));
+
       setIsSubmitting(true);
-      onConfirm(parsedQty);
+      onConfirm(safeQty);
     }
   };
 
@@ -207,6 +212,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
                 <label className="text-xs font-bold text-[#111827] block">عدد اضافه:</label>
                 <input
                   type="number"
+                  step="any"
                   min={0}
                   value={extraUnits}
                   onChange={(e) => {
@@ -222,8 +228,12 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
               <span className="text-[#64748B]">مجموع اضافه‌شونده: </span>
               <strong className="text-blue-700 font-mono font-black text-base">
                 {toPersianDigits(
-                  Math.max(0, Math.round(Number(toEnglishDigits(boxCount)) || 0)) * factor +
-                  Math.max(0, Math.round(Number(toEnglishDigits(extraUnits)) || 0))
+                  Number(
+                    (
+                      Math.max(0, Math.round(Number(toEnglishDigits(boxCount)) || 0)) * factor +
+                      Math.max(0, Number(toEnglishDigits(extraUnits)) || 0)
+                    ).toFixed(3)
+                  )
                 )}
               </strong>{' '}
               <span className="font-bold text-[#111827]">{product.subUnit || 'عدد'}</span>
@@ -247,8 +257,7 @@ export const ProductScanQuantityModal: React.FC<ProductScanQuantityModalProps> =
               <input
                 ref={inputRef}
                 type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
+                inputMode="decimal"
                 value={quantity}
                 onChange={(e) => {
                   setError(null);

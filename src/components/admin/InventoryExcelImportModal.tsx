@@ -65,7 +65,8 @@ const toEnDigits = (str: any) => {
   return String(str)
     .replace(/[۰-۹]/g, (d) => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
     .replace(/[٠-٩]/g, (d) => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
-    .replace(/,/g, '')
+    .replace(/[,،_\s]/g, '')
+    .replace(/[٫/]/g, '.')
     .trim();
 };
 

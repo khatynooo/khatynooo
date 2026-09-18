@@ -47,6 +47,13 @@ import {
   EitaaCustomerChat,
 } from '../src/types';
 
+// Helper برای محاسبه قیمت واحد فروش آنلاین بر مبنای subUnit
+export function getStorefrontUnitPrice(priceAtMainUnit: number, conversionFactor?: number | null): number {
+  const factor = Number(conversionFactor || 1);
+  if (!factor || factor <= 1) return priceAtMainUnit;
+  return Math.ceil(priceAtMainUnit / factor);
+}
+
 // Helper برای تبدیل خروجی ردیف‌های SQL با Snake Case به Camel Case
 function formatProduct(row: any): Product {
   const isShowOnWeb = row.show_on_website !== undefined && row.show_on_website !== null
@@ -2187,6 +2194,7 @@ export const db = {
     documentNumber?: string;
     discount?: number;
     receiptImageUrl?: string;
+    updateProductCosts?: boolean;
     userId?: string;
     userName?: string;
     ip?: string;
@@ -2269,12 +2277,14 @@ export const db = {
       }
 
       // به‌روزرسانی قیمت خرید محصولات جدید در جدول کالاها
-      for (const it of newItems) {
-        if (it.productId && it.buyPrice !== undefined) {
-          await client.query(
-            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
-            [Number(it.buyPrice), it.productId]
-          );
+      if (updateData.updateProductCosts !== false) {
+        for (const it of newItems) {
+          if (it.productId && it.buyPrice !== undefined) {
+            await client.query(
+              `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
+              [Number(it.buyPrice), it.productId]
+            );
+          }
         }
       }
 
@@ -2608,6 +2618,7 @@ export const db = {
       invoiceDate: inv.invoiceDate,
       documentNumber: inv.documentNumber,
       notes: (inv.notes ? inv.notes + '\n' : '') + `[تصحیح واحد پول: ${params.operation === 'divide_10' ? 'تقسیم بر ۱۰ (ریال به تومان)' : 'ضرب در ۱۰ (تومان به ریال)'}]`,
+      updateProductCosts: Boolean(params.updateProductCosts),
       userId: params.context?.userId,
       userName: params.context?.userName,
       ip: params.context?.ip,
@@ -2619,19 +2630,10 @@ export const db = {
     await query(`UPDATE purchase_invoices SET source_currency = $1 WHERE id = $2`, [newSourceCurrency, id]);
     updatedInvoice.sourceCurrency = newSourceCurrency as any;
 
-    // در صورت انتخاب کاربر، به‌روزرسانی بهای خرید کالاها در جدول products
-    let updatedProductsCount = 0;
-    if (params.updateProductCosts) {
-      for (const item of newItems) {
-        if (item.productId && item.buyPrice > 0) {
-          await query(
-            `UPDATE products SET buy_price = $1, updated_at = NOW() WHERE id = $2`,
-            [item.buyPrice, item.productId]
-          );
-          updatedProductsCount++;
-        }
-      }
-    }
+    // شمارش کالاهای به‌روزرسانی‌شده
+    const updatedProductsCount = params.updateProductCosts
+      ? newItems.filter((item: any) => item.productId && item.buyPrice > 0).length
+      : 0;
 
     return {
       invoice: updatedInvoice,
@@ -4909,14 +4911,19 @@ export const db = {
         }
         const p = prodCheck.rows[0];
 
-        const unitPrice = Number(p.price_shop2 || p.sale_price);
+        const rawUnitPrice = Number(p.price_shop2 || p.sale_price);
+        const unitPrice = getStorefrontUnitPrice(rawUnitPrice, p.conversion_factor);
         const total = unitPrice * it.quantity;
         subtotal += total;
+
+        const displayUnit = (p.sub_unit && String(p.sub_unit).trim())
+          ? String(p.sub_unit).trim()
+          : (p.unit && String(p.unit).trim() ? String(p.unit).trim() : 'عدد');
 
         orderItems.push({
           productId: p.id,
           productName: p.name,
-          unit: p.unit,
+          unit: displayUnit,
           quantity: it.quantity,
           unitPrice,
           total,

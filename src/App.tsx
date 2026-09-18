@@ -170,40 +170,79 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
 
   const isFilteringOrSearching = !!(selectedCategory || searchQuery.trim() || filterTab !== 'all');
 
+  // Device detection & Responsive Settings with Fallback Chain: DeviceOverride -> GlobalSetting -> DefaultValue
+  const device = useDeviceType();
+  const responsiveOverride = websiteSettings?.responsiveLayout?.[device];
+
+  const effectiveFontFamilyKey = responsiveOverride?.siteFontFamily || websiteSettings?.siteFontFamily || 'vazirmatn';
+  const effectiveFontScaleKey = responsiveOverride?.siteFontScale || websiteSettings?.siteFontScale || 'base';
+  const effectiveSectionSpacingKey = responsiveOverride?.sectionSpacing || websiteSettings?.sectionSpacing || 'normal';
+  const effectiveContainerWidthKey = responsiveOverride?.containerWidth || websiteSettings?.containerWidth || 'standard';
+  const defaultCols = device === 'mobile' ? 2 : device === 'tablet' ? 3 : 5;
+  const effectiveCols = responsiveOverride?.layoutColumns || websiteSettings?.layoutColumns || defaultCols;
+  const effectiveHeroHeightKey = responsiveOverride?.heroHeight || websiteSettings?.heroHeight || 'normal';
+  const effectiveProductImageSizeKey = responsiveOverride?.productImageSize || websiteSettings?.productImageSize || 'normal';
+  const effectiveCatalogLayoutMode = responsiveOverride?.catalogLayoutMode || websiteSettings?.catalogLayoutMode || 'grid';
+  const effectiveHeaderLayout = (responsiveOverride?.headerLayout || responsiveOverride?.headerLayoutStyle || websiteSettings?.headerLayout || 'standard') as any;
+  const effectiveFooterLayout = (responsiveOverride?.footerLayout || responsiveOverride?.footerLayoutStyle || websiteSettings?.footerLayout || 'multi_column') as any;
+  const effectiveButtonBorderRadius = (responsiveOverride?.buttonBorderRadius || (websiteSettings as any)?.buttonBorderRadius || 'rounded-xl') as any;
+
+  // Resolved website settings passed to children
+  const effectiveWebsiteSettings: WebsiteSettings | null = websiteSettings ? {
+    ...websiteSettings,
+    siteFontFamily: effectiveFontFamilyKey,
+    siteFontScale: effectiveFontScaleKey,
+    sectionSpacing: effectiveSectionSpacingKey,
+    containerWidth: effectiveContainerWidthKey,
+    layoutColumns: typeof effectiveCols === 'number' ? (Math.min(Math.max(Number(effectiveCols), 2), 6) as any) : 5,
+    heroHeight: effectiveHeroHeightKey,
+    productImageSize: effectiveProductImageSizeKey,
+    catalogLayoutMode: effectiveCatalogLayoutMode,
+    headerLayout: effectiveHeaderLayout,
+    footerLayout: effectiveFooterLayout,
+    buttonBorderRadius: effectiveButtonBorderRadius,
+  } : null;
+
   // Dynamic font family & scale for storefront
   const fontFamilyMap: Record<string, string> = {
     vazirmatn: 'Vazirmatn, sans-serif',
     shabnam: 'Shabnam, Vazirmatn, sans-serif',
     sahel: 'Sahel, Vazirmatn, sans-serif',
   };
-  const activeFontFamily = fontFamilyMap[websiteSettings?.siteFontFamily || 'vazirmatn'] || 'Vazirmatn, sans-serif';
+  const activeFontFamily = fontFamilyMap[effectiveFontFamilyKey] || 'Vazirmatn, sans-serif';
 
   const fontScaleMap: Record<string, string> = {
     sm: '0.925rem',
     base: '1rem',
     lg: '1.075rem',
   };
-  const activeFontScale = fontScaleMap[websiteSettings?.siteFontScale || 'base'] || '1rem';
+  const activeFontScale = fontScaleMap[effectiveFontScaleKey] || '1rem';
 
   const spacingMap: Record<string, string> = {
     compact: 'space-y-4 sm:space-y-6',
     normal: 'space-y-6 sm:space-y-8',
     relaxed: 'space-y-10 sm:space-y-14',
   };
-  const activeSectionSpacing = spacingMap[websiteSettings?.sectionSpacing || 'normal'] || 'space-y-6 sm:space-y-8';
+  const activeSectionSpacing = spacingMap[effectiveSectionSpacingKey] || 'space-y-6 sm:space-y-8';
 
-  const cols = websiteSettings?.layoutColumns || 5;
-  const gridColsClass = cols === 3
+  const containerWidthMap: Record<string, string> = {
+    standard: 'max-w-7xl mx-auto',
+    wide: 'max-w-[1600px] mx-auto',
+    full: 'w-full',
+  };
+  const activeContainerWidthClass = containerWidthMap[effectiveContainerWidthKey] || 'w-full';
+
+  const gridColsClass = effectiveCols === 2
+    ? 'grid-cols-2'
+    : effectiveCols === 3
     ? 'grid-cols-2 sm:grid-cols-3'
-    : cols === 4
+    : effectiveCols === 4
     ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
-    : cols === 6
+    : effectiveCols === 6
     ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6'
     : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
 
-  const device = useDeviceType();
-  const responsiveOverride = websiteSettings?.responsiveLayout?.[device];
-  const activeCatalogLayoutMode = responsiveOverride?.catalogLayoutMode || websiteSettings?.catalogLayoutMode || 'grid';
+  const activeCatalogLayoutMode = effectiveCatalogLayoutMode;
 
   return (
     <div
@@ -224,12 +263,12 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         onOpenCalculator={() => setIsCalculatorOpen(true)}
         onOpenTracker={() => setIsTrackerOpen(true)}
         onOpenCustomerAccount={() => setIsCustomerAccountOpen(true)}
-        websiteSettings={websiteSettings}
+        websiteSettings={effectiveWebsiteSettings}
         storeSettings={storeSettings}
       />
 
       {/* Main Storefront Body - Expansive Full Screen on Desktop */}
-      <main className={`flex-1 w-full px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 ${activeSectionSpacing}`}>
+      <main className={`flex-1 ${activeContainerWidthClass} px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 ${activeSectionSpacing}`}>
         {/* If custom Page Builder blocks are loaded and we are on standard home view, render blocks dynamically */}
         {!isFilteringOrSearching && activeBlocks.length > 0 ? (
           activeBlocks.map((block) => (
@@ -239,7 +278,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
               categories={categories}
               products={websiteProducts}
               banners={banners}
-              websiteSettings={websiteSettings}
+              websiteSettings={effectiveWebsiteSettings}
               onSelectCategory={setSelectedCategory}
               onOpenCalculator={() => setIsCalculatorOpen(true)}
               onQuickView={(p) => setSelectedProduct(p)}
@@ -251,7 +290,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
             {banners.length > 0 && (
               <BannerSlider
                 banners={banners}
-                websiteSettings={websiteSettings}
+                websiteSettings={effectiveWebsiteSettings}
                 onBannerClick={(b) => {
                   if (b.link?.includes('category')) {
                     const cat = categories.find((c) => b.link?.includes(c.id));
@@ -386,7 +425,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                   <div className="sm:col-span-2 sm:row-span-2">
                     <ProductCard
                       product={filteredProducts[0]}
-                      websiteSettings={websiteSettings}
+                      websiteSettings={effectiveWebsiteSettings}
                       layoutMode="grid"
                       onQuickView={(p) => setSelectedProduct(p)}
                       large
@@ -396,7 +435,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                     <ProductCard
                       key={p.id}
                       product={p}
-                      websiteSettings={websiteSettings}
+                      websiteSettings={effectiveWebsiteSettings}
                       layoutMode="grid"
                       onQuickView={(p) => setSelectedProduct(p)}
                     />
@@ -425,7 +464,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                     <ProductCard
                       key={product.id}
                       product={product}
-                      websiteSettings={websiteSettings}
+                      websiteSettings={effectiveWebsiteSettings}
                       layoutMode={activeCatalogLayoutMode}
                       onQuickView={(p) => setSelectedProduct(p)}
                     />
@@ -478,7 +517,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
       <Footer
         onOpenCalculator={() => setIsCalculatorOpen(true)}
         onOpenTracker={() => setIsTrackerOpen(true)}
-        websiteSettings={websiteSettings}
+        websiteSettings={effectiveWebsiteSettings}
         storeSettings={storeSettings}
       />
     </div>

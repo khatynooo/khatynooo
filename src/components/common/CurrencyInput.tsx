@@ -5,7 +5,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 
 interface CurrencyInputProps {
   id?: string;
-  value: number | string | null | undefined; // مبلغ در واحد پایه تومان
+  value: number | string | null | undefined; // مبلغ همیشه در واحد پایه تومان
   onChange: (valueInToman: number, displayValue: number) => void;
   unit?: CurrencyUnit;
   allowUnitToggle?: boolean;
@@ -17,10 +17,9 @@ interface CurrencyInputProps {
   required?: boolean;
   error?: string;
   helperText?: string;
-  showHelperWord?: boolean; // نمایش معادل حروفی فارسی
+  showHelperWord?: boolean;
 }
 
-// تابع تبدیل ساده عدد به حروف برای مبالغ رایج (هزار، میلیون، میلیارد)
 function numberToPersianWords(num: number, unitLabel: string): string {
   if (!num || isNaN(num) || num <= 0) return '';
   if (num >= 1_000_000_000) {
@@ -55,17 +54,16 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   showHelperWord = true,
 }) => {
   const { currency: globalCurrency } = useCurrency();
-  const currentUnit = propUnit || globalCurrency;
-  const [internalUnit, setInternalUnit] = useState<CurrencyUnit>(currentUnit);
+  const [internalUnit, setInternalUnit] = useState<CurrencyUnit>(propUnit || globalCurrency);
 
+  // اگر واحد به‌صورت صریح از والد تعیین نشده باشد، با تغییر واحد سراسری فرم هم باید فوراً تغییر کند.
   useEffect(() => {
-    if (propUnit) {
-      setInternalUnit(propUnit);
-    }
-  }, [propUnit]);
+    setInternalUnit(propUnit || globalCurrency);
+  }, [propUnit, globalCurrency]);
 
-  // تبدیل مقدار پایه (تومان) به واحد نمایشی ورودی
-  const numericToman = typeof value === 'number' ? value : Number(toEnglishDigits(value || 0).replace(/,/g, '')) || 0;
+  const numericToman = typeof value === 'number'
+    ? value
+    : Number(toEnglishDigits(value || 0).replace(/,/g, '')) || 0;
   const displayNum = convertFromBase(numericToman, internalUnit);
 
   const [displayString, setDisplayString] = useState<string>(() => {
@@ -80,7 +78,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
     } else {
       setDisplayString('');
     }
-  }, [value, internalUnit]);
+  }, [value, displayNum, internalUnit]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawVal = e.target.value;
@@ -93,7 +91,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
     }
 
     const parsed = Number(cleanEnglish);
-    if (isNaN(parsed)) return;
+    if (isNaN(parsed) || parsed < 0) return;
 
     setDisplayString(toPersianDigits(parsed.toLocaleString('en-US')));
     const valueInToman = convertToBase(parsed, internalUnit);
@@ -102,12 +100,13 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
 
   const handleToggleUnit = () => {
     if (!allowUnitToggle) return;
-    const newUnit: CurrencyUnit = internalUnit === 'IRT' ? 'IRR' : 'IRT';
-    setInternalUnit(newUnit);
+    setInternalUnit((current) => (current === 'IRT' ? 'IRR' : 'IRT'));
   };
 
   const parsedCurrentNum = Number(toEnglishDigits(displayString).replace(/,/g, '')) || 0;
-  const helperWord = showHelperWord && parsedCurrentNum > 0 ? numberToPersianWords(parsedCurrentNum, getCurrencyLabel(internalUnit)) : '';
+  const helperWord = showHelperWord && parsedCurrentNum > 0
+    ? numberToPersianWords(parsedCurrentNum, getCurrencyLabel(internalUnit))
+    : '';
 
   return (
     <div className="w-full">
@@ -154,9 +153,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
 
       <div className="flex items-center justify-between mt-1 px-1">
         {helperWord ? (
-          <span className="text-[11px] text-orange-600 dark:text-orange-400/90 font-medium">
-            «{helperWord}»
-          </span>
+          <span className="text-[11px] text-orange-600 dark:text-orange-400/90 font-medium">«{helperWord}»</span>
         ) : helperText ? (
           <span className="text-[11px] text-slate-400">{helperText}</span>
         ) : null}

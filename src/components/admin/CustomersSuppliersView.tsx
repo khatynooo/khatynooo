@@ -29,9 +29,11 @@ import { formatToman, toPersianDigits } from '../../lib/utils';
 import { Customer, Supplier } from '../../types';
 import { useToast } from '../common/Toast';
 import { GarbageCustomersModal } from './GarbageCustomersModal';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export const CustomersSuppliersView: React.FC = () => {
   const { showToast } = useToast();
+  const { toDisplay, toBase, unitLabel } = useCurrency();
 
   const [activeTab, setActiveTab] = useState<'customers' | 'suppliers'>('customers');
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -818,7 +820,7 @@ export const CustomersSuppliersView: React.FC = () => {
             <form onSubmit={handleSubmitCustomerPayment} className="space-y-3.5 text-xs">
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="font-bold text-slate-700">مبلغ دریافتی (تومان):</label>
+                  <label className="font-bold text-slate-700">مبلغ دریافتی ({unitLabel}):</label>
                   {(paymentCustomer.balance || 0) < 0 && (
                     <button
                       type="button"
@@ -833,8 +835,8 @@ export const CustomersSuppliersView: React.FC = () => {
                   type="number"
                   required
                   min="1"
-                  value={custPaymentAmount}
-                  onChange={(e) => setCustPaymentAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  value={custPaymentAmount === '' ? '' : toDisplay(Number(custPaymentAmount))}
+                  onChange={(e) => setCustPaymentAmount(e.target.value === '' ? '' : toBase(Number(e.target.value)))}
                   placeholder="مثلاً ۱,۵۰۰,۰۰۰"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-emerald-500 focus:bg-white"
                 />
@@ -954,7 +956,7 @@ export const CustomersSuppliersView: React.FC = () => {
             <form onSubmit={handleSubmitSupplierPayment} className="space-y-3.5 text-xs">
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="font-bold text-slate-700">مبلغ پرداختی به تامین‌کننده (تومان):</label>
+                  <label className="font-bold text-slate-700">مبلغ پرداختی به تامین‌کننده ({unitLabel}):</label>
                   {(paymentSupplier.debtToSupplier || 0) > 0 && (
                     <button
                       type="button"
@@ -969,8 +971,8 @@ export const CustomersSuppliersView: React.FC = () => {
                   type="number"
                   required
                   min="1"
-                  value={supPaymentAmount}
-                  onChange={(e) => setSupPaymentAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                  value={supPaymentAmount === '' ? '' : toDisplay(Number(supPaymentAmount))}
+                  onChange={(e) => setSupPaymentAmount(e.target.value === '' ? '' : toBase(Number(e.target.value)))}
                   placeholder="مثلاً ۵,۰۰۰,۰۰۰"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 font-mono text-sm font-bold text-slate-900 outline-none focus:border-amber-500 focus:bg-white"
                 />

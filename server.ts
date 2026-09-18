@@ -176,6 +176,15 @@ app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use('/uploads', express.static(uploadsDir));
 
+// Enamad technical verification: always serve the verification token from the domain root.
+// This is intentionally placed before the SPA fallback so /75576883.txt never returns index.html.
+app.get('/75576883.txt', (_req, res) => {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.send('');
+});
+
 // Health check endpoint for container environments & reverse proxies
 app.get(['/health', '/api/health'], (req, res) => {
   res.status(200).json({ status: 'ok', time: new Date().toISOString(), port: PORT });

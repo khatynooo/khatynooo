@@ -50,10 +50,12 @@ import { useNavigate } from 'react-router-dom';
 import { PurchaseInvoiceExcelImportModal } from './PurchaseInvoiceExcelImportModal';
 import { CorrectInvoiceCurrencyModal } from './CorrectInvoiceCurrencyModal';
 import { CurrencyInput } from '../common/CurrencyInput';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export const InvoicesView: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { toDisplay, toBase, unitLabel } = useCurrency();
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeTab, setActiveTab] = useState<'sales' | 'purchase' | 'returns'>('sales');
@@ -2521,9 +2523,9 @@ export const InvoicesView: React.FC = () => {
                           <td className="p-2">
                             <input
                               type="number"
-                              value={item.unitPrice}
+                              value={toDisplay(Number(item.unitPrice))}
                               onChange={(e) => {
-                                const up = Number(e.target.value);
+                                const up = toBase(Number(e.target.value));
                                 setReturnItems((prev) =>
                                   prev.map((it, i) => (i === idx ? { ...it, unitPrice: up, totalPrice: it.quantity * up } : it))
                                 );
@@ -2816,8 +2818,8 @@ export const InvoicesView: React.FC = () => {
                               <input
                                 type="number"
                                 min="0"
-                                value={item.unitPrice}
-                                onChange={(e) => handleEditItemPrice(idx, Number(e.target.value))}
+                                value={toDisplay(Number(item.unitPrice))}
+                                onChange={(e) => handleEditItemPrice(idx, toBase(Number(e.target.value)))}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-mono text-xs outline-none"
                               />
                             </td>
@@ -2906,12 +2908,12 @@ export const InvoicesView: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">مبلغ تخفیف (تومان):</label>
+                      <label className="font-bold text-slate-700 block mb-1">مبلغ تخفیف ({unitLabel}):</label>
                       <input
                         type="number"
                         min="0"
-                        value={editDiscount}
-                        onChange={(e) => setEditDiscount(e.target.value === '' ? '' : Number(e.target.value))}
+                        value={editDiscount === '' ? '' : toDisplay(Number(editDiscount))}
+                        onChange={(e) => setEditDiscount(e.target.value === '' ? '' : toBase(Number(e.target.value)))}
                         className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
                       />
                     </div>
@@ -2929,12 +2931,12 @@ export const InvoicesView: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">مبلغ پرداختی مشتری (تومان):</label>
+                      <label className="font-bold text-slate-700 block mb-1">مبلغ پرداختی مشتری ({unitLabel}):</label>
                       <input
                         type="number"
                         min="0"
-                        value={editPaidAmount}
-                        onChange={(e) => setEditPaidAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        value={editPaidAmount === '' ? '' : toDisplay(Number(editPaidAmount))}
+                        onChange={(e) => setEditPaidAmount(e.target.value === '' ? '' : toBase(Number(e.target.value)))}
                         className="w-full bg-white border border-slate-200 rounded-xl p-2 font-mono font-bold outline-none"
                       />
                     </div>
@@ -3425,17 +3427,17 @@ export const InvoicesView: React.FC = () => {
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] text-slate-500 block mb-0.5">مبلغ چک (تومان)</label>
+                                  <label className="text-[10px] text-slate-500 block mb-0.5">مبلغ چک ({unitLabel})</label>
                                   <input
                                     type="number"
                                     min={0}
                                     step={10000}
                                     placeholder="۰"
-                                    value={cheque.amount || ''}
+                                    value={cheque.amount ? toDisplay(Number(cheque.amount)) : ''}
                                     onChange={(e) =>
                                       setEditPurchaseCheques((prev) =>
                                         prev.map((c, i) =>
-                                          i === idx ? { ...c, amount: Number(e.target.value) } : c
+                                          i === idx ? { ...c, amount: e.target.value === '' ? 0 : toBase(Number(e.target.value)) } : c
                                         )
                                       )
                                     }

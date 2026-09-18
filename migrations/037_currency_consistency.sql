@@ -34,24 +34,11 @@ WHERE display_currency IS NULL
 ALTER TABLE store_settings
   ALTER COLUMN display_currency SET DEFAULT 'IRT';
 
--- Add constraints only when they do not already exist.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'purchase_invoices_source_currency_check'
-  ) THEN
-    ALTER TABLE purchase_invoices
-      ADD CONSTRAINT purchase_invoices_source_currency_check
-      CHECK (source_currency IN ('toman', 'rial'));
-  END IF;
+-- The migration runner executes each migration once, so constraints can be added directly.
+ALTER TABLE purchase_invoices
+  ADD CONSTRAINT purchase_invoices_source_currency_check
+  CHECK (source_currency IN ('toman', 'rial'));
 
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'store_settings_display_currency_check'
-  ) THEN
-    ALTER TABLE store_settings
-      ADD CONSTRAINT store_settings_display_currency_check
-      CHECK (display_currency IN ('IRT', 'IRR'));
-  END IF;
-END $$;
+ALTER TABLE store_settings
+  ADD CONSTRAINT store_settings_display_currency_check
+  CHECK (display_currency IN ('IRT', 'IRR'));

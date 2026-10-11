@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSimulatedPasargadResponse, parsePasargadResponse, sendToPasargadPos } from '../server/posProtocol';
+import { calculateLRC, createSimulatedPasargadResponse, parsePasargadResponse, sendToPasargadPos } from '../server/posProtocol';
 import { isDuplicateScan, normalizeScannedBarcode } from '../src/lib/barcodeScannerUtils';
 
 test('normalizes whitespace around scanned barcodes', () => {
@@ -28,6 +28,19 @@ test('rejects a response with an invalid LRC checksum', () => {
   const response = parsePasargadResponse(frame);
   assert.equal(response.success, false);
   assert.equal(response.responseCode, 'ERR_INVALID_LRC');
+});
+
+
+test('does not invent transaction identifiers when the terminal omits them', () => {
+  const payload = Buffer.from('01', 'ascii');
+  const length = Buffer.alloc(2);
+  length.writeUInt16BE(payload.length, 0);
+  const covered = Buffer.concat([length, payload, Buffer.from([0x03])]);
+  const frame = Buffer.concat([Buffer.from([0x02]), covered, Buffer.from([calculateLRC(covered)])]);
+  const response = parsePasargadResponse(frame);
+  assert.equal(response.success, false);
+  assert.equal(response.rrn, undefined);
+  assert.equal(response.refNumber, undefined);
 });
 
 test('does not send zero or invalid amounts to a payment terminal', async () => {

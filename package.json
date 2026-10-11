@@ -10,7 +10,8 @@
     "db:init": "tsx server/initDb.ts",
     "db:migrate": "tsx server/migrate.ts",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:pos": "node --import tsx --test test/posSafety.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

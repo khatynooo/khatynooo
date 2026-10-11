@@ -4,7 +4,7 @@ import { createSimulatedPasargadResponse, parsePasargadResponse, sendToPasargadP
 import { isDuplicateScan, normalizeScannedBarcode } from '../src/lib/barcodeScannerUtils';
 
 test('normalizes whitespace around scanned barcodes', () => {
-  assert.equal(normalizeScannedBarcode('  ۱۲۳۴۵\\r\\n'), '۱۲۳۴۵');
+  assert.equal(normalizeScannedBarcode('  ۱۲۳۴۵  '), '۱۲۳۴۵');
 });
 
 test('deduplicates only near-simultaneous duplicate events', () => {

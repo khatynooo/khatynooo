@@ -45,6 +45,7 @@ import { ReceiptModal } from './ReceiptModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { isDuplicateScan, normalizeScannedBarcode } from '../../lib/barcodeScannerUtils';
 import { useCurrency } from '../../context/CurrencyContext';
 import { ProductScanQuantityModal } from './ProductScanQuantityModal';
 import { UnknownBarcodeModal } from './UnknownBarcodeModal';
@@ -430,12 +431,12 @@ export const PosView: React.FC = () => {
   };
 
   const processBarcodeScan = (scannedCode: string, successPrefix?: string) => {
-    const clean = toEnglishDigits(scannedCode).replace(/[\r\n\t]/g, '').trim();
+    const clean = toEnglishDigits(normalizeScannedBarcode(scannedCode));
     if (!clean) return;
 
     // Debounce duplicate rapid scan events (e.g. within 700ms)
     const now = Date.now();
-    if (clean === lastScanRef.current.code && now - lastScanRef.current.timestamp < 700) {
+    if (isDuplicateScan(clean, lastScanRef.current, now, 80)) {
       return;
     }
     lastScanRef.current = { code: clean, timestamp: now };
@@ -540,6 +541,7 @@ export const PosView: React.FC = () => {
 
   // Hardware USB / Bluetooth Barcode Reader Listener
   useHardwareBarcodeScanner({
+    inputRef: barcodeRef,
     onScan: (scannedCode) => {
       processBarcodeScan(scannedCode, 'با اسکنر سخت‌افزاری');
     },
@@ -982,7 +984,7 @@ export const PosView: React.FC = () => {
 
       {/* 2. UNIFIED SMART SEARCH & BARCODE SUPER-BAR */}
       <div className="bg-white dark:bg-[#111113] rounded-2xl p-3 sm:p-4 border border-slate-200 dark:border-[#222225] shadow-xs space-y-3">
-        <form onSubmit={handleBarcodeSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <form onSubmit={handleBarcodeSubmit} className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center gap-2">
           {/* Main Input Field */}
           <div className="relative flex-1">
             <input
@@ -994,7 +996,7 @@ export const PosView: React.FC = () => {
                 setSearchQuery(e.target.value);
               }}
               placeholder="بارکد کالا را اسکن کنید، یا نام و کد کالا/خدمت را تایپ کنید (F1)..."
-              className="w-full bg-slate-50 dark:bg-[#161619] border-2 border-indigo-200/80 dark:border-indigo-900/60 focus:border-indigo-600 dark:focus:border-indigo-500 focus:bg-white dark:focus:bg-[#1A1A1E] rounded-xl pr-11 pl-20 py-3 text-sm font-sans text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all shadow-xs"
+              className="w-full min-h-12 text-base sm:text-sm bg-slate-50 dark:bg-[#161619] border-2 border-indigo-200/80 dark:border-indigo-900/60 focus:border-indigo-600 dark:focus:border-indigo-500 focus:bg-white dark:focus:bg-[#1A1A1E] rounded-xl pr-11 pl-20 py-3 text-sm font-sans text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all shadow-xs"
             />
             <div className="absolute right-3.5 top-3.5 flex items-center pointer-events-none">
               <Barcode className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -1299,7 +1301,7 @@ export const PosView: React.FC = () => {
       </AnimatePresence>
 
       {/* 4. MAIN POS WORKSPACE: DUAL PANE ARCHITECTURE */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-5 items-start">
         {/* RIGHT / MAIN COLUMN: CUSTOMER BAR + CART ITEMS TABLE (7 or 8 Cols) */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-4">
           {/* Customer Selection Compact Strip (F2) */}
@@ -1568,7 +1570,7 @@ export const PosView: React.FC = () => {
         </div>
 
         {/* LEFT / CHECKOUT SIDEBAR: TOTALS + PAYMENT METHOD + FINAL SUBMIT (5 or 4 Cols) */}
-        <div className="lg:col-span-5 xl:col-span-4 space-y-4 sticky top-4">
+        <div className="lg:col-span-5 xl:col-span-4 space-y-4 lg:sticky lg:top-4 min-w-0">
           {/* Payment Method Card */}
           <div className="bg-white dark:bg-[#111113] rounded-2xl p-4 border border-slate-200 dark:border-[#222225] shadow-xs space-y-3">
             <div className="flex items-center justify-between">

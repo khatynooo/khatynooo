@@ -166,7 +166,7 @@ export function parsePasargadResponse(buffer: Buffer): PosParsedResponse {
 }
 
 /**
- * Creates simulated response bytes for testing when no real POS hardware is reachable.
+ * Creates simulated response bytes for explicit simulation/test mode only.
  */
 export function createSimulatedPasargadResponse(amountRials: number, success: boolean = true): Buffer {
   const responseCode = success ? '00' : '01';

@@ -86,65 +86,57 @@ export function encodePasargadRequest(params: PosRequestParams): Buffer {
  */
 export function parsePasargadResponse(buffer: Buffer): PosParsedResponse {
   const rawHex = buffer.toString('hex').toUpperCase();
+  const failure = (responseCode: string, responseMessage: string): PosParsedResponse => ({
+    success: false,
+    responseCode,
+    responseMessage,
+    rawHex,
+  });
 
   if (buffer.length < 5) {
-    return {
-      success: false,
-      responseCode: 'ERR_TOO_SHORT',
-      responseMessage: 'پاسخ دریافتی از کارتخوان ناقص است',
-      rawHex,
-    };
+    return failure('ERR_TOO_SHORT', 'پاسخ دریافتی از کارتخوان ناقص است');
   }
-
-  // Check STX
   if (buffer[0] !== STX) {
-    return {
-      success: false,
-      responseCode: 'ERR_INVALID_STX',
-      responseMessage: 'بایت شروع (STX) نامعتبر است',
-      rawHex,
-    };
+    return failure('ERR_INVALID_STX', 'بایت شروع (STX) نامعتبر است');
   }
 
-  // Find ETX
-  const etxIndex = buffer.indexOf(ETX, 1);
+  const declaredLength = buffer.readUInt16BE(1);
+  const etxIndex = buffer.indexOf(ETX, 3);
   if (etxIndex === -1) {
-    return {
-      success: false,
-      responseCode: 'ERR_NO_ETX',
-      responseMessage: 'بایت پایان (ETX) یافت نشد',
-      rawHex,
-    };
+    return failure('ERR_NO_ETX', 'بایت پایان (ETX) یافت نشد');
+  }
+  if (buffer.length !== etxIndex + 2) {
+    return failure('ERR_INVALID_FRAME_LENGTH', 'طول فریم دریافتی از کارتخوان نامعتبر است');
   }
 
-  // Verify LRC
-  const calculatedLrc = calculateLRC(buffer.subarray(1, etxIndex + 1));
+  const actualPayloadLength = etxIndex - 3;
+  if (declaredLength !== actualPayloadLength) {
+    return failure('ERR_INVALID_FRAME_LENGTH', 'طول اعلام‌شده فریم با داده دریافتی مطابقت ندارد');
+  }
+
   const receivedLrc = buffer[etxIndex + 1];
-
-  if (receivedLrc !== undefined && calculatedLrc !== receivedLrc) {
-    console.warn(`LRC checksum mismatch: calculated=${calculatedLrc.toString(16)}, received=${receivedLrc.toString(16)}`);
+  const calculatedLrc = calculateLRC(buffer.subarray(1, etxIndex + 1));
+  if (receivedLrc === undefined || calculatedLrc !== receivedLrc) {
+    return failure('ERR_INVALID_LRC', 'اعتبارسنجی checksum پاسخ کارتخوان ناموفق بود');
   }
 
-  // Extract Payload (skip STX + 2 length bytes, until ETX)
-  const payloadBuffer = buffer.subarray(3, etxIndex);
-  const payloadStr = payloadBuffer.toString('ascii');
+  const payloadStr = buffer.subarray(3, etxIndex).toString('ascii');
+  if (payloadStr.length < 2) {
+    return failure('ERR_INVALID_PAYLOAD', 'کد پاسخ کارتخوان ناقص است');
+  }
 
-  // Standard Pasargad response format:
-  // [0..1] Response Code ('00' = Success, '01'-'99' = Error codes)
-  // [2..13] Amount (12 chars)
-  // [14..25] RRN (12 chars)
-  // [26..31] Trace Number (6 chars)
-  // [32..47] Card Number masked (16 chars)
-  // [48..59] Ref Number (12 chars)
-  // [60..] Extra Message
+  const responseCode = payloadStr.slice(0, 2);
+  const success = responseCode === '00';
+  const amountText = payloadStr.slice(2, 14);
+  const amountRials = /^\\d{12}$/.test(amountText) ? Number(amountText) : undefined;
+  if (success && amountRials === undefined) {
+    return failure('ERR_INVALID_AMOUNT', 'مبلغ پاسخ موفق کارتخوان نامعتبر است');
+  }
 
-  const responseCode = payloadStr.slice(0, 2) || '00';
-  const isSuccess = responseCode === '00';
-
-  const rrn = payloadStr.slice(14, 26).trim() || Math.floor(100000000000 + Math.random() * 900000000000).toString();
-  const traceNumber = payloadStr.slice(26, 32).trim() || Math.floor(100000 + Math.random() * 900000).toString();
-  const cardNumberMasked = payloadStr.slice(32, 48).trim() || '6037-99**-****-1284';
-  const refNumber = payloadStr.slice(48, 60).trim() || Math.floor(10000000 + Math.random() * 90000000).toString();
+  const rrn = payloadStr.slice(14, 26).trim();
+  const traceNumber = payloadStr.slice(26, 32).trim();
+  const cardNumberMasked = payloadStr.slice(32, 48).trim();
+  const refNumber = payloadStr.slice(48, 60).trim();
 
   const codeMessages: Record<string, string> = {
     '00': 'تراکنش با موفقیت انجام شد',
@@ -160,16 +152,15 @@ export function parsePasargadResponse(buffer: Buffer): PosParsedResponse {
     '91': 'سیستم بانک صادرکننده در دسترس نیست',
   };
 
-  const responseMessage = codeMessages[responseCode] || (isSuccess ? 'تراکنش موفق' : `خطای کارتخوان کد ${responseCode}`);
-
   return {
-    success: isSuccess,
+    success,
     responseCode,
-    responseMessage,
-    rrn,
-    refNumber,
-    traceNumber,
-    cardNumberMasked,
+    responseMessage: codeMessages[responseCode] || (success ? 'تراکنش موفق' : `خطای کارتخوان کد ${responseCode}`),
+    ...(rrn ? { rrn } : {}),
+    ...(refNumber ? { refNumber } : {}),
+    ...(traceNumber ? { traceNumber } : {}),
+    ...(cardNumberMasked ? { cardNumberMasked } : {}),
+    ...(amountRials !== undefined ? { amountRials } : {}),
     rawHex,
   };
 }
@@ -226,6 +217,21 @@ export async function sendToPasargadPos(
   latencyMs: number;
 }> {
   const startTime = Date.now();
+  const fail = (responseCode: string, responseMessage: string) => ({
+    result: { success: false, responseCode, responseMessage, rawHex: '' } as PosParsedResponse,
+    rawRequestHex: '',
+    rawResponseHex: '',
+    latencyMs: Date.now() - startTime,
+  });
+
+  if (!Number.isSafeInteger(params.amountRials) || params.amountRials <= 0) {
+    return fail('INVALID_AMOUNT', 'مبلغ پرداخت باید عدد صحیح و بزرگ‌تر از صفر باشد');
+  }
+
+  if (!config.isSimulation && (!config.ip || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535)) {
+    return fail('INVALID_TERMINAL_CONFIG', 'تنظیمات ارتباط با کارتخوان معتبر نیست');
+  }
+
   const requestBuffer = encodePasargadRequest({
     terminalId: config.terminalId,
     amountRials: params.amountRials,
@@ -233,67 +239,87 @@ export async function sendToPasargadPos(
   });
   const rawRequestHex = requestBuffer.toString('hex').toUpperCase();
 
-  // If simulation is enabled or IP is localhost/unreachable, use realistic high-fidelity simulation
-  if (config.isSimulation || !config.ip || config.ip === '127.0.0.1' || config.ip === 'localhost') {
-    await new Promise((res) => setTimeout(res, 1200 + Math.random() * 800));
+  // Simulation is explicit opt-in only. Hardware failures must never become fake approvals.
+  if (config.isSimulation) {
+    await new Promise((res) => setTimeout(res, 50));
     const simBuffer = createSimulatedPasargadResponse(params.amountRials, true);
     const parsed = parsePasargadResponse(simBuffer);
-    const latencyMs = Date.now() - startTime;
     return {
       result: parsed,
       rawRequestHex,
       rawResponseHex: simBuffer.toString('hex').toUpperCase(),
-      latencyMs,
+      latencyMs: Date.now() - startTime,
     };
   }
 
-  // Attempt real TCP socket communication
   return new Promise((resolve) => {
     let resolved = false;
+    let responseBuffer = Buffer.alloc(0);
     const socket = new net.Socket();
-    socket.setTimeout(config.timeoutMs || 45000);
+    socket.setTimeout(config.timeoutMs > 0 ? config.timeoutMs : 45000);
 
     const finish = (parsed: PosParsedResponse, rawResp: string) => {
       if (resolved) return;
       resolved = true;
       socket.destroy();
-      const latencyMs = Date.now() - startTime;
       resolve({
         result: parsed,
         rawRequestHex,
         rawResponseHex: rawResp,
-        latencyMs,
+        latencyMs: Date.now() - startTime,
       });
     };
 
-    socket.connect(config.port || 7000, config.ip, () => {
+    socket.connect(config.port, config.ip, () => {
       socket.write(requestBuffer);
     });
 
     socket.on('data', (data) => {
-      const parsed = parsePasargadResponse(data);
-      finish(parsed, data.toString('hex').toUpperCase());
+      responseBuffer = Buffer.concat([responseBuffer, data]);
+      if (responseBuffer.length < 3) return;
+
+      const expectedFrameLength = responseBuffer.readUInt16BE(1) + 5;
+      if (expectedFrameLength < 5 || expectedFrameLength > 4096) {
+        finish({
+          success: false,
+          responseCode: 'ERR_INVALID_FRAME_LENGTH',
+          responseMessage: 'طول فریم دریافتی از کارتخوان نامعتبر است',
+          rawHex: responseBuffer.toString('hex').toUpperCase(),
+        }, responseBuffer.toString('hex').toUpperCase());
+        return;
+      }
+      if (responseBuffer.length < expectedFrameLength) return;
+
+      const frame = responseBuffer.subarray(0, expectedFrameLength);
+      const parsed = parsePasargadResponse(frame);
+      if (parsed.success && parsed.amountRials !== params.amountRials) {
+        finish({
+          ...parsed,
+          success: false,
+          responseCode: 'AMOUNT_MISMATCH',
+          responseMessage: 'مبلغ پاسخ کارتخوان با مبلغ درخواستی مطابقت ندارد؛ وضعیت پرداخت را بررسی کنید',
+        }, frame.toString('hex').toUpperCase());
+        return;
+      }
+      finish(parsed, frame.toString('hex').toUpperCase());
     });
 
     socket.on('timeout', () => {
-      finish(
-        {
-          success: false,
-          responseCode: 'TIMEOUT',
-          responseMessage: 'پاسخی از دستگاه کارتخوان در زمان مقرر دریافت نشد (Timeout)',
-          rawHex: '',
-        },
-        ''
-      );
+      finish({
+        success: false,
+        responseCode: 'TIMEOUT',
+        responseMessage: 'پاسخی از دستگاه کارتخوان در زمان مقرر دریافت نشد؛ وضعیت پرداخت را بررسی کنید',
+        rawHex: '',
+      }, '');
     });
 
     socket.on('error', (err) => {
-      // If hardware connection fails, fallback gracefully to simulation with clear notice
-      console.warn(`POS hardware error (${err.message}). Falling back to simulation mode.`);
-      const simBuffer = createSimulatedPasargadResponse(params.amountRials, true);
-      const parsed = parsePasargadResponse(simBuffer);
-      parsed.responseMessage = `تراکنش موفق (حالت شبیه‌ساز - عدم دسترسی مستقیم به IP: ${config.ip})`;
-      finish(parsed, simBuffer.toString('hex').toUpperCase());
+      finish({
+        success: false,
+        responseCode: 'CONNECTION_ERROR',
+        responseMessage: `ارتباط واقعی با کارتخوان برقرار نشد: ${err.message}`,
+        rawHex: '',
+      }, '');
     });
   });
 }

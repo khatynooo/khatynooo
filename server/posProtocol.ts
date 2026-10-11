@@ -128,7 +128,7 @@ export function parsePasargadResponse(buffer: Buffer): PosParsedResponse {
   const responseCode = payloadStr.slice(0, 2);
   const success = responseCode === '00';
   const amountText = payloadStr.slice(2, 14);
-  const amountRials = /^\\d{12}$/.test(amountText) ? Number(amountText) : undefined;
+  const amountRials = /^\d{12}$/.test(amountText) ? Number(amountText) : undefined;
   if (success && amountRials === undefined) {
     return failure('ERR_INVALID_AMOUNT', 'مبلغ پاسخ موفق کارتخوان نامعتبر است');
   }
@@ -173,8 +173,8 @@ export function createSimulatedPasargadResponse(amountRials: number, success: bo
   const amountStr = amountRials.toString().padStart(12, '0');
   const rrn = Math.floor(100000000000 + Math.random() * 900000000000).toString();
   const trace = Math.floor(100000 + Math.random() * 900000).toString();
-  const cardMasked = '5022-29**-****-4591';
-  const refNo = Math.floor(10000000 + Math.random() * 90000000).toString();
+  const cardMasked = '502229******4591';
+  const refNo = Math.floor(10000000 + Math.random() * 90000000).toString().padStart(12, '0');
   const extra = 'PASARGAD-APPROVED   ';
 
   const body = `${responseCode}${amountStr}${rrn}${trace}${cardMasked}${refNo}${extra}`;
@@ -224,7 +224,7 @@ export async function sendToPasargadPos(
     latencyMs: Date.now() - startTime,
   });
 
-  if (!Number.isSafeInteger(params.amountRials) || params.amountRials <= 0) {
+  if (!Number.isSafeInteger(params.amountRials) || params.amountRials <= 0 || params.amountRials > 999999999999) {
     return fail('INVALID_AMOUNT', 'مبلغ پرداخت باید عدد صحیح و بزرگ‌تر از صفر باشد');
   }
 

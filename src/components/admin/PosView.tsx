@@ -568,7 +568,7 @@ export const PosView: React.FC = () => {
         showInPos: true,
         showOnWebsite: false,
         onlyAccounting: true,
-        visibility: 'accounting',
+        visibility: 'only_accounting',
         description: '',
       };
       const response = await api.createServicePreset(payload);

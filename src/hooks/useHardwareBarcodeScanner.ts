@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { toEnglishDigits } from '../lib/utils';
+import { normalizeScannedBarcode } from '../lib/barcodeScannerUtils';
 
 type ScannerCallback = (barcode: string) => void;
 interface ScannerOptions {
@@ -62,7 +62,7 @@ export function useHardwareBarcodeScanner(
 
       if (e.key === 'Enter') {
         const raw = bufferRef.current.trim();
-        const code = toEnglishDigits(raw);
+        const code = normalizeScannedBarcode(raw);
         bufferRef.current = '';
 
         // Only a rapid keyboard-wedge sequence is handled here. Slower manual

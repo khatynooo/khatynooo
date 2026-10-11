@@ -21,6 +21,7 @@ export function useHardwareBarcodeScanner(
 ) {
   const bufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
+  const onScanRef = useRef<ScannerCallback | undefined>(undefined);
 
   const onScan =
     typeof callbackOrOptions === 'function'
@@ -28,13 +29,15 @@ export function useHardwareBarcodeScanner(
       : callbackOrOptions?.onScan;
   const inputRef =
     typeof callbackOrOptions === 'object' ? callbackOrOptions?.inputRef : undefined;
+  // Keep the latest callback without reinstalling the global listener on every typed character.
+  onScanRef.current = onScan;
   const isEnabled =
     typeof callbackOrOptions === 'object' && callbackOrOptions?.enabled !== undefined
       ? callbackOrOptions.enabled
       : enabledParam;
 
   useEffect(() => {
-    if (!isEnabled || !onScan) return;
+    if (!isEnabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement as HTMLElement | null;
@@ -67,7 +70,7 @@ export function useHardwareBarcodeScanner(
         if (code.length >= 3) {
           e.preventDefault();
           e.stopPropagation();
-          onScan(code);
+          onScanRef.current?.(code);
         }
         return;
       }
@@ -88,5 +91,5 @@ export function useHardwareBarcodeScanner(
       bufferRef.current = '';
       lastKeyTimeRef.current = 0;
     };
-  }, [onScan, isEnabled, inputRef]);
+  }, [isEnabled, inputRef]);
 }

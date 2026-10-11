@@ -1,6 +1,6 @@
 /** Small, deterministic helpers shared by the hardware scanner and POS tests. */
 export function normalizeScannedBarcode(value: string): string {
-  return value.replace(/[\\r\\n\\t]/g, '').trim();
+  return value.replace(/\s/g, '').trim();
 }
 
 /**

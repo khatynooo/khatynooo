@@ -434,7 +434,7 @@ export const PosView: React.FC = () => {
     const clean = toEnglishDigits(normalizeScannedBarcode(scannedCode));
     if (!clean) return;
 
-    // Debounce duplicate rapid scan events (e.g. within 700ms)
+    // Suppress only duplicate events fired almost simultaneously; repeated item scans remain valid.
     const now = Date.now();
     if (isDuplicateScan(clean, lastScanRef.current, now, 80)) {
       return;

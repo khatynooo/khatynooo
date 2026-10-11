@@ -1,17 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { toEnglishDigits } from '../lib/utils';
+import { normalizeScannedBarcode } from '../lib/barcodeScannerUtils';
 
 type ScannerCallback = (barcode: string) => void;
 interface ScannerOptions {
   onScan?: (barcode: string) => void;
   enabled?: boolean;
+  /** Only this input is allowed to receive scanner keystrokes while an input has focus. */
+  inputRef?: { current: HTMLInputElement | null };
 }
 
 /**
- * هوک گوش دادن به دستگاه‌های بارکدخوان سخت‌افزاری (USB، بی‌سیم، دانگل و بلوتوث)
- * - عملکرد فوق‌سریع و $O(1)$ بدون تأثیر بر عملکرد پردازنده
- * - تفکیک هوشمند تایپ سریع اسکنر بارکد (زیر ۸۰ میلی‌ثانیه بین کلیدها) از تایپ دست کاربر
- * - تبدیل خودکار ارقام فارسی/عربی به انگلیسی استاندارد
+ * Listens for USB/Bluetooth keyboard-wedge barcode scanners.
+ * Scanner input is accepted only when no text field is focused or when the
+ * explicitly designated barcode field is focused. This avoids intercepting
+ * ordinary typing in customer/search/form fields.
  */
 export function useHardwareBarcodeScanner(
   callbackOrOptions: ScannerCallback | ScannerOptions,
@@ -19,70 +21,65 @@ export function useHardwareBarcodeScanner(
 ) {
   const bufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
+  const onScanRef = useRef<ScannerCallback | undefined>(undefined);
 
   const onScan =
     typeof callbackOrOptions === 'function'
       ? callbackOrOptions
       : callbackOrOptions?.onScan;
-
+  const inputRef =
+    typeof callbackOrOptions === 'object' ? callbackOrOptions?.inputRef : undefined;
+  // Keep the latest callback without reinstalling the global listener on every typed character.
+  onScanRef.current = onScan;
   const isEnabled =
     typeof callbackOrOptions === 'object' && callbackOrOptions?.enabled !== undefined
       ? callbackOrOptions.enabled
       : enabledParam;
 
   useEffect(() => {
-    if (!isEnabled || !onScan) return;
+    if (!isEnabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeEl = document.activeElement;
-      const isInputOrTextarea =
-        activeEl &&
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isEditable =
+        !!activeEl &&
         (activeEl.tagName === 'INPUT' ||
           activeEl.tagName === 'TEXTAREA' ||
-          (activeEl as HTMLElement).isContentEditable);
+          activeEl.isContentEditable);
+      const isBarcodeInput = !!inputRef?.current && activeEl === inputRef.current;
 
-      const currentTime = performance.now();
-      const timeDiff = currentTime - lastKeyTimeRef.current;
-      lastKeyTimeRef.current = currentTime;
-
-      // اسکنرهای سخت‌افزاری کاراکترها را با فاصله کمتر از ۱۶۰ میلی‌ثانیه ارسال می‌کنند
-      // در مدل‌های بلوتوث یا دانگل بی‌سیم این فاصله بین ۳۰ تا ۱۵۰ میلی‌ثانیه متغیر است
-      if (timeDiff > 160 && bufferRef.current.length > 0) {
+      // Do not hijack normal typing in any other field.
+      if (isEditable && !isBarcodeInput) {
         bufferRef.current = '';
+        lastKeyTimeRef.current = 0;
+        return;
       }
+
+      const now = performance.now();
+      const elapsed = now - lastKeyTimeRef.current;
+      if (elapsed > 160) bufferRef.current = '';
+      lastKeyTimeRef.current = now;
 
       if (e.key === 'Enter') {
         const raw = bufferRef.current.trim();
-        const code = toEnglishDigits(raw);
+        const code = normalizeScannedBarcode(raw);
+        bufferRef.current = '';
 
+        // Only a rapid keyboard-wedge sequence is handled here. Slower manual
+        // typing remains the responsibility of the input's normal form submit.
         if (code.length >= 3) {
-          onScan(code);
-          bufferRef.current = '';
-          if (!isInputOrTextarea) {
-            e.preventDefault();
-          }
-          return;
+          e.preventDefault();
+          e.stopPropagation();
+          onScanRef.current?.(code);
         }
+        return;
+      }
 
-        // اگر کاراکترها مستقیماً در اینپوت فعال درج شده بودند
-        if (isInputOrTextarea && activeEl) {
-          const inputVal = (activeEl as HTMLInputElement).value;
-          if (inputVal && inputVal.length >= 3) {
-            const cleanInput = toEnglishDigits(inputVal.trim());
-            // بررسی سریع ساختار بارکدی (حداقل ۳ رقم یا عدد/حرف)
-            if (/^[a-zA-Z0-9\-_]{3,}$/.test(cleanInput)) {
-              onScan(cleanInput);
-              bufferRef.current = '';
-              return;
-            }
-          }
-        }
-
+      if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'Tab') {
         bufferRef.current = '';
         return;
       }
 
-      // تنها کاراکترهای تک‌حرفی قابل چاپ
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         bufferRef.current += e.key;
       }
@@ -92,6 +89,7 @@ export function useHardwareBarcodeScanner(
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       bufferRef.current = '';
+      lastKeyTimeRef.current = 0;
     };
-  }, [onScan, isEnabled]);
+  }, [isEnabled, inputRef]);
 }

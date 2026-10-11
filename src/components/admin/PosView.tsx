@@ -45,6 +45,7 @@ import { ReceiptModal } from './ReceiptModal';
 import { BarcodeScannerModal } from '../common/BarcodeScannerModal';
 import { DirectPhoneScannerButton } from '../common/DirectPhoneScannerButton';
 import { useHardwareBarcodeScanner } from '../../hooks/useHardwareBarcodeScanner';
+import { isDuplicateScan, normalizeScannedBarcode } from '../../lib/barcodeScannerUtils';
 import { useCurrency } from '../../context/CurrencyContext';
 import { ProductScanQuantityModal } from './ProductScanQuantityModal';
 import { UnknownBarcodeModal } from './UnknownBarcodeModal';
@@ -145,6 +146,14 @@ export const PosView: React.FC = () => {
   const [unknownBarcode, setUnknownBarcode] = useState<string | null>(null);
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [quickAddBarcode, setQuickAddBarcode] = useState('');
+  const [showQuickAddServiceModal, setShowQuickAddServiceModal] = useState(false);
+  const [isSavingQuickService, setIsSavingQuickService] = useState(false);
+  const [quickServiceForm, setQuickServiceForm] = useState({
+    name: '',
+    category: 'copy_print' as ServicePreset['category'],
+    unit: 'صفحه',
+    price: '0',
+  });
   const [categories, setCategories] = useState<Category[]>([]);
 
   // Held Invoices (فاکتورهای معلق)
@@ -430,12 +439,12 @@ export const PosView: React.FC = () => {
   };
 
   const processBarcodeScan = (scannedCode: string, successPrefix?: string) => {
-    const clean = toEnglishDigits(scannedCode).replace(/[\r\n\t]/g, '').trim();
+    const clean = toEnglishDigits(normalizeScannedBarcode(scannedCode));
     if (!clean) return;
 
-    // Debounce duplicate rapid scan events (e.g. within 700ms)
+    // Suppress only duplicate events fired almost simultaneously; repeated item scans remain valid.
     const now = Date.now();
-    if (clean === lastScanRef.current.code && now - lastScanRef.current.timestamp < 700) {
+    if (isDuplicateScan(clean, lastScanRef.current, now, 80)) {
       return;
     }
     lastScanRef.current = { code: clean, timestamp: now };
@@ -532,6 +541,51 @@ export const PosView: React.FC = () => {
     setQuantityModal({ product: newProd, mode: 'unit', currentQtyInInvoice: 0 });
   };
 
+  const handleQuickCreateService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = quickServiceForm.name.trim();
+    const price = Number(toEnglishDigits(quickServiceForm.price).replace(/[,٬\s]/g, ''));
+    if (!name) {
+      showToast('نام خدمت را وارد کنید.', 'warning');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      showToast('قیمت خدمت معتبر نیست.', 'warning');
+      return;
+    }
+    setIsSavingQuickService(true);
+    try {
+      const payload = {
+        name,
+        title: name,
+        category: quickServiceForm.category,
+        unit: quickServiceForm.unit.trim() || 'مورد',
+        price,
+        priceSingle1: price,
+        priceSingle2: price,
+        priceDouble1: price,
+        priceDouble2: price,
+        showInPos: true,
+        showOnWebsite: false,
+        onlyAccounting: true,
+        visibility: 'only_accounting',
+        description: '',
+      };
+      const response = await api.createServicePreset(payload);
+      const created = response?.service || response?.preset || response;
+      if (!created?.id) throw new Error('خدمت ذخیره شد اما شناسه آن از سرور دریافت نشد.');
+      setServices((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
+      setShowQuickAddServiceModal(false);
+      setQuickServiceForm({ name: '', category: 'copy_print', unit: 'صفحه', price: '0' });
+      showToast(`خدمت «${created.name || name}» ثبت شد.`, 'success');
+      addServiceToPosCart(created);
+    } catch (error: any) {
+      showToast(error?.message || 'ثبت خدمت انجام نشد؛ اتصال و دسترسی را بررسی کنید.', 'error');
+    } finally {
+      setIsSavingQuickService(false);
+    }
+  };
+
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!barcodeInput.trim()) return;
@@ -540,6 +594,7 @@ export const PosView: React.FC = () => {
 
   // Hardware USB / Bluetooth Barcode Reader Listener
   useHardwareBarcodeScanner({
+    inputRef: barcodeRef,
     onScan: (scannedCode) => {
       processBarcodeScan(scannedCode, 'با اسکنر سخت‌افزاری');
     },
@@ -982,7 +1037,7 @@ export const PosView: React.FC = () => {
 
       {/* 2. UNIFIED SMART SEARCH & BARCODE SUPER-BAR */}
       <div className="bg-white dark:bg-[#111113] rounded-2xl p-3 sm:p-4 border border-slate-200 dark:border-[#222225] shadow-xs space-y-3">
-        <form onSubmit={handleBarcodeSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+        <form onSubmit={handleBarcodeSubmit} className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center gap-2">
           {/* Main Input Field */}
           <div className="relative flex-1">
             <input
@@ -994,7 +1049,7 @@ export const PosView: React.FC = () => {
                 setSearchQuery(e.target.value);
               }}
               placeholder="بارکد کالا را اسکن کنید، یا نام و کد کالا/خدمت را تایپ کنید (F1)..."
-              className="w-full bg-slate-50 dark:bg-[#161619] border-2 border-indigo-200/80 dark:border-indigo-900/60 focus:border-indigo-600 dark:focus:border-indigo-500 focus:bg-white dark:focus:bg-[#1A1A1E] rounded-xl pr-11 pl-20 py-3 text-sm font-sans text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all shadow-xs"
+              className="w-full min-h-12 text-base sm:text-sm bg-slate-50 dark:bg-[#161619] border-2 border-indigo-200/80 dark:border-indigo-900/60 focus:border-indigo-600 dark:focus:border-indigo-500 focus:bg-white dark:focus:bg-[#1A1A1E] rounded-xl pr-11 pl-20 py-3 text-sm font-sans text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition-all shadow-xs"
             />
             <div className="absolute right-3.5 top-3.5 flex items-center pointer-events-none">
               <Barcode className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -1177,6 +1232,14 @@ export const PosView: React.FC = () => {
                     <Grid className="w-4 h-4" />
                   </div>
                   <span className="font-bold text-xs text-slate-800 dark:text-white">ویترین لمسی سریع اقلام و خدمات:</span>
+                  <div className="flex flex-wrap items-center gap-2 mr-auto">
+                    <button type="button" onClick={() => { setQuickAddBarcode(''); setShowQuickAddModal(true); }} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700">
+                      <Plus className="h-4 w-4" /> ثبت سریع کالا
+                    </button>
+                    <button type="button" onClick={() => setShowQuickAddServiceModal(true)} className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-white hover:bg-amber-600">
+                      <Plus className="h-4 w-4" /> ثبت سریع خدمت
+                    </button>
+                  </div>
                 </div>
 
                 {/* Filter Pills */}
@@ -1299,7 +1362,7 @@ export const PosView: React.FC = () => {
       </AnimatePresence>
 
       {/* 4. MAIN POS WORKSPACE: DUAL PANE ARCHITECTURE */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-5 items-start">
         {/* RIGHT / MAIN COLUMN: CUSTOMER BAR + CART ITEMS TABLE (7 or 8 Cols) */}
         <div className="lg:col-span-7 xl:col-span-8 space-y-4">
           {/* Customer Selection Compact Strip (F2) */}
@@ -1568,7 +1631,7 @@ export const PosView: React.FC = () => {
         </div>
 
         {/* LEFT / CHECKOUT SIDEBAR: TOTALS + PAYMENT METHOD + FINAL SUBMIT (5 or 4 Cols) */}
-        <div className="lg:col-span-5 xl:col-span-4 space-y-4 sticky top-4">
+        <div className="lg:col-span-5 xl:col-span-4 space-y-4 lg:sticky lg:top-4 min-w-0">
           {/* Payment Method Card */}
           <div className="bg-white dark:bg-[#111113] rounded-2xl p-4 border border-slate-200 dark:border-[#222225] shadow-xs space-y-3">
             <div className="flex items-center justify-between">
@@ -2094,6 +2157,50 @@ export const PosView: React.FC = () => {
           categories={categories}
           onProductCreated={handleProductCreated}
         />
+      )}
+
+
+      {showQuickAddServiceModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 sm:p-4" dir="rtl">
+          <form onSubmit={handleQuickCreateService} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-4 sm:p-6 shadow-2xl dark:bg-[#17171B]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">ثبت سریع خدمت</h3>
+                <p className="mt-1 text-xs text-slate-500">خدمت ذخیره می‌شود و به فاکتور فعلی اضافه خواهد شد.</p>
+              </div>
+              <button type="button" aria-label="بستن" onClick={() => setShowQuickAddServiceModal(false)} className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="h-5 w-5" /></button>
+            </div>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-bold">نام خدمت *</span>
+              <input autoFocus required value={quickServiceForm.name} onChange={(e) => setQuickServiceForm((v) => ({ ...v, name: e.target.value }))} placeholder="مثلاً پرینت سیاه‌وسفید A4" className="min-h-11 w-full rounded-xl border border-slate-300 bg-transparent px-3 text-base outline-none focus:border-amber-500" />
+            </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold">دسته خدمت</span>
+                <select value={quickServiceForm.category} onChange={(e) => setQuickServiceForm((v) => ({ ...v, category: e.target.value as ServicePreset['category'] }))} className="min-h-11 w-full rounded-xl border border-slate-300 bg-transparent px-3 text-sm">
+                  <option value="copy_print">کپی و پرینت</option>
+                  <option value="internet">خدمات اینترنتی</option>
+                  <option value="type_scan">تایپ و اسکن</option>
+                  <option value="binding">صحافی</option>
+                  <option value="other">سایر خدمات</option>
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-bold">واحد</span>
+                <input value={quickServiceForm.unit} onChange={(e) => setQuickServiceForm((v) => ({ ...v, unit: e.target.value }))} placeholder="صفحه، ساعت، مورد..." className="min-h-11 w-full rounded-xl border border-slate-300 bg-transparent px-3 text-base" />
+              </label>
+            </div>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-bold">قیمت هر واحد (تومان)</span>
+              <input inputMode="numeric" value={quickServiceForm.price} onChange={(e) => setQuickServiceForm((v) => ({ ...v, price: e.target.value }))} className="min-h-11 w-full rounded-xl border border-slate-300 bg-transparent px-3 text-base" />
+              <span className="text-[11px] text-slate-500">این قیمت برای سطوح قیمت خدمت نیز استفاده می‌شود؛ بعداً از مدیریت خدمات قابل ویرایش است.</span>
+            </label>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <button type="button" disabled={isSavingQuickService} onClick={() => setShowQuickAddServiceModal(false)} className="min-h-11 flex-1 rounded-xl border border-slate-300 px-4 text-sm font-bold disabled:opacity-50">انصراف</button>
+              <button type="submit" disabled={isSavingQuickService} className="min-h-11 flex-1 rounded-xl bg-amber-500 px-4 text-sm font-black text-white disabled:opacity-50">{isSavingQuickService ? 'در حال ذخیره…' : 'ذخیره و افزودن به فاکتور'}</button>
+            </div>
+          </form>
+        </div>
       )}
 
       {/* مودال لیست فاکتورهای معلق */}

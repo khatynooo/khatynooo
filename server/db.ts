@@ -4911,6 +4911,11 @@ export const db = {
     if (orderData.paymentGatewayCode !== 'cod') {
       throw new Error('پرداخت آنلاین هنوز به درگاه تأییدشده متصل نیست. فعلاً فقط پرداخت در محل در دسترس است.');
     }
+    if (!Array.isArray(orderData.items) || orderData.items.length === 0 || orderData.items.length > 100 ||
+        orderData.items.some((item) => !item || typeof item.productId !== 'string' || !item.productId.trim() ||
+          typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+      throw new Error('اقلام سفارش یا تعداد کالاها معتبر نیستند.');
+    }
     const targetWhId = orderData.warehouseId || 'wh_central';
 
     return await withTransaction(async (client) => {
@@ -4927,7 +4932,11 @@ export const db = {
 
         const rawUnitPrice = Number(p.price_shop2 || p.sale_price);
         const unitPrice = getStorefrontUnitPrice(rawUnitPrice, p.conversion_factor);
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+          throw new Error(`قیمت کالا «${p.name}» معتبر نیست و امکان ثبت سفارش وجود ندارد.`);
+        }
         const total = unitPrice * it.quantity;
+        if (!Number.isFinite(total) || total <= 0) throw new Error('مبلغ یکی از اقلام سفارش معتبر نیست.');
         subtotal += total;
 
         const displayUnit = (p.sub_unit && String(p.sub_unit).trim())
@@ -4965,9 +4974,8 @@ export const db = {
 
       // ۳. ثبت یا به‌روزرسانی مشتری و پیوند سفارش
       let customerId = orderData.customerId || `cst_${Date.now()}`;
-      const custCheck = await client.query('SELECT id, total_purchase_amount FROM customers WHERE id = $1 OR mobile = $2', [
+      const custCheck = await client.query('SELECT id, total_purchase_amount FROM customers WHERE id = $1', [
         orderData.customerId || '',
-        orderData.customerMobile,
       ]);
 
       if (custCheck.rows.length > 0) {

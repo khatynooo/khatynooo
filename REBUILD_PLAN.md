@@ -19,6 +19,14 @@
 - Added a visible warning and retry action when one or more storefront data requests fail.
 - Kept the existing product and order data model unchanged.
 
+## Second pass completed
+- Added a synchronous submission lock to prevent rapid repeat order submissions from the checkout UI.
+- Disabled the unintegrated online payment options; checkout now offers cash on delivery only.
+- Server rejects non-COD gateway requests until a real gateway and verified callback exist.
+- Online orders and sales invoices remain unpaid/pending, and fabricated transaction and parcel-tracking references are no longer generated.
+- Customer lifetime purchase totals are not increased merely because an order was placed.
+- Aligned the storefront shipping threshold and coupon UI with the server rules; removed an unverified default shipping promotion.
+
 ## Acceptance criteria
 - API failures are visible and recoverable; they do not masquerade as a genuinely empty catalog.
 - Customer journeys work on narrow mobile screens and desktop.

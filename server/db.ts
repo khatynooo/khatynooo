@@ -5085,7 +5085,7 @@ export const db = {
           orderData.couponCode || null,
           finalAmount,
           orderData.paymentGatewayCode,
-          orderData.paymentGatewayCode === 'cod' ? 'pending' : 'paid',
+          'pending',
           'processing',
           null,
           null,

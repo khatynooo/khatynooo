@@ -27,6 +27,9 @@
 - Customer lifetime purchase totals are not increased merely because an order was placed.
 - Aligned the storefront shipping threshold and coupon UI with the server rules; removed an unverified default shipping promotion.
 
+- Existing customer records are updated only when checkout carries a verified customer session; guest-submitted IDs and phone matches cannot overwrite another customer's profile.
+- Server validates item identifiers, positive quantities and server-calculated prices before changing stock.
+
 ## Acceptance criteria
 - API failures are visible and recoverable; they do not masquerade as a genuinely empty catalog.
 - Customer journeys work on narrow mobile screens and desktop.

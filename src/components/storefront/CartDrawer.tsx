@@ -89,6 +89,7 @@ export const CartDrawer: React.FC = () => {
   const isHighValuePurchase = finalPayable >= 100000 || (totalPurchaseAmount + finalPayable) >= 100000;
 
   const handleApplyCoupon = () => {
+    setDiscountAmount(0);
     if (!couponCode.trim()) return;
     if (couponCode.toUpperCase().trim() === 'KHATINOO') {
       const disc = Math.round(totalPrice * 0.1);
@@ -746,7 +747,7 @@ export const CartDrawer: React.FC = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500 dark:text-[#8E9299]">وضعیت سفارش:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">سفارش ثبت شده؛ در انتظار تسویه و بررسی</span>
+                      <span className="font-bold text-amber-700 dark:text-amber-400">سفارش ثبت شده؛ در انتظار تسویه و بررسی</span>
                     </div>
                   </div>
                 </div>

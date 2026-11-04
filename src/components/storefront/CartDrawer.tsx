@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -54,6 +54,7 @@ export const CartDrawer: React.FC = () => {
   const [couponCode, setCouponCode] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionLock = useRef(false);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -203,6 +204,12 @@ export const CartDrawer: React.FC = () => {
 
   // Step 4: Final Place Order & Payment
   const handleExecutePayment = async () => {
+    if (submissionLock.current || isSubmitting) return;
+    if (cart.length === 0 || cart.some((item) => item.quantity <= 0 || item.selectedPrice <= 0)) {
+      showToast('سبد خرید خالی یا دارای قیمت و تعداد نامعتبر است. لطفاً اقلام را بررسی کنید.', 'error');
+      return;
+    }
+    submissionLock.current = true;
     setIsSubmitting(true);
     try {
       const orderPayload = {
@@ -235,10 +242,13 @@ export const CartDrawer: React.FC = () => {
         clearCart();
         refreshCustomer();
         showToast('سفارش شما با موفقیت ثبت شد و فاکتور نهایی صادر گردید.', 'success');
+      } else {
+        showToast('سفارش ثبت نشد. لطفاً وضعیت سبد و پرداخت را بررسی کنید.', 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'خطا در ثبت و پرداخت سفارش', 'error');
     } finally {
+      submissionLock.current = false;
       setIsSubmitting(false);
     }
   };

@@ -88,15 +88,17 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
   const [isCustomerAccountOpen, setIsCustomerAccountOpen] = useState(initialAccountOpen);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadWarning, setLoadWarning] = useState(false);
 
   const loadStorefrontData = useCallback(async () => {
+    setLoadWarning(false);
     try {
       const [catRes, prodRes, bannerRes, setRes, blocksRes] = await Promise.all([
-        api.getCategories().catch(() => ({ categories: [] })),
-        api.getProducts().catch(() => ({ products: [] })),
-        api.getBanners().catch(() => ({ banners: [] })),
-        api.getWebsiteSettings().catch(() => ({ websiteSettings: null, storeSettings: null })),
-        api.getPageBlocks().catch(() => ({ blocks: [] })),
+        api.getCategories().catch(() => { setLoadWarning(true); return { categories: [] }; }),
+        api.getProducts().catch(() => { setLoadWarning(true); return { products: [] }; }),
+        api.getBanners().catch(() => { setLoadWarning(true); return { banners: [] }; }),
+        api.getWebsiteSettings().catch(() => { setLoadWarning(true); return { websiteSettings: null, storeSettings: null }; }),
+        api.getPageBlocks().catch(() => { setLoadWarning(true); return { blocks: [] }; }),
       ]);
       setCategories(catRes.categories || []);
       setProducts(prodRes.products || []);
@@ -266,6 +268,13 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         websiteSettings={effectiveWebsiteSettings}
         storeSettings={storeSettings}
       />
+
+      {loadWarning && (
+        <div role="alert" className="mx-4 mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span>بخشی از اطلاعات فروشگاه بارگذاری نشد. ممکن است فهرست کالاها یا تنظیمات کامل نباشد.</span>
+          <button type="button" onClick={loadStorefrontData} className="font-bold underline underline-offset-2 shrink-0">تلاش دوباره</button>
+        </div>
+      )}
 
       {/* Main Storefront Body - Expansive Full Screen on Desktop */}
       <main className={`flex-1 ${activeContainerWidthClass} px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 ${activeSectionSpacing}`}>

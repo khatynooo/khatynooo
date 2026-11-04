@@ -722,7 +722,7 @@ export const api = {
   placeOrder: (orderData: any) =>
     fetch(`${API_BASE}/orders/checkout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeader() },
       body: JSON.stringify(orderData),
     }).then(handleResponse),
 

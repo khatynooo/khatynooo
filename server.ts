@@ -4127,9 +4127,9 @@ app.post('/api/orders/checkout', (req, res, next) => {
 
   const customerAuth = (req as CustomerAuthRequest).customer;
   const verifiedMobile = customerAuth?.mobile || customerMobile;
-  const cleanMobile = typeof verifiedMobile === 'string' ? verifiedMobile.replace(/[\\s()-]/g, '') : '';
+  const cleanMobile = typeof verifiedMobile === 'string' ? verifiedMobile.replace(/[^\d+]/g, '') : '';
   if (typeof customerName !== 'string' || !customerName.trim() || customerName.length > 150 ||
-      typeof verifiedMobile !== 'string' || !/^\\+?[0-9۰-۹]{8,15}$/.test(cleanMobile) ||
+      typeof verifiedMobile !== 'string' || !/^\+?[0-9۰-۹]{8,15}$/.test(cleanMobile) ||
       typeof customerAddress !== 'string' || !customerAddress.trim() || customerAddress.length > 2000 ||
       !Array.isArray(items) || items.length === 0 || items.length > 100 ||
       items.some((item: any) => !item || typeof item.productId !== 'string' || !item.productId.trim() ||
@@ -4139,9 +4139,9 @@ app.post('/api/orders/checkout', (req, res, next) => {
 
   try {
     const result = await db.placeOnlineOrder({
-      customerId,
+      customerId: customerAuth?.id,
       customerName,
-      customerMobile,
+      customerMobile: cleanMobile,
       customerAddress,
       customerPostalCode,
       customerProvince,

@@ -74,12 +74,12 @@ export const Header: React.FC<HeaderProps> = ({
 
   const siteTitle = websiteSettings?.siteTitle || storeSettings?.storeName || 'خطی‌نو';
   const siteSubtitle = websiteSettings?.siteSubtitle || 'مرجع تخصصی خرید آنلاین لوازم‌تحریر، دفاتر سیمی اختصاصی و خدمات چاپ و کپی';
-  const noticeText = websiteSettings?.noticeText || '🎉 ارسال رایگان برای سفارش‌های بالای ۵۰۰ هزار تومان در سراسر کشور با کد KHATINOO';
+  const noticeText = websiteSettings?.noticeText || 'شرایط ارسال و پرداخت را پیش از نهایی‌کردن سفارش بررسی کنید.';
   const noticeBadgeText = websiteSettings?.noticeBadgeText || 'اطلاعیه فروشگاه';
   const showNotice = websiteSettings?.showNotice !== false;
   const quickTrackingText = websiteSettings?.quickTrackingText || 'پیگیری سریع سفارشات';
   const showQuickTracking = websiteSettings?.showQuickTracking !== false;
-  const searchPlaceholder = websiteSettings?.searchPlaceholder || 'جستجوی خودکار در میان صدها قلم کالا، خودکار، دفتر، ماژیک، زونکن...';
+  const searchPlaceholder = websiteSettings?.searchPlaceholder || 'نام کالا یا دسته‌بندی را جستجو کنید';
   const calculatorButtonText = websiteSettings?.calculatorButtonText || 'محاسبه هزینه کپی و پرینت';
   const showCalculatorButton = websiteSettings?.showCalculatorButton !== false;
   const cartButtonText = websiteSettings?.cartButtonText || 'سبد خرید';

@@ -4908,6 +4908,14 @@ export const db = {
     couponCode?: string;
     warehouseId?: string;
   }): Promise<{ success: boolean; order?: OnlineOrder; message: string }> {
+    if (orderData.paymentGatewayCode !== 'cod') {
+      throw new Error('پرداخت آنلاین هنوز به درگاه تأییدشده متصل نیست. فعلاً فقط پرداخت در محل در دسترس است.');
+    }
+    if (!Array.isArray(orderData.items) || orderData.items.length === 0 || orderData.items.length > 100 ||
+        orderData.items.some((item) => !item || typeof item.productId !== 'string' || !item.productId.trim() ||
+          typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+      throw new Error('اقلام سفارش یا تعداد کالاها معتبر نیستند.');
+    }
     const targetWhId = orderData.warehouseId || 'wh_central';
 
     return await withTransaction(async (client) => {
@@ -4924,7 +4932,11 @@ export const db = {
 
         const rawUnitPrice = Number(p.price_shop2 || p.sale_price);
         const unitPrice = getStorefrontUnitPrice(rawUnitPrice, p.conversion_factor);
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+          throw new Error(`قیمت کالا «${p.name}» معتبر نیست و امکان ثبت سفارش وجود ندارد.`);
+        }
         const total = unitPrice * it.quantity;
+        if (!Number.isFinite(total) || total <= 0) throw new Error('مبلغ یکی از اقلام سفارش معتبر نیست.');
         subtotal += total;
 
         const displayUnit = (p.sub_unit && String(p.sub_unit).trim())
@@ -4962,15 +4974,14 @@ export const db = {
 
       // ۳. ثبت یا به‌روزرسانی مشتری و پیوند سفارش
       let customerId = orderData.customerId || `cst_${Date.now()}`;
-      const custCheck = await client.query('SELECT id, total_purchase_amount FROM customers WHERE id = $1 OR mobile = $2', [
+      const custCheck = await client.query('SELECT id, total_purchase_amount FROM customers WHERE id = $1', [
         orderData.customerId || '',
-        orderData.customerMobile,
       ]);
 
       if (custCheck.rows.length > 0) {
         customerId = custCheck.rows[0].id;
         const currentTotal = Number(custCheck.rows[0].total_purchase_amount || 0);
-        const newTotal = currentTotal + finalAmount;
+        const newTotal = currentTotal;
         await client.query(
           `UPDATE customers SET 
             name = COALESCE(NULLIF($1, ''), name), 
@@ -5009,14 +5020,15 @@ export const db = {
             orderData.customerProvince || null,
             orderData.customerCity || null,
             orderData.customerEmail || null,
-            finalAmount,
+            0,
           ]
         );
       }
 
       // ۴. صدور فاکتور فروش حسابداری یکپارچه با انبار ثبت‌شده
-      const salesInvoiceId = `inv_onl_${Date.now()}`;
-      const invoiceNumber = `INV-ONL-${Date.now().toString().slice(-6)}`;
+      const invoiceSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const salesInvoiceId = `inv_onl_${invoiceSuffix}`;
+      const invoiceNumber = `INV-ONL-${invoiceSuffix}`;
 
       await client.query(
         `INSERT INTO sales_invoices (
@@ -5039,10 +5051,10 @@ export const db = {
           discountAmount,
           0,
           finalAmount,
-          orderData.paymentGatewayCode === 'cod' ? 'cash' : 'pos_pasargad',
-          orderData.paymentGatewayCode === 'cod' ? 0 : finalAmount,
-          orderData.paymentGatewayCode === 'cod' ? finalAmount : 0,
-          orderData.paymentGatewayCode === 'cod' ? 'pending' : 'paid',
+          'cash',
+          0,
+          finalAmount,
+          'pending',
           `سفارش آنلاین با روش پرداخت ${orderData.paymentGatewayCode}`,
           targetWhId,
           'usr_site',
@@ -5051,9 +5063,8 @@ export const db = {
       );
 
       // ۵. ثبت رکورد سفارش آنلاین
-      const orderId = `ord_${Date.now()}`;
-      const orderNumber = `KHAT-${Date.now().toString().slice(-6)}`;
-      const trackingCode = `TRK-${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const orderId = `ord_${invoiceSuffix}`;
+      const orderNumber = `KHAT-${invoiceSuffix}`;
 
       await client.query(
         `INSERT INTO online_orders (
@@ -5082,10 +5093,10 @@ export const db = {
           orderData.couponCode || null,
           finalAmount,
           orderData.paymentGatewayCode,
-          orderData.paymentGatewayCode === 'cod' ? 'pending' : 'paid',
+          'pending',
           'processing',
-          trackingCode,
-          `TXN-${Math.floor(100000000 + Math.random() * 900000000)}`,
+          null,
+          null,
           salesInvoiceId,
         ]
       );
@@ -5105,10 +5116,8 @@ export const db = {
         couponCode: orderData.couponCode,
         finalAmount,
         paymentGateway: orderData.paymentGatewayCode as any,
-        paymentStatus: orderData.paymentGatewayCode === 'cod' ? 'pending' : 'paid',
+        paymentStatus: 'pending',
         orderStatus: 'processing',
-        trackingCode,
-        transactionRef: `TXN-${Math.floor(100000000 + Math.random() * 900000000)}`,
         salesInvoiceId,
         warehouseId: targetWhId,
         createdAt: new Date().toISOString(),
@@ -5118,7 +5127,7 @@ export const db = {
       return {
         success: true,
         order: orderRecord,
-        message: `سفارش شما با شماره پیگیری ${orderNumber} با موفقیت ثبت شد و فاکتور حسابداری یکپارچه صادر گردید.`,
+        message: `سفارش شما با شماره ${orderNumber} ثبت شد و وضعیت پرداخت آن در انتظار تسویه است.`,
       };
     });
   },

@@ -88,15 +88,20 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
   const [isCustomerAccountOpen, setIsCustomerAccountOpen] = useState(initialAccountOpen);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadWarning, setLoadWarning] = useState(false);
+  const [productsLoadFailed, setProductsLoadFailed] = useState(false);
 
   const loadStorefrontData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadWarning(false);
+    setProductsLoadFailed(false);
     try {
       const [catRes, prodRes, bannerRes, setRes, blocksRes] = await Promise.all([
-        api.getCategories().catch(() => ({ categories: [] })),
-        api.getProducts().catch(() => ({ products: [] })),
-        api.getBanners().catch(() => ({ banners: [] })),
-        api.getWebsiteSettings().catch(() => ({ websiteSettings: null, storeSettings: null })),
-        api.getPageBlocks().catch(() => ({ blocks: [] })),
+        api.getCategories().catch(() => { setLoadWarning(true); return { categories: [] }; }),
+        api.getProducts().catch(() => { setLoadWarning(true); setProductsLoadFailed(true); return { products: [] }; }),
+        api.getBanners().catch(() => { setLoadWarning(true); return { banners: [] }; }),
+        api.getWebsiteSettings().catch(() => { setLoadWarning(true); return { websiteSettings: null, storeSettings: null }; }),
+        api.getPageBlocks().catch(() => { setLoadWarning(true); return { blocks: [] }; }),
       ]);
       setCategories(catRes.categories || []);
       setProducts(prodRes.products || []);
@@ -111,6 +116,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         setPageBlocks(blocksRes.blocks);
       }
     } catch (err) {
+      setLoadWarning(true);
       console.error('Error loading storefront data:', err);
     } finally {
       setIsLoading(false);
@@ -267,6 +273,13 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         storeSettings={storeSettings}
       />
 
+      {loadWarning && (
+        <div role="alert" className="mx-4 mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span>بخشی از اطلاعات فروشگاه بارگذاری نشد. ممکن است فهرست کالاها یا تنظیمات کامل نباشد.</span>
+          <button type="button" onClick={loadStorefrontData} className="font-bold underline underline-offset-2 shrink-0">تلاش دوباره</button>
+        </div>
+      )}
+
       {/* Main Storefront Body - Expansive Full Screen on Desktop */}
       <main className={`flex-1 ${activeContainerWidthClass} px-4 sm:px-8 lg:px-12 2xl:px-16 py-6 sm:py-8 ${activeSectionSpacing}`}>
         {/* If custom Page Builder blocks are loaded and we are on standard home view, render blocks dynamically */}
@@ -304,9 +317,9 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
             <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 py-5 border-y border-[var(--line-soft)] dark:border-[#222225]">
               {[
                 { icon: BookOpen, color: 'var(--coral)', title: 'تولید اختصاصی خطی‌نو', sub: 'دفاتر مشق، سیمی و طراحی' },
-                { icon: TrendingUp, color: 'var(--teal)', title: 'تضمین مناسب‌ترین قیمت', sub: 'همگام با بازار و قیمت ترب' },
-                { icon: Layers, color: 'var(--grape)', title: 'تنوع ۵۰۰۰+ قلم کالا', sub: 'برترین برندهای داخلی و وارداتی' },
-                { icon: CheckCircle2, color: 'var(--sunshine)', title: 'ارسال سریع کشوری', sub: 'پیک روزانه و پست پیشتاز' },
+                { icon: TrendingUp, color: 'var(--teal)', title: 'قیمت‌گذاری شفاف', sub: 'نمایش قیمت ثبت‌شده برای هر کالا' },
+                { icon: Layers, color: 'var(--grape)', title: 'دسته‌بندی متنوع', sub: 'انتخاب آسان از میان گروه‌های کالا' },
+                { icon: CheckCircle2, color: 'var(--sunshine)', title: 'اطلاعات ارسال روشن', sub: 'شرایط ارسال پیش از ثبت سفارش' },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3 flex-1 min-w-[220px]">
                   <item.icon className="w-6 h-6 shrink-0" style={{ color: item.color }} strokeWidth={1.75} />
@@ -332,7 +345,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                 : 'کاتالوگ و ویترین کامل محصولات'}
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-[#8E9299] mt-1">
-              نمایش {toPersianDigits(filteredProducts.length)} کالا با قیمت مصوب و موجودی انبار لحظه‌ای
+              نمایش {toPersianDigits(filteredProducts.length)} کالا بر اساس اطلاعات بارگذاری‌شده
             </p>
           </div>
 
@@ -392,15 +405,19 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         ) : filteredProducts.length === 0 ? (
           <div className="bg-white dark:bg-[#111113] border border-[var(--line-soft)] dark:border-[#222225] rounded-3xl p-12 text-center max-w-md mx-auto my-8 shadow-xs">
             <Package className="w-12 h-12 text-slate-400 dark:text-[#8E9299] mx-auto mb-3" />
-            <h3 className="text-base font-bold text-slate-900 dark:text-[#F3F4F6]">کالایی با این مشخصات یافت نشد</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-[#F3F4F6]">{productsLoadFailed ? 'بارگذاری کالاها ناموفق بود' : 'کالایی با این مشخصات یافت نشد'}</h3>
             <p className="text-xs text-slate-500 dark:text-[#8E9299] mt-1 mb-4">
-              لطفاً فیلترهای جستجو را پاک کنید یا عبارت دیگری را جستجو فرمایید.
+              {productsLoadFailed ? 'اتصال به سرویس کالا برقرار نشد. دوباره تلاش کنید.' : 'فیلترهای جستجو را پاک کنید یا عبارت دیگری را امتحان کنید.'}
             </p>
             <button
               onClick={() => {
-                setSelectedCategory(null);
-                setSearchQuery('');
-                setFilterTab('all');
+                if (productsLoadFailed) {
+                  loadStorefrontData();
+                } else {
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                  setFilterTab('all');
+                }
               }}
               className="bg-[var(--teal)]/10 hover:bg-[var(--teal)]/20 text-[var(--teal)] text-xs font-bold px-4 py-2 rounded-xl border border-[var(--teal)]/30 transition-colors cursor-pointer"
             >

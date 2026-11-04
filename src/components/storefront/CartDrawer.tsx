@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -50,10 +50,11 @@ export const CartDrawer: React.FC = () => {
   const [province, setProvince] = useState('تهران');
   const [city, setCity] = useState('تهران');
   const [shippingMethod, setShippingMethod] = useState('courier');
-  const [paymentGateway, setPaymentGateway] = useState('zarinpal');
+  const [paymentGateway, setPaymentGateway] = useState('cod');
   const [couponCode, setCouponCode] = useState('');
-  const [discountAmount, setDiscountAmount] = useState(0);
+  const [appliedCouponCode, setAppliedCouponCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionLock = useRef(false);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
@@ -81,17 +82,19 @@ export const CartDrawer: React.FC = () => {
     return () => clearTimeout(timer);
   }, [otpCountdown]);
 
-  const shippingCost = totalPrice >= 300000 ? 0 : 35000;
+  const shippingCost = totalPrice > 500000 ? 0 : 35000;
+  const discountAmount = appliedCouponCode === 'KHATINOO' ? Math.round(totalPrice * 0.1) : 0;
   const finalPayable = Math.max(0, totalPrice + shippingCost - discountAmount);
 
   // Check high value threshold
   const isHighValuePurchase = finalPayable >= 100000 || (totalPurchaseAmount + finalPayable) >= 100000;
 
   const handleApplyCoupon = () => {
+    setAppliedCouponCode('');
     if (!couponCode.trim()) return;
-    if (['KHATINOO10', 'NOROOZ', 'KHATINOO', 'OFF10'].includes(couponCode.toUpperCase().trim())) {
+    if (couponCode.toUpperCase().trim() === 'KHATINOO') {
+      setAppliedCouponCode('KHATINOO');
       const disc = Math.round(totalPrice * 0.1);
-      setDiscountAmount(disc);
       showToast(`کد تخفیف ۱۰٪ با موفقیت اعمال شد (${formatToman(disc)} تخفیف).`, 'success');
     } else {
       showToast('کد تخفیف وارد شده معتبر نیست یا منقضی شده است.', 'error');
@@ -203,6 +206,12 @@ export const CartDrawer: React.FC = () => {
 
   // Step 4: Final Place Order & Payment
   const handleExecutePayment = async () => {
+    if (submissionLock.current || isSubmitting) return;
+    if (cart.length === 0 || cart.some((item) => item.quantity <= 0 || item.selectedPrice <= 0)) {
+      showToast('سبد خرید خالی یا دارای قیمت و تعداد نامعتبر است. لطفاً اقلام را بررسی کنید.', 'error');
+      return;
+    }
+    submissionLock.current = true;
     setIsSubmitting(true);
     try {
       const orderPayload = {
@@ -234,11 +243,14 @@ export const CartDrawer: React.FC = () => {
         setStep('success');
         clearCart();
         refreshCustomer();
-        showToast('سفارش شما با موفقیت ثبت شد و فاکتور نهایی صادر گردید.', 'success');
+        showToast('سفارش شما ثبت شد؛ پرداخت هنوز انجام نشده است.', 'success');
+      } else {
+        showToast('سفارش ثبت نشد. لطفاً وضعیت سبد و پرداخت را بررسی کنید.', 'error');
       }
     } catch (err: any) {
       showToast(err.message || 'خطا در ثبت و پرداخت سفارش', 'error');
     } finally {
+      submissionLock.current = false;
       setIsSubmitting(false);
     }
   };
@@ -273,7 +285,7 @@ export const CartDrawer: React.FC = () => {
                   {step === 'phone' && 'مرحله ۱: ورود شماره تماس'}
                   {step === 'details' && 'مرحله ۲: مشخصات و نشانی'}
                   {step === 'payment' && 'مرحله ۳: بررسی و پرداخت'}
-                  {step === 'success' && 'تایید نهایی سفارش'}
+                  {step === 'success' && 'ثبت سفارش'}
                 </h2>
                 {cart.length > 0 && step === 'cart' && (
                   <span className="bg-[var(--coral)] text-white text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-xs">
@@ -616,34 +628,15 @@ export const CartDrawer: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Gateway */}
-                  <div className="space-y-1.5 pt-1">
-                    <label className="font-bold text-slate-800 dark:text-[#E0E0E0]">درگاه امن پرداخت آنلاین:</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <label className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-colors ${
-                        paymentGateway === 'zarinpal' ? 'border-[var(--teal)] bg-[var(--teal)]/10' : 'border-[var(--line-soft)] dark:border-[#2D2D33] bg-[var(--paper)] dark:bg-[#161619]'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="gateway"
-                          checked={paymentGateway === 'zarinpal'}
-                          onChange={() => setPaymentGateway('zarinpal')}
-                          className="accent-[var(--teal)]"
-                        />
-                        <span className="font-bold text-slate-900 dark:text-[#F3F4F6]">زرین‌پال (شاپرک)</span>
-                      </label>
-                      <label className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-colors ${
-                        paymentGateway === 'pasargad_online' ? 'border-[var(--teal)] bg-[var(--teal)]/10' : 'border-[var(--line-soft)] dark:border-[#2D2D33] bg-[var(--paper)] dark:bg-[#161619]'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="gateway"
-                          checked={paymentGateway === 'pasargad_online'}
-                          onChange={() => setPaymentGateway('pasargad_online')}
-                          className="accent-[var(--teal)]"
-                        />
-                        <span className="font-bold text-slate-900 dark:text-[#F3F4F6]">بانک پاسارگاد</span>
-                      </label>
+                  {/* Payment method */}
+                  <div className="space-y-2 pt-1">
+                    <label className="font-bold text-slate-800 dark:text-[#E0E0E0]">روش پرداخت:</label>
+                    <div className="rounded-xl border border-[var(--teal)] bg-[var(--teal)]/10 p-3 flex items-start gap-2">
+                      <input type="radio" name="gateway" checked={paymentGateway === 'cod'} onChange={() => setPaymentGateway('cod')} className="mt-1 accent-[var(--teal)]" />
+                      <div>
+                        <div className="font-bold text-slate-900 dark:text-[#F3F4F6]">پرداخت در محل</div>
+                        <p className="text-[11px] text-slate-600 dark:text-[#A1A1AA] mt-1">درگاه پرداخت آنلاین تا زمان اتصال و تأیید واقعی غیرفعال است. مبلغ هنگام تحویل تسویه می‌شود.</p>
+                      </div>
                     </div>
                   </div>
 
@@ -654,8 +647,8 @@ export const CartDrawer: React.FC = () => {
                       <input
                         type="text"
                         value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value)}
-                        placeholder="مثال: KHATINOO10"
+                        onChange={(e) => { setCouponCode(e.target.value); setAppliedCouponCode(''); }}
+                        placeholder="کد تخفیف معتبر را وارد کنید"
                         className="flex-1 bg-white dark:bg-[#161619] border border-[var(--line-soft)] dark:border-[#2D2D33] rounded-xl p-2 font-mono uppercase text-center text-slate-900 dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] focus:border-[var(--teal)] outline-none"
                       />
                       <button
@@ -698,9 +691,9 @@ export const CartDrawer: React.FC = () => {
                         <span className="text-slate-700 dark:text-[#E0E0E0] text-left max-w-[200px] truncate">{province} - {city} - {customerAddress}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-[#8E9299]">درگاه پرداخت:</span>
+                        <span className="text-slate-500 dark:text-[#8E9299]">روش پرداخت:</span>
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                          {paymentGateway === 'zarinpal' ? 'شاپرک (زرین‌پال)' : 'بانک پاسارگاد'}
+                          پرداخت در محل
                         </span>
                       </div>
                     </div>
@@ -737,7 +730,7 @@ export const CartDrawer: React.FC = () => {
                   </div>
                   <h3 className="text-lg font-black text-slate-900 dark:text-[#F3F4F6]">سفارش شما با موفقیت ثبت شد!</h3>
                   <p className="text-xs text-slate-600 dark:text-[#8E9299] leading-relaxed max-w-xs mx-auto">
-                    شماره پیگیری و فاکتور شما صادر شد. پیامک تایید با جزییات سفارش به شماره {toPersianDigits(completedOrder.customerMobile || customerMobile)} ارسال گردید.
+                    شماره سفارش ثبت شده است. برای پیگیری، شماره سفارش و شماره موبایل خود را نگه دارید. پیامک تأیید در حال حاضر فعال نیست.
                   </p>
 
                   <div className="bg-[var(--paper)] dark:bg-[#161619] border border-[var(--line-soft)] dark:border-[#222225] rounded-2xl p-4 text-xs space-y-2 text-right">
@@ -750,12 +743,12 @@ export const CartDrawer: React.FC = () => {
                       <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{completedOrder.trackingCode || 'در انتظار صدور بارنامه'}</span>
                     </div>
                     <div className="flex justify-between border-b border-[var(--line-soft)] dark:border-[#222225] pb-1.5">
-                      <span className="text-slate-500 dark:text-[#8E9299]">مبلغ پرداخت شده:</span>
+                      <span className="text-slate-500 dark:text-[#8E9299]" >مبلغ قابل پرداخت:</span>
                       <span className="font-bold text-slate-900 dark:text-[#F3F4F6]">{formatToman(completedOrder.finalAmount)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500 dark:text-[#8E9299]">وضعیت سفارش:</span>
-                      <span className="font-bold text-emerald-600 dark:text-emerald-400">در حال پردازش و بسته‌بندی</span>
+                      <span className="font-bold text-amber-700 dark:text-amber-400">سفارش ثبت شده؛ در انتظار تسویه و بررسی</span>
                     </div>
                   </div>
                 </div>
@@ -820,7 +813,7 @@ export const CartDrawer: React.FC = () => {
                       className="w-2/3 bg-[var(--coral)] hover:bg-[var(--coral-hover)] text-white font-black py-3 rounded-full transition-all shadow-md shadow-[var(--coral)]/20 flex items-center justify-center gap-2 cursor-pointer text-xs disabled:opacity-50"
                     >
                       <CreditCard className="w-4 h-4 text-white" />
-                      <span>{isSubmitting ? 'در حال اتصال به شاپرک...' : 'پرداخت آنلاین و ثبت نهایی'}</span>
+                      <span>{isSubmitting ? 'در حال ثبت سفارش...' : 'ثبت سفارش با پرداخت در محل'}</span>
                     </button>
                   </div>
                 )}

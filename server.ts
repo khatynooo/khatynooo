@@ -4104,9 +4104,12 @@ app.get('/api/customer/sales-invoices', authenticateCustomerToken, async (req: C
 // -------------------------------------------------------------
 // 12. ONLINE STORE ORDER PLACEMENT & TRACKING (SQL-Backed)
 // -------------------------------------------------------------
-app.post('/api/orders/checkout', async (req, res) => {
+app.post('/api/orders/checkout', (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) return next();
+  return authenticateCustomerToken(req as CustomerAuthRequest, res, next);
+}, async (req, res) => {
   const {
-    customerId,
     customerName,
     customerMobile,
     customerAddress,
@@ -4121,15 +4124,23 @@ app.post('/api/orders/checkout', async (req, res) => {
     warehouseId,
   } = req.body;
 
-  if (!customerName || !customerMobile || !customerAddress || !items || !items.length) {
-    return res.status(400).json({ error: 'اطلاعات گیرنده، آدرس و اقلام سفارش الزامی هستند.' });
+  const customerAuth = (req as CustomerAuthRequest).customer;
+  const verifiedMobile = customerAuth?.mobile || customerMobile;
+  const cleanMobile = typeof verifiedMobile === 'string' ? verifiedMobile.replace(/[^\d+]/g, '') : '';
+  if (typeof customerName !== 'string' || !customerName.trim() || customerName.length > 150 ||
+      typeof verifiedMobile !== 'string' || !/^\+?[0-9۰-۹]{8,15}$/.test(cleanMobile) ||
+      typeof customerAddress !== 'string' || !customerAddress.trim() || customerAddress.length > 2000 ||
+      !Array.isArray(items) || items.length === 0 || items.length > 100 ||
+      items.some((item: any) => !item || typeof item.productId !== 'string' || !item.productId.trim() ||
+        typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0)) {
+    return res.status(400).json({ error: 'اطلاعات گیرنده، شماره تماس، نشانی و اقلام سفارش معتبر نیستند.' });
   }
 
   try {
     const result = await db.placeOnlineOrder({
-      customerId,
+      customerId: customerAuth?.id,
       customerName,
-      customerMobile,
+      customerMobile: cleanMobile,
       customerAddress,
       customerPostalCode,
       customerProvince,

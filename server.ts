@@ -1741,9 +1741,9 @@ app.post('/api/invoices/returns', authenticateToken, async (req: AuthRequest, re
     const result = await db.createReturnInvoice({
       originalInvoiceId,
       originalInvoiceNumber,
-      customerId: customerAuth?.id,
+      customerId,
       customerName,
-      customerMobile: cleanMobile,
+      customerMobile,
       type,
       reasonCategory,
       reasonNote,

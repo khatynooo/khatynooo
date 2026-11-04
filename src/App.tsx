@@ -89,13 +89,15 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadWarning, setLoadWarning] = useState(false);
+  const [productsLoadFailed, setProductsLoadFailed] = useState(false);
 
   const loadStorefrontData = useCallback(async () => {
     setLoadWarning(false);
+    setProductsLoadFailed(false);
     try {
       const [catRes, prodRes, bannerRes, setRes, blocksRes] = await Promise.all([
         api.getCategories().catch(() => { setLoadWarning(true); return { categories: [] }; }),
-        api.getProducts().catch(() => { setLoadWarning(true); return { products: [] }; }),
+        api.getProducts().catch(() => { setLoadWarning(true); setProductsLoadFailed(true); return { products: [] }; }),
         api.getBanners().catch(() => { setLoadWarning(true); return { banners: [] }; }),
         api.getWebsiteSettings().catch(() => { setLoadWarning(true); return { websiteSettings: null, storeSettings: null }; }),
         api.getPageBlocks().catch(() => { setLoadWarning(true); return { blocks: [] }; }),
@@ -313,9 +315,9 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
             <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 py-5 border-y border-[var(--line-soft)] dark:border-[#222225]">
               {[
                 { icon: BookOpen, color: 'var(--coral)', title: 'تولید اختصاصی خطی‌نو', sub: 'دفاتر مشق، سیمی و طراحی' },
-                { icon: TrendingUp, color: 'var(--teal)', title: 'تضمین مناسب‌ترین قیمت', sub: 'همگام با بازار و قیمت ترب' },
-                { icon: Layers, color: 'var(--grape)', title: 'تنوع ۵۰۰۰+ قلم کالا', sub: 'برترین برندهای داخلی و وارداتی' },
-                { icon: CheckCircle2, color: 'var(--sunshine)', title: 'ارسال سریع کشوری', sub: 'پیک روزانه و پست پیشتاز' },
+                { icon: TrendingUp, color: 'var(--teal)', title: 'قیمت‌گذاری شفاف', sub: 'نمایش قیمت ثبت‌شده برای هر کالا' },
+                { icon: Layers, color: 'var(--grape)', title: 'دسته‌بندی متنوع', sub: 'انتخاب آسان از میان گروه‌های کالا' },
+                { icon: CheckCircle2, color: 'var(--sunshine)', title: 'اطلاعات ارسال روشن', sub: 'شرایط ارسال پیش از ثبت سفارش' },
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-3 flex-1 min-w-[220px]">
                   <item.icon className="w-6 h-6 shrink-0" style={{ color: item.color }} strokeWidth={1.75} />
@@ -401,15 +403,19 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         ) : filteredProducts.length === 0 ? (
           <div className="bg-white dark:bg-[#111113] border border-[var(--line-soft)] dark:border-[#222225] rounded-3xl p-12 text-center max-w-md mx-auto my-8 shadow-xs">
             <Package className="w-12 h-12 text-slate-400 dark:text-[#8E9299] mx-auto mb-3" />
-            <h3 className="text-base font-bold text-slate-900 dark:text-[#F3F4F6]">کالایی با این مشخصات یافت نشد</h3>
+            <h3 className="text-base font-bold text-slate-900 dark:text-[#F3F4F6]">{productsLoadFailed ? 'بارگذاری کالاها ناموفق بود' : 'کالایی با این مشخصات یافت نشد'}</h3>
             <p className="text-xs text-slate-500 dark:text-[#8E9299] mt-1 mb-4">
-              لطفاً فیلترهای جستجو را پاک کنید یا عبارت دیگری را جستجو فرمایید.
+              {productsLoadFailed ? 'اتصال به سرویس کالا برقرار نشد. دوباره تلاش کنید.' : 'فیلترهای جستجو را پاک کنید یا عبارت دیگری را امتحان کنید.'}
             </p>
             <button
               onClick={() => {
-                setSelectedCategory(null);
-                setSearchQuery('');
-                setFilterTab('all');
+                if (productsLoadFailed) {
+                  loadStorefrontData();
+                } else {
+                  setSelectedCategory(null);
+                  setSearchQuery('');
+                  setFilterTab('all');
+                }
               }}
               className="bg-[var(--teal)]/10 hover:bg-[var(--teal)]/20 text-[var(--teal)] text-xs font-bold px-4 py-2 rounded-xl border border-[var(--teal)]/30 transition-colors cursor-pointer"
             >

@@ -4110,7 +4110,6 @@ app.post('/api/orders/checkout', (req, res, next) => {
   return authenticateCustomerToken(req as CustomerAuthRequest, res, next);
 }, async (req, res) => {
   const {
-    customerId,
     customerName,
     customerMobile,
     customerAddress,

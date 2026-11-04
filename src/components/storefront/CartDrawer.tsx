@@ -52,7 +52,7 @@ export const CartDrawer: React.FC = () => {
   const [shippingMethod, setShippingMethod] = useState('courier');
   const [paymentGateway, setPaymentGateway] = useState('cod');
   const [couponCode, setCouponCode] = useState('');
-  const [discountAmount, setDiscountAmount] = useState(0);
+  const [appliedCouponCode, setAppliedCouponCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionLock = useRef(false);
   const [completedOrder, setCompletedOrder] = useState<any>(null);
@@ -83,17 +83,18 @@ export const CartDrawer: React.FC = () => {
   }, [otpCountdown]);
 
   const shippingCost = totalPrice > 500000 ? 0 : 35000;
+  const discountAmount = appliedCouponCode === 'KHATINOO' ? Math.round(totalPrice * 0.1) : 0;
   const finalPayable = Math.max(0, totalPrice + shippingCost - discountAmount);
 
   // Check high value threshold
   const isHighValuePurchase = finalPayable >= 100000 || (totalPurchaseAmount + finalPayable) >= 100000;
 
   const handleApplyCoupon = () => {
-    setDiscountAmount(0);
+    setAppliedCouponCode('');
     if (!couponCode.trim()) return;
     if (couponCode.toUpperCase().trim() === 'KHATINOO') {
+      setAppliedCouponCode('KHATINOO');
       const disc = Math.round(totalPrice * 0.1);
-      setDiscountAmount(disc);
       showToast(`کد تخفیف ۱۰٪ با موفقیت اعمال شد (${formatToman(disc)} تخفیف).`, 'success');
     } else {
       showToast('کد تخفیف وارد شده معتبر نیست یا منقضی شده است.', 'error');
@@ -646,7 +647,7 @@ export const CartDrawer: React.FC = () => {
                       <input
                         type="text"
                         value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value)}
+                        onChange={(e) => { setCouponCode(e.target.value); setAppliedCouponCode(''); }}
                         placeholder="کد تخفیف معتبر را وارد کنید"
                         className="flex-1 bg-white dark:bg-[#161619] border border-[var(--line-soft)] dark:border-[#2D2D33] rounded-xl p-2 font-mono uppercase text-center text-slate-900 dark:text-[#E0E0E0] placeholder-slate-400 dark:placeholder-[#8E9299] focus:border-[var(--teal)] outline-none"
                       />

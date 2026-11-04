@@ -92,6 +92,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
   const [productsLoadFailed, setProductsLoadFailed] = useState(false);
 
   const loadStorefrontData = useCallback(async () => {
+    setIsLoading(true);
     setLoadWarning(false);
     setProductsLoadFailed(false);
     try {
@@ -115,6 +116,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
         setPageBlocks(blocksRes.blocks);
       }
     } catch (err) {
+      setLoadWarning(true);
       console.error('Error loading storefront data:', err);
     } finally {
       setIsLoading(false);

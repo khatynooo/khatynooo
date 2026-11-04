@@ -345,7 +345,7 @@ function Storefront({ initialAccountOpen = false }: { initialAccountOpen?: boole
                 : 'کاتالوگ و ویترین کامل محصولات'}
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-[#8E9299] mt-1">
-              نمایش {toPersianDigits(filteredProducts.length)} کالا با قیمت مصوب و موجودی انبار لحظه‌ای
+              نمایش {toPersianDigits(filteredProducts.length)} کالا بر اساس اطلاعات بارگذاری‌شده
             </p>
           </div>
 
